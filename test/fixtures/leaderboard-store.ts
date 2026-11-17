@@ -19,4 +19,9 @@ export class MemoryLeaderboard implements LeaderboardStore {
       .sort((a, b) => b.pnlUsd - a.pnlUsd || b.userId.localeCompare(a.userId))
       .slice(0, limit);
   }
+  async rank(window: LeaderboardWindowValue, userId: string) {
+    const rows = await this.top(window, this.snapshot[window].length);
+    const index = rows.findIndex((row) => row.userId === userId);
+    return index === -1 ? null : index + 1;
+  }
 }

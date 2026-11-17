@@ -8,7 +8,7 @@ import type { WalletBalanceProvider } from "./wallet-balance.provider";
 const cursorSchema = z.object({ executedAt: z.iso.datetime(), id: z.uuid() });
 export type HistoryRange = "7d" | "30d" | "all";
 
-function decodeCursor(cursor: string): TradeCursor {
+export function decodeTradeCursor(cursor: string): TradeCursor {
   try {
     if (!/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("Invalid encoding");
     const decoded = Buffer.from(cursor, "base64url");
@@ -29,8 +29,8 @@ export class PortfolioService {
   ) {}
 
   async getPortfolio(userId: string) {
-    const [rows, wallets] = await Promise.all([
-      this.repository.getPositions(userId),
+    const [summary, wallets] = await Promise.all([
+      this.getPositionSummary(userId),
       this.repository.getWallets(userId),
     ]);
     const { usdcBalance, usdtBalance, solBalance } = await this.balances.getBalances(
@@ -38,6 +38,19 @@ export class PortfolioService {
     );
     const solPrice = solBalance > 0 ? (await this.market.getToken(SOL_MINT))?.priceUsd : 0;
     const solValueUsd = solPrice && Number.isFinite(solPrice) && solPrice > 0 ? solBalance * solPrice : 0;
+    return {
+      equityUsd:
+        usdcBalance +
+        usdtBalance +
+        solValueUsd +
+        summary.positions.reduce((sum, position) => sum + position.valueUsd, 0),
+      usdcBalance,
+      ...summary,
+    };
+  }
+
+  async getPositionSummary(userId: string) {
+    const rows = await this.repository.getPositions(userId);
     const positions = await Promise.all(
       rows
         .filter(({ position }) => Number(position.quantity) > 0)
@@ -62,12 +75,6 @@ export class PortfolioService {
         }),
     );
     return {
-      equityUsd:
-        usdcBalance +
-        usdtBalance +
-        solValueUsd +
-        positions.reduce((sum, position) => sum + position.valueUsd, 0),
-      usdcBalance,
       unrealizedPnlUsd: positions.reduce((sum, position) => sum + position.unrealizedPnlUsd, 0),
       realizedPnlUsd: rows.reduce((sum, { position }) => sum + Number(position.realizedPnlUsd), 0),
       positions,
@@ -98,7 +105,7 @@ export class PortfolioService {
     const rows = await this.repository.getTrades(
       userId,
       limit + 1,
-      cursor === undefined ? undefined : decodeCursor(cursor),
+      cursor === undefined ? undefined : decodeTradeCursor(cursor),
     );
     const page = rows.slice(0, limit);
     const last = page.at(-1)?.trade;

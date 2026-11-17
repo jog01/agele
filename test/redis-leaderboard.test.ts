@@ -11,6 +11,8 @@ describe("Redis leaderboard integration", () => {
     try {
       await store.replace({ "24h": [row], "7d": [row], "30d": [row] });
       expect(await store.top("24h", 10)).toEqual([row]);
+      expect(await store.rank("24h", "user")).toBe(1);
+      expect(await store.rank("24h", "unknown")).toBeNull();
       expect(await redis.zscore("leaderboard:24h", "user")).toBe("12");
       expect(JSON.parse((await redis.hget("leaderboard:24h:stats", "user"))!)).toEqual({
         volumeUsd: 100,
@@ -20,6 +22,7 @@ describe("Redis leaderboard integration", () => {
       });
       await store.update("24h", "second", { ...row, userId: "second", pnlUsd: 20 });
       expect((await store.top("24h", 1))[0]!.userId).toBe("second");
+      expect(await store.rank("24h", "user")).toBe(2);
       await store.update("24h", "second", null);
       expect(await store.top("24h", 10)).toEqual([row]);
       await store.replace({ "24h": [], "7d": [], "30d": [] });

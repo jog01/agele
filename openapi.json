@@ -364,6 +364,165 @@
           "pnlUsd"
         ]
       },
+      "TraderProfile": {
+        "type": "object",
+        "properties": {
+          "wallet": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "followers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "following": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "isFollowing": {
+            "type": "boolean"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "24h": {
+                "$ref": "#/components/schemas/TraderWindowStats"
+              },
+              "7d": {
+                "$ref": "#/components/schemas/TraderWindowStats"
+              },
+              "30d": {
+                "$ref": "#/components/schemas/TraderWindowStats"
+              }
+            },
+            "required": [
+              "24h",
+              "7d",
+              "30d"
+            ]
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenPosition"
+            }
+          }
+        },
+        "required": [
+          "wallet",
+          "handle",
+          "avatarUrl",
+          "followers",
+          "following",
+          "realizedPnlUsd",
+          "unrealizedPnlUsd",
+          "stats",
+          "positions"
+        ]
+      },
+      "TraderWindowStats": {
+        "type": "object",
+        "properties": {
+          "pnlUsd": {
+            "type": "number"
+          },
+          "pnlPct": {
+            "type": "number"
+          },
+          "volumeUsd": {
+            "type": "number"
+          },
+          "trades": {
+            "type": "integer"
+          },
+          "winRatePct": {
+            "type": "number"
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "pnlUsd",
+          "pnlPct",
+          "volumeUsd",
+          "trades",
+          "winRatePct",
+          "rank"
+        ]
+      },
+      "UserTrade": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "buy",
+              "sell"
+            ]
+          },
+          "tokenAmount": {
+            "type": "number"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "valueUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "time": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "signature",
+          "mint",
+          "symbol",
+          "side",
+          "tokenAmount",
+          "priceUsd",
+          "valueUsd",
+          "realizedPnlUsd",
+          "time"
+        ]
+      },
       "Me": {
         "type": "object",
         "properties": {
@@ -522,60 +681,6 @@
         },
         "required": [
           "points"
-        ]
-      },
-      "UserTrade": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "signature": {
-            "type": "string"
-          },
-          "mint": {
-            "type": "string"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "side": {
-            "type": "string",
-            "enum": [
-              "buy",
-              "sell"
-            ]
-          },
-          "tokenAmount": {
-            "type": "number"
-          },
-          "priceUsd": {
-            "type": "number"
-          },
-          "valueUsd": {
-            "type": "number"
-          },
-          "realizedPnlUsd": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "time": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "signature",
-          "mint",
-          "symbol",
-          "side",
-          "tokenAmount",
-          "priceUsd",
-          "valueUsd",
-          "realizedPnlUsd",
-          "time"
         ]
       },
       "LeaderboardEntry": {
@@ -1413,6 +1518,199 @@
           },
           "404": {
             "description": "Unknown token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "description": "Public profile resolved by any linked Solana wallet or legacy primary wallet. Optional auth adds isFollowing. Stats use leaderboard math; Redis rank may lag fresh PostgreSQL stats. X-Data-Source: indexed or demo.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trader profile; demo profiles have simulated stats, no holdings or trade history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraderProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}/trades": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "description": "Public indexed trade history, newest first by executedAt and id. Same UserTrade shape and cursor as /me/trades. Demo traders return an empty history. X-Data-Source: indexed or demo.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent trades and next cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trades": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UserTrade"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "trades",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid wallet, limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
             "content": {
               "application/json": {
                 "schema": {

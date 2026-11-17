@@ -375,3 +375,64 @@ Provider/DB errors propagate rather than returning synthetic data. Both response
 are labelled `indexed`, even with mock market prices or disabled webhook ingestion.
 The frontend must wire these new endpoints; its existing tabs have no API contract.
 No holders or my-swaps endpoint is added.
+
+## Trader profiles
+
+```mermaid
+sequenceDiagram
+  participant C as Trader page
+  participant A as TraderService
+  participant D as PostgreSQL
+  participant P as PortfolioService
+  participant L as LeaderboardService
+  participant R as Redis
+  C->>A: GET /v1/traders/{wallet} (optional Bearer)
+  A->>D: Resolve linked wallet, fallback legacy primary wallet
+  alt Stored trader
+    A->>D: Linked addresses; distinct follower users; following wallet count
+    A->>P: Position summary (no cash balance RPC)
+    A->>L: Reuse window stats with current market prices
+    L->>R: ZREVRANK per active window
+    A-->>C: Profile + open positions + stats; X-Data-Source: indexed
+  else Known demo leaderboard/feed wallet
+    A->>A: Same MockSocialProvider rankings for all windows
+    A-->>C: Simulated profile; X-Data-Source: demo
+  else Unknown wallet
+    A-->>C: 404
+  end
+  C->>A: GET /v1/traders/{wallet}/trades?limit=25&cursor=opaque
+  A->>P: Reuse UserTrade keyset page for stored trader
+  A-->>C: trades + nextCursor; demo history is empty
+```
+
+Profile shape: `{wallet, handle, avatarUrl: string | null, followers, following,
+isFollowing?, realizedPnlUsd, unrealizedPnlUsd, stats, positions}`. `positions` is
+the portfolio's open-position array; closed positions still count toward lifetime
+realized PnL. No cash balances or private auth/wallet metadata are exposed.
+`stats` has keys `24h`, `7d`, `30d`, each with `{pnlUsd, pnlPct, volumeUsd, trades,
+winRatePct, rank: number | null}` using existing leaderboard units and math.
+Inactive windows still show open unrealized PnL, but have zero trading metrics
+and null rank. Redis ranks may lag fresh prices/trades; reads do not mutate ranks
+or publish WS events. Price missing/zero means cost fallback, as in portfolios.
+
+Linked secondary wallets resolve to the same user and canonical primary wallet.
+Followers count distinct registered users following **any** linked address
+(including legacy primary); following counts wallet-follow rows for this user.
+Authenticated `isFollowing` checks any linked address. Anonymous responses omit
+the property entirely. Present invalid bearer tokens return 401 on both routes;
+authentication configuration errors return 503. Malformed input/cursors return
+400, unknown wallets return 404. Only wallet lookup is supported because both
+leaderboard and feed expose wallet addresses directly for links.
+
+Stored traders resolve even if indexing is not currently configured; their data
+is labelled `indexed` and ranks are null if the indexed leaderboard is disabled.
+Demo wallets resolve even when indexing is enabled because the feed remains demo.
+Demo window stats match the mock leaderboard exactly; demo lifetime realized PnL
+uses its simulated 30d PnL, unrealized PnL is zero, holdings/history are empty and
+following is zero. Follower counts and viewer follow state still use real follows.
+Demo data is never substituted on database, market-provider or Redis failures.
+
+Trade pages use exactly the `/v1/me/trades` `UserTrade` schema and `(executedAt,id)`
+descending keyset cursor, with limit 1–100 (default 25). History is user-wide across
+linked wallets. Recent trades are fetched via this separate paginated endpoint,
+not embedded unboundedly in the profile. No frontend code is changed.
