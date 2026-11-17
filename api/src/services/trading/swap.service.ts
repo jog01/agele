@@ -1,8 +1,8 @@
 /**
- * Seam for the swap flow (owned by onchain feature work). Planned shape, per
- * docs/ARCHITECTURE.md §Trading: quote -> build (Jupiter Swap V2 /order with
- * taker=user, payer=fee payer) -> client signs with Privy -> submit (validate,
- * co-sign via FeeSponsor, Jupiter /execute) -> record trade.
+ * Seam for the swap flow (owned by onchain feature work), per docs/flows.md:
+ * quote -> build (Jupiter Swap V2 /order with taker=user, payer=fee payer, then
+ * FeeSponsor.register) -> client signs with Privy -> submit (FeeSponsor.cosign,
+ * Jupiter /execute) -> record trade. Safety rules: docs/fee-payer-security-policy.md §3.10.
  */
 export interface SwapQuoteRequest {
   userWallet: string;
