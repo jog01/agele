@@ -3,6 +3,7 @@
 Status: v0.1 policy, binding for the backend fee-payer service.
 Owner: onchain security.
 Applies to: every transaction the backend signs with the fee-payer key (gasless Jupiter Swap V2 swaps and gasless withdrawals).
+Implemented by: `FeeSponsor` (`api/src/services/sponsor/fee-sponsor.ts`), the only code that holds the fee-payer key. Callers: `SwapService` (`api/src/services/trading/swap.service.ts`) and the future withdrawal service.
 
 ## 1. Threat model
 
@@ -45,7 +46,27 @@ Attack vectors covered (numbering from the v0.1 onchain integrations research, �
    - submits (`POST /swap/v2/execute` for swaps, Helius RPC / Sender for withdrawals) and records the signature and outcome.
 6. **Backend signs last and broadcasts.** A fee-payer-signed transaction never leaves the backend except to the submission endpoint. Partially signed transactions with the fee-payer signature are never returned to the client.
 
-Re-validation: step 5 does not need to re-run §3 because the message is byte-identical to the one validated in step 2. If the implementation ever allows the message to change between issue and co-sign, it must re-run all of §3.
+Re-validation: `cosign` re-runs all of §3 on the returned transaction even though the message must be byte-identical to the one validated at issue. The checks are cheap, and this keeps the fee payer safe if the issued-record store is wrong or bypassed.
+
+### 2.1 Code contract (`FeeSponsor`)
+
+```ts
+type SponsorKind = "swap" | "withdraw";
+
+interface FeeSponsor {
+  readonly feePayer: string;
+  /** Steps 2-3: run §3 and §4 on a backend-built tx and store the issued record. Throws SponsorRejectedError. */
+  register(transactionBase64: string, context: { userId: string; wallet: string; kind: SponsorKind; requestId: string }): Promise<{ expiresAt: number }>;
+  /** Step 5: check the issued record, re-run §3, co-sign. Returns the fully signed tx (base64) for submission only. */
+  cosign(transactionBase64: string, context: { userId: string; requestId: string }): Promise<string>;
+}
+```
+
+- `SwapService.build` calls `register` before it returns the transaction to the client. A rejection means the swap is not offered.
+- `SwapService.submit` calls `cosign`, then passes the result to Jupiter `/execute` and nowhere else. It never logs, caches or returns it.
+- Rejections throw `SponsorRejectedError` with one stable reason code per check (e.g. `program_not_allowed`, `fee_payer_role`, `fee_cap`, `nonce`, `simulation`, `quota`, `record_expired`, `message_mismatch`, `kill_switch`). The API maps it to `{ error: { code: "sponsor_rejected", message } }`, where `message` names the reason but not the internal limits.
+- `container.ts` must wire a `FeeSponsor` that rejects everything with `sponsor_disabled` when no fee-payer key is configured. Demo mode stays "trading disabled"; there is never a mock that signs.
+- Config (all via `config/env.ts`): `FEE_PAYER_PUBKEY`, `FEE_PAYER_SECRET` (secret-store reference in prod; raw key only in dev), `SPONSOR_ENABLED` (kill switch, default `false`), and the limits named in §3-§6.
 
 ## 3. Transaction validation (all must pass)
 
@@ -121,11 +142,25 @@ The fee payer must never be the owner/authority of any token account in the tran
 - Swaps are limited to a **mint allowlist** for v0.1 (USDC, SOL/wSOL and the listed blue chips). Unknown mint: reject. Expanding to arbitrary tokens requires revisiting this section.
 - For Token-2022 mints, reject if the mint has any of: `TransferHook`, `PermanentDelegate`, `TransferFeeConfig` with non-zero fee (unless explicitly allowlisted), `ConfidentialTransfer`, `DefaultAccountState = Frozen`, `NonTransferable`. Read extensions from chain, cache per mint with short TTL.
 
-### 3.9 Withdrawal-specific rules
+### 3.9 Withdrawal safety
 - Instructions, in order: compute budget, optional `CreateIdempotent(payer=FEE_PAYER, owner=destination, mint)`, `TransferChecked(source = user ATA, destination = destination ATA, authority = user, mint, decimals)`, optional `TransferChecked(user → treasury, withdraw fee)`. Nothing else.
 - Destination must be a valid on-curve base58 pubkey (off-curve/PDA destinations rejected for v0.1), not `FEE_PAYER`, not the treasury, not the user's own wallet.
 - If the destination ATA does not exist, the withdraw fee must cover its rent (§4).
+- The destination account, if it exists, must be owned by the System program (a wallet). Reject token accounts, mints, program accounts and PDAs: sending to them usually loses funds.
+- Mint must be on the withdrawal allowlist (USDC for v0.1). The amount must be ≤ the user's balance as read from chain at issue time.
+- The client shows the full destination address, mint and amount, plus the fee, in an explicit confirm step. The backend never fills in a destination the user did not type or paste.
 - Large withdrawals (≥ `WITHDRAW_MFA_THRESHOLD_USD`, default $1,000) require Privy MFA re-verification before the backend issues the transaction.
+- Limits: 5 withdrawals and $10,000 per user per day (`WITHDRAW_DAILY_COUNT`, `WITHDRAW_DAILY_USD`). Withdrawals to a destination first used in the last 24 h are capped at $1,000 until then.
+- Simulation (§3.7) also checks the user side: only the user's withdrawal mint balance decreases, by exactly `amount + fee`.
+
+### 3.10 Swap safety (`SwapService`)
+These protect the user, not the fee payer, and run in `SwapService.build` on the Jupiter `/order` response before `register`:
+- The `/order` response must match the request: `inputMint`, `outputMint` and `inAmount` equal what the user asked for; `taker` equals the user's wallet and `payer` equals `FEE_PAYER`. Any mismatch: reject.
+- Both mints are on the v0.1 allowlist (§3.8).
+- `slippageBps ≤ MAX_SLIPPAGE_BPS` (default 300; the client default is 50). Reject a price impact above `MAX_PRICE_IMPACT_PCT` (default 3%).
+- The review dialog shows receive, minimum receive (`otherAmountThreshold`), fees, price impact, destination mint and expiry from this same `/order` response. A new quote means a new `requestId` and a new user signature.
+- Simulation (§3.7) also checks the user side: the user's input-mint balance decreases by at most `inAmount` (plus any wSOL wrap). The output-mint balance in the user's own ATA increases by at least `otherAmountThreshold`. No other user token balance decreases.
+- `submit` accepts only a `requestId` issued to the same user, at most once. The trade row is written from the `/execute` response, idempotent on signature.
 
 ## 4. Limits and economics (V5, V10)
 
@@ -184,7 +219,7 @@ Incident runbook (minimum): flip kill switch → move remaining SOL to treasury 
 
 ## 7. Testing requirements for the implementation PR
 
-The backend fee-payer PR must include unit tests that build each of these transactions and show they are **rejected** before signing:
+The `FeeSponsor`/`SwapService` PRs must include unit tests that build each of these transactions and show they are **rejected** before signing:
 
 1. System transfer from the fee payer (top-level), and fee payer as token transfer authority.
 2. Fee payer passed as an extra signer/writable account to an allowlisted program in a non-allowed slot.
@@ -196,6 +231,9 @@ The backend fee-payer PR must include unit tests that build each of these transa
 8. Instruction from a program not on the allowlist (including via an address lookup table).
 9. Token-2022 mint with a transfer hook / permanent delegate.
 10. Client-returned transaction whose message differs from the issued one by one byte; reused record id; expired record; record id belonging to another user.
+
+11. Swap whose `/order` response differs from the request (mint, amount, taker or payer); slippage or price impact above the cap; a simulated user balance change outside §3.10.
+12. Withdrawal to a token account, mint or PDA; over the daily limit; simulated user debit ≠ `amount + fee`.
 
 Plus one positive test per kind (swap via a recorded `/order` fixture, withdrawal with and without ATA creation) that passes and is signed exactly once.
 
