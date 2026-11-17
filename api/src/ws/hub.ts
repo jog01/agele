@@ -45,13 +45,20 @@ export class WsHub {
       case "unsubscribe":
         if (socket.isSubscribed(msg.topic)) {
           socket.unsubscribe(msg.topic);
-          this.counts.set(msg.topic, Math.max(0, (this.counts.get(msg.topic) ?? 1) - 1));
+          this.decrement(msg.topic);
         }
         return { type: "unsubscribed", topic: msg.topic };
     }
   }
 
   release(topics: Iterable<string>) {
-    for (const t of topics) this.counts.set(t, Math.max(0, (this.counts.get(t) ?? 1) - 1));
+    for (const t of topics) this.decrement(t);
+  }
+
+  /** Drops topics nobody listens to so arbitrary public subscriptions can't grow state. */
+  private decrement(topic: string) {
+    const n = (this.counts.get(topic) ?? 1) - 1;
+    if (n > 0) this.counts.set(topic, n);
+    else this.counts.delete(topic);
   }
 }
