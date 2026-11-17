@@ -64,6 +64,31 @@
           "marketData"
         ]
       },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "not_found"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {}
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "Token": {
         "type": "object",
         "properties": {
@@ -116,31 +141,6 @@
           "liquidityUsd",
           "volume24hUsd",
           "holders"
-        ]
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "example": "not_found"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {}
-            },
-            "required": [
-              "code",
-              "message"
-            ]
-          }
-        },
-        "required": [
-          "error"
         ]
       },
       "Candle": {
@@ -282,6 +282,154 @@
           "walletAddress",
           "handle",
           "wallets"
+        ]
+      },
+      "Portfolio": {
+        "type": "object",
+        "properties": {
+          "equityUsd": {
+            "type": "number",
+            "description": "Open position value plus linked-wallet USDC, USDT (1 USD each), and native SOL at current USD price"
+          },
+          "usdcBalance": {
+            "type": "number",
+            "description": "Linked-wallet USDC balance only"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mint": {
+                  "type": "string"
+                },
+                "symbol": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "avgCostUsd": {
+                  "type": "number"
+                },
+                "priceUsd": {
+                  "type": "number"
+                },
+                "valueUsd": {
+                  "type": "number"
+                },
+                "unrealizedPnlUsd": {
+                  "type": "number"
+                },
+                "realizedPnlUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "mint",
+                "symbol",
+                "quantity",
+                "avgCostUsd",
+                "priceUsd",
+                "valueUsd",
+                "unrealizedPnlUsd",
+                "realizedPnlUsd"
+              ]
+            }
+          }
+        },
+        "required": [
+          "equityUsd",
+          "usdcBalance",
+          "unrealizedPnlUsd",
+          "realizedPnlUsd",
+          "positions"
+        ]
+      },
+      "PortfolioHistory": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "time": {
+                  "type": "integer"
+                },
+                "valueUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "time",
+                "valueUsd"
+              ]
+            }
+          }
+        },
+        "required": [
+          "points"
+        ]
+      },
+      "UserTrade": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "buy",
+              "sell"
+            ]
+          },
+          "tokenAmount": {
+            "type": "number"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "valueUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "time": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "signature",
+          "mint",
+          "symbol",
+          "side",
+          "tokenAmount",
+          "priceUsd",
+          "valueUsd",
+          "realizedPnlUsd",
+          "time"
         ]
       },
       "LeaderboardEntry": {
@@ -491,6 +639,168 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/webhooks/helius": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "signature": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "timestamp": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "feePayer": {
+                      "type": "string"
+                    },
+                    "fee": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "transactionError": {},
+                    "type": {
+                      "type": "string"
+                    },
+                    "accountData": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "account": {
+                            "type": "string"
+                          },
+                          "nativeBalanceChange": {
+                            "type": "integer",
+                            "default": 0
+                          },
+                          "tokenBalanceChanges": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "userAccount": {
+                                  "type": "string"
+                                },
+                                "mint": {
+                                  "type": "string"
+                                },
+                                "rawTokenAmount": {
+                                  "type": "object",
+                                  "properties": {
+                                    "tokenAmount": {
+                                      "type": "string",
+                                      "pattern": "^-?\\d+$"
+                                    },
+                                    "decimals": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 255
+                                    }
+                                  },
+                                  "required": [
+                                    "tokenAmount",
+                                    "decimals"
+                                  ],
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "required": [
+                                "userAccount",
+                                "mint",
+                                "rawTokenAmount"
+                              ],
+                              "additionalProperties": {}
+                            },
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "account"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "signature",
+                    "timestamp",
+                    "feePayer",
+                    "fee",
+                    "accountData"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transactions processed; skipped includes duplicates and non-trades",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "indexed": {
+                      "type": "integer"
+                    },
+                    "skipped": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "indexed",
+                    "skipped"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid enhanced transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid webhook secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Webhook or SOL pricing unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -772,6 +1082,213 @@
         }
       }
     },
+    "/v1/me/portfolio": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current portfolio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Portfolio"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/portfolio/history": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "default": "7d"
+            },
+            "required": false,
+            "name": "range",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily equity with final live point",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/trades": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User trades, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trades": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UserTrade"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "trades",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/leaderboard": {
       "get": {
         "tags": [
@@ -812,7 +1329,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Top traders by realized + unrealized PnL",
+            "description": "Top traders by realized + unrealized PnL. X-Data-Source is demo for mock rankings, indexed otherwise.",
             "content": {
               "application/json": {
                 "schema": {
@@ -869,7 +1386,7 @@
         "tags": [
           "social"
         ],
-        "description": "Newest first with stable keyset pagination. Feed content is demo data until trade indexing lands. Following scope requires a bearer token.",
+        "description": "Newest first with stable keyset pagination. Feed content remains demo data, independent of indexed leaderboard rankings. Following scope requires a bearer token.",
         "security": [
           {},
           {

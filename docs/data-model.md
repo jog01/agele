@@ -49,7 +49,7 @@ erDiagram
     numeric quote_amount_usd
     numeric price_usd
     numeric realized_pnl_usd
-    text signature UK
+    text signature "unique together with user_id"
     timestamptz executed_at
   }
   POSITIONS {
@@ -81,17 +81,28 @@ erDiagram
 
 ```mermaid
 flowchart LR
-  FILL[Confirmed swap<br/>Helius webhook] --> T[Insert trades row<br/>idempotent on signature]
+  FILL[Confirmed swap<br/>Helius webhook] --> T[Insert trades row<br/>idempotent on signature + userId]
   T --> P{Side}
   P -- buy --> B[positions: quantity += qty<br/>cost_basis += usd]
-  P -- sell --> S[realized = usd - avg_cost × qty<br/>positions: quantity -= qty, cost_basis -= avg_cost × qty]
+  P -- sell --> S[Clamp sold quantity to owned quantity<br/>realized = prorated proceeds minus basis]
   S --> R[trades.realized_pnl_usd = realized]
-  B --> LB[Redis ZINCRBY lb:window]
+  B --> LB[Recompute user from Postgres<br/>Redis ZADD leaderboard:window + HSET stats]
   R --> LB
   NIGHT[BullMQ portfolio-snapshot job] --> SNAP[portfolio_snapshots<br/>one row per user per day]
 ```
 
-Redis holds derived, rebuildable state only: leaderboard sorted sets (`lb:24h`, `lb:7d`, `lb:30d`), WebSocket fan-out channels and BullMQ queues.
+Redis holds derived, rebuildable leaderboard state and BullMQ queues. For each
+`w` in `24h|7d|30d`, `leaderboard:<w>` is a ZSET (member `userId`, score `pnlUsd`)
+and `leaderboard:<w>:stats` is a hash (`userId` → JSON `{volumeUsd,trades,winRatePct,pnlPct}`).
+Updates are absolute recomputations, not increments, so retries cannot double-count.
+Full rebuild uses one MULTI to delete/repopulate all window keys, including empty
+windows. The current WS fan-out is local to the API process, not Redis pub/sub.
+
+`trades` has composite uniqueness `(signature,user_id)` so one Solana transaction
+can index different linked users. Positions remain per user/mint. Decimal arithmetic
+for persisted trade/position updates uses 18-place bigint fixed point; API/derived
+rank values are JSON numbers. `portfolio_snapshots` is keyed by `(user_id,day)`;
+today's sweep is an upsert, not an accumulating series.
 
 ## Wallet follows and feed
 
@@ -113,4 +124,4 @@ sequenceDiagram
   Social-->>API: items + nextCursor
 ```
 
-Feed is deterministic demo content until trade indexing lands, not a query over persisted trades/comments yet. Mock wallets are valid Solana addresses stable across leaderboard windows. The cursor encodes `(createdAt, id)` in base64url; both keys sort descending, with an exclusive boundary. Timestamps are integer Unix seconds. Anonymous leaderboard entries omit `isFollowing`; verified viewers receive a boolean per wallet.
+Feed remains deterministic demo content, independent of indexed leaderboard rankings; it does not query persisted trades/comments yet. Mock wallets are valid Solana addresses stable across leaderboard windows. The cursor encodes `(createdAt, id)` in base64url; both keys sort descending, with an exclusive boundary. Timestamps are integer Unix seconds. Anonymous leaderboard entries omit `isFollowing`; verified viewers receive a boolean per wallet for both mock and indexed rankings.

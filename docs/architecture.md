@@ -98,7 +98,53 @@ flowchart TB
 | `lib/`          | Logger, telemetry, Redis, errors, PRNG                                                                                               |
 | `container.ts`  | Composition root: the only place concrete providers are chosen                                                                       |
 
-Tests in `test/` build the app from `createApp(container)` with fakes, so routes are tested without network or DB.
+Tests in `test/` build the app from `createApp(container)` with fakes. Indexing,
+portfolio and snapshot integration tests use migrated PostgreSQL; leaderboard
+storage also has an isolated real Redis integration test.
+
+## Indexing and derived ranks
+
+```mermaid
+sequenceDiagram
+  participant H as Helius enhanced ANY
+  participant A as POST /v1/webhooks/helius
+  participant P as Pure delta parser
+  participant DB as PostgreSQL
+  participant L as LeaderboardService
+  participant R as Redis
+  participant W as WsHub / client
+  H->>A: Array + exact Authorization secret
+  A->>DB: Resolve linked Solana wallets
+  A->>P: Parse per-wallet token and quote deltas
+  P-->>A: Buy/sell candidates
+  loop Each trade, one transaction
+    A->>DB: Ensure token; INSERT trade ON CONFLICT (signature,userId)
+    alt New trade
+      A->>DB: Update average-cost position; commit
+      A->>L: onTrade(userId)
+      L->>DB: Read trades and open positions
+      L->>R: Atomic score + stats per window
+      L->>W: leaderboard:global {window,updatedAt}
+    else Duplicate
+      DB-->>A: No position change
+    end
+  end
+  A-->>H: 200 {indexed,skipped}
+  W->>A: Refetch GET /v1/leaderboard
+  Note over L,R: API startup + 60s full rebuild ages out trades and reprices holdings
+```
+
+`LeaderboardStore` separates Redis storage from ranking math; PostgreSQL is the
+source of truth. Full rebuilds replace all three windows inside one Redis MULTI.
+User updates and rebuilds serialize within one API process. The API owns the
+trade listener, timer and local WS hub. Multiple API replicas need distributed
+update coordination and WS fan-out; they are not implemented here.
+
+`HELIUS_WEBHOOK_SECRET` selects indexed rankings; unset selects mock rankings.
+The unchanged leaderboard JSON is accompanied by `X-Data-Source: indexed|demo`,
+exposed through CORS. Comments still use the mock provider. Price-provider mode
+is independent: production should use live market data. Portfolio valuation is
+shared with the daily BullMQ snapshot processor, which builds its own dependencies.
 
 ## Frontend layout (jog01/agele-web `src/`)
 
@@ -135,6 +181,6 @@ Topic grammar is validated (`ws/topics.ts`); unknown or malformed topics are rej
 
 ## Ownership seams for follow-up work
 
-- **Onchain backend owner:** extend the live `MarketDataProvider` (Jupiter Tokens V2 / Price V3 + Birdeye), implement `SwapService` (Jupiter Swap V2 quote/build/submit) and a Helius webhook controller that writes `trades`/`positions`.
+- **Onchain backend owner:** extend market coverage, historical pricing and backfill; implement `SwapService` (Jupiter Swap V2 quote/build/submit). Enhanced webhook indexing now writes `trades`/`positions` inline.
 - **Security owner:** implement `FeeSponsor.cosign` (program allowlist, payer-position checks, compute and lamport caps, simulation, per-user quotas, replay protection). Nothing else holds the fee-payer key.
-- **Social:** implement `SocialProvider` on Redis sorted sets (`lb:{window}`) and the `token_comments` table.
+- **Social:** Redis rankings are implemented (`leaderboard:<window>`); comments still need a real `token_comments` provider.

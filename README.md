@@ -17,8 +17,55 @@ bun run dev                   # :4000, API docs at /docs, WebSocket at /ws
 ```
 
 Keyless Jupiter market data works by default; candles/trades need a Birdeye key.
-Set `MARKET_DATA_PROVIDER=mock` for labelled demo fixtures. Set `PRIVY_APP_ID` /
+Set `MARKET_DATA_PROVIDER=mock` for demo market fixtures. Leaderboard responses
+label fixture rankings with `X-Data-Source: demo` (indexed rankings: `indexed`). Set `PRIVY_APP_ID` /
 `PRIVY_VERIFICATION_KEY` to enable authenticated routes.
+
+## Trade indexing and portfolios
+
+| Environment variable | Purpose |
+| --- | --- |
+| `HELIUS_API_KEY` | Helius management API key for `bun run helius:sync` |
+| `HELIUS_WEBHOOK_SECRET` | Exact Authorization header expected on webhook delivery; enables indexed Redis rankings when set |
+| `HELIUS_WEBHOOK_URL` | Public HTTPS callback, including `/v1/webhooks/helius`, used by sync |
+| `SOLANA_RPC_URL` | JSON-RPC endpoint for linked-wallet USDC, USDT and native SOL balances |
+| `DATABASE_URL` / `REDIS_URL` | PostgreSQL source of truth / rebuildable rankings and BullMQ |
+| `PRIVY_APP_ID` / `PRIVY_APP_SECRET` | Auth verification / linked Solana wallet discovery |
+
+To go live: migrate Postgres, run Redis, configure Privy and live market data,
+set the Helius API key, strong webhook secret and public HTTPS callback URL,
+then run `bun run helius:sync` after wallets are linked. **Rerun sync whenever
+linked wallets change**; it is deliberately not called in the sign-in request
+path (external management calls cost credits and can fail). Sync matches the
+callback URL, creates or updates an enhanced `ANY` webhook, and refuses empty
+wallet lists. No historical trades are backfilled. Never log management responses:
+they may contain the webhook secret.
+
+The [current Helius reference](https://www.helius.dev/docs/api-reference/webhooks/llms.txt)
+documents `https://mainnet.helius-rpc.com/v0/webhooks` (rather than the older
+`api-mainnet` hostname), with GET/POST and PUT `/{webhookID}`. The sync script
+uses that base. [Request fields](https://www.helius.dev/docs/api-reference/webhooks/create-webhook)
+include `webhookURL`, `accountAddresses`, `transactionTypes`, `webhookType`, `authHeader`.
+
+Authenticated endpoints: `GET /v1/me/portfolio`, `GET /v1/me/portfolio/history?range=7d|30d|all`,
+and `GET /v1/me/trades?limit=25&cursor=...`. Run `bun run dev:worker` for daily
+UTC equity snapshots for users with positions or linked Solana wallets (including cash-only users).
+Equity includes open positions plus linked-wallet USDC,
+USDT (1 USD each), and native SOL at current SOL price; `usdcBalance` remains USDC only.
+Missing/zero SOL prices value native SOL cash at zero. The API rebuilds rankings at startup and every 60 seconds,
+and refreshes a user's rankings after each indexed trade. WS `leaderboard:global`
+sends `{window,updatedAt}` invalidations; refetch `GET /v1/leaderboard`.
+
+Limitations: only one non-quote token against USDC/USDT/SOL is indexed; transfers
+and failed transactions are skipped. Native SOL fees are added back, wSOL is
+merged with SOL, and SOL legs use **current**, not historical, USD pricing.
+Unknown market prices fall back to average cost (zero unrealized PnL); configure
+the market allowlist for held tokens. RPC failures log and omit only the affected
+wallet/asset; successful balances are retained.
+Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
+sells without indexed holdings record zero realized PnL. Transactions are not reordered.
+Comments remain mock. Mock leaderboard responses stay explicitly demo-labelled;
+indexed rankings never fall back to synthetic entries on Redis failure.
 
 ## Checks
 
