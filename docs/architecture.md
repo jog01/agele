@@ -102,6 +102,24 @@ Tests in `test/` build the app from `createApp(container)` with fakes. Indexing,
 portfolio and snapshot integration tests use migrated PostgreSQL; leaderboard
 storage also has an isolated real Redis integration test.
 
+## Trader profile APIs
+
+| Endpoint | Auth | Contract |
+| --- | --- | --- |
+| `GET /v1/traders/{wallet}` | Public, optional bearer | `TraderProfile`: lifetime PnL, open positions, three leaderboard-window stats, follower/following counts |
+| `GET /v1/traders/{wallet}/trades?limit=25&cursor=...` | Public, optional bearer | Existing `{trades: UserTrade[], nextCursor}` keyset page |
+
+Leaderboard entries and feed items both expose `wallet`, so no handle/user-ID
+lookup API is necessary. `TraderService` resolves any linked Solana wallet (or a
+legacy primary wallet), and returns the primary wallet when available. It reuses
+`PortfolioService.getPositionSummary` without balance RPC, `PortfolioService.getTrades`,
+and `LeaderboardService.userStats` rather than maintaining separate PnL math.
+Current stats come from PostgreSQL/current prices; rank is the 1-based Redis
+`ZREVRANK` (possibly stale until refresh, null if unranked or indexing disabled).
+Demo leaderboard/feed wallets resolve through the same `MockSocialProvider`, with
+`X-Data-Source: demo`; stored traders are always labelled `indexed`. Both schemas
+are in OpenAPI. See [trader profile flows](flows.md#trader-profiles).
+
 ## Token terminal indexed APIs
 
 | Endpoint | Auth | Contract |

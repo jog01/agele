@@ -67,6 +67,30 @@ function setup() {
 }
 
 describe("leaderboard math and ranking", () => {
+  it("includes unranked open PnL in read-only user stats when no trades are in a window", async () => {
+    const test = setup();
+    const token = (await test.market.getToken(SOL))!;
+    test.market.getToken = async () => ({ ...token, priceUsd: 10 });
+    test.positions.push({
+      userId: "inactive",
+      mint: SOL,
+      quantity: "2",
+      costBasisUsd: "10",
+      realizedPnlUsd: "0",
+      updatedAt: new Date(),
+    });
+    const stats = await test.leaderboard.userStats("inactive");
+    expect(stats["24h"]).toEqual({
+      pnlUsd: 10,
+      pnlPct: 0,
+      volumeUsd: 0,
+      trades: 0,
+      winRatePct: 0,
+      rank: null,
+    });
+    expect(await test.store.top("24h", 10)).toEqual([]);
+    expect(test.events).toEqual([]);
+  });
   it.each([null, 0])("values open positions at cost when market price is %s", async (price) => {
     const test = setup();
     test.addTrade("alice", "buy", "100", null);

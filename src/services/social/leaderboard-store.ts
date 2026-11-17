@@ -19,6 +19,7 @@ export interface LeaderboardStore {
   replace(snapshot: LeaderboardSnapshot): Promise<void>;
   update(window: LeaderboardWindowValue, userId: string, row: LeaderboardRow | null): Promise<void>;
   top(window: LeaderboardWindowValue, limit: number): Promise<LeaderboardRow[]>;
+  rank(window: LeaderboardWindowValue, userId: string): Promise<number | null>;
 }
 
 const key = (window: LeaderboardWindowValue) => `leaderboard:${window}`;
@@ -27,6 +28,11 @@ const statsJson = ({ volumeUsd, trades, winRatePct, pnlPct }: LeaderboardRow) =>
 
 export class RedisLeaderboard implements LeaderboardStore {
   constructor(private readonly redis: Redis = getRedis()) {}
+
+  async rank(window: LeaderboardWindowValue, userId: string) {
+    const rank = await this.redis.zrevrank(key(window), userId);
+    return rank === null ? null : rank + 1;
+  }
 
   private check(result: [Error | null, unknown][] | null) {
     if (!result) throw new Error("Leaderboard transaction aborted");

@@ -7,6 +7,7 @@ import { PgPortfolioRepository } from "./repositories/portfolio.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
 import { PgTokenActivityRepository } from "./repositories/token-activity.repository";
 import { PgTradeRepository } from "./repositories/trade.repository";
+import { PgTraderRepository } from "./repositories/trader.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
 import { LeaderboardService } from "./services/leaderboard.service";
@@ -24,6 +25,7 @@ import { ValidatedFeeSponsor } from "./services/sponsor/validated-fee-sponsor";
 import { TokenService } from "./services/token.service";
 import { TokenActivityService } from "./services/token-activity.service";
 import { TradeIndexer } from "./services/trade-indexer";
+import { TraderService } from "./services/trader.service";
 import { JupiterSwapClient } from "./services/trading/jupiter-swap.client";
 import { SwapService } from "./services/trading/swap.service";
 import { RedisSwapRateLimiter, type SwapRateLimiter } from "./services/trading/swap-rate-limiter";
@@ -43,6 +45,7 @@ export interface Container {
   auth: AuthVerifier;
   tokens: TokenService;
   tokenActivity: TokenActivityService;
+  traders: TraderService;
   users: UserService;
   privyUsers: PrivyUserDirectory;
   social: SocialService;
@@ -85,6 +88,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
   const mockSocial = new MockSocialProvider();
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
+  const portfolio =
+    overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances);
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),
@@ -105,8 +110,18 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     leaderboardStore,
     leaderboard,
     balances,
-    portfolio:
-      overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances),
+    portfolio,
+    traders:
+      overrides.traders ??
+      new TraderService(
+        new PgTraderRepository(getDb()),
+        portfolio,
+        leaderboard ??
+          new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, hub),
+        mockSocial,
+        follows,
+        !!leaderboard,
+      ),
     tradeIndexer,
     privyUsers,
     market,

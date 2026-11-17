@@ -27,7 +27,7 @@ export class LeaderboardService {
     return next;
   }
 
-  private async compute(now: number, userId?: string): Promise<LeaderboardSnapshot> {
+  private async compute(now: number, userId?: string, includeInactive = false): Promise<LeaderboardSnapshot> {
     const [trades, positions] = await Promise.all([
       this.repository.getTrades(new Date(now - 30 * 86400000), userId),
       this.repository.getPositions(userId),
@@ -59,6 +59,7 @@ export class LeaderboardService {
         group.push(trade);
         grouped.set(trade.userId, group);
       }
+      if (includeInactive && userId && !grouped.has(userId)) grouped.set(userId, []);
       for (const [id, group] of grouped) {
         const pnlUsd =
           group.reduce((sum, trade) => sum + Number(trade.realizedPnlUsd ?? 0), 0) +
@@ -80,6 +81,16 @@ export class LeaderboardService {
       }
     }
     return result;
+  }
+
+  async userStats(userId: string, includeRanks = true) {
+    const snapshot = await this.compute(this.now(), userId, true);
+    const stats = async (window: LeaderboardWindowValue) => {
+      const { userId: _, ...row } = snapshot[window][0]!;
+      return { ...row, rank: includeRanks && row.trades > 0 ? await this.store.rank(window, userId) : null };
+    };
+    const [day, week, month] = await Promise.all([stats("24h"), stats("7d"), stats("30d")]);
+    return { "24h": day, "7d": week, "30d": month };
   }
 
   updateUser(userId: string) {
