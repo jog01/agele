@@ -7,15 +7,13 @@ export const follows = pgTable(
   {
     followerId: uuid()
       .notNull()
-      .references(() => users.id),
-    followeeId: uuid()
-      .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "cascade" }),
+    followeeWallet: text().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    primaryKey({ columns: [t.followerId, t.followeeId] }),
-    index("follows_followee_idx").on(t.followeeId),
+    primaryKey({ columns: [t.followerId, t.followeeWallet] }),
+    index("follows_followee_idx").on(t.followeeWallet),
   ],
 );
 

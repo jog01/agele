@@ -6,11 +6,14 @@ import { createApp } from "../src/app";
 import { env } from "../src/config/env";
 import { createContainer } from "../src/container";
 import * as schema from "../src/models";
+import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import { PgLeaderboardRepository } from "../src/repositories/leaderboard.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
+import { FeedSchema } from "../src/schemas/social";
 import { LeaderboardService } from "../src/services/leaderboard.service";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { TradeIndexer } from "../src/services/trade-indexer";
+import type { UserService } from "../src/services/user.service";
 import { WsHub } from "../src/ws/hub";
 import { buy, MINT, WALLET } from "./fixtures/helius";
 import { MemoryLeaderboard } from "./fixtures/leaderboard-store";
@@ -125,5 +128,40 @@ describe("indexed leaderboard wiring", () => {
     } finally {
       publish.mockRestore();
     }
+  });
+
+  it("adds viewer follow state to indexed ranks without changing anonymous ranks or the demo feed", async () => {
+    const follows = new InMemoryFollowRepository();
+    const app = createApp(
+      createContainer({
+        market,
+        leaderboardStore: store,
+        leaderboard,
+        follows,
+        auth: { verify: async () => ({ privyDid: "did:privy:viewer", sessionId: "session" }) },
+        users: { ensureUser: async () => ({ id: "viewer" }) } as unknown as UserService,
+      }),
+    );
+    const read = async (authenticated: boolean) => {
+      const response = await app.request(
+        "/v1/leaderboard",
+        authenticated ? { headers: { authorization: "Bearer good" } } : undefined,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as { entries: { wallet: string; isFollowing?: boolean }[] };
+    };
+    expect((await read(true)).entries[0]).toMatchObject({ wallet: address, isFollowing: false });
+    await follows.follow("viewer", address);
+    expect((await read(true)).entries[0]).toMatchObject({ wallet: address, isFollowing: true });
+    expect((await read(false)).entries[0]).not.toHaveProperty("isFollowing");
+    await follows.unfollow("viewer", address);
+    expect((await read(true)).entries[0]!.isFollowing).toBe(false);
+    const feed = await app.request("/v1/feed?limit=1");
+    expect(feed.status).toBe(200);
+    expect(FeedSchema.parse(await feed.json()).items).toHaveLength(1);
+    const followingFeed = await app.request("/v1/feed?scope=following", {
+      headers: { authorization: "Bearer good" },
+    });
+    expect(FeedSchema.parse(await followingFeed.json()).items).toEqual([]);
   });
 });

@@ -10,7 +10,6 @@ erDiagram
   USERS ||--o{ PORTFOLIO_SNAPSHOTS : "has daily"
   USERS ||--o{ COMMENTS : writes
   USERS ||--o{ FOLLOWS : "follows (follower)"
-  USERS ||--o{ FOLLOWS : "is followed (followee)"
   TOKENS ||--o{ TRADES : "traded in"
   TOKENS ||--o{ POSITIONS : "held as"
   TOKENS ||--o{ COMMENTS : "discussed in"
@@ -73,7 +72,8 @@ erDiagram
   }
   FOLLOWS {
     uuid follower_id PK
-    uuid followee_id PK
+    text followee_wallet PK "Solana address, not a user FK"
+    timestamptz created_at
   }
 ```
 
@@ -103,3 +103,25 @@ can index different linked users. Positions remain per user/mint. Decimal arithm
 for persisted trade/position updates uses 18-place bigint fixed point; API/derived
 rank values are JSON numbers. `portfolio_snapshots` is keyed by `(user_id,day)`;
 today's sweep is an upsert, not an accumulating series.
+
+## Wallet follows and feed
+
+`follows` has a composite primary key `(follower_id, followee_wallet)` and an index on `followee_wallet`. The follower references `users.id` with cascade deletion; the target need not be registered. Existing user-target follows migrate to the target's primary `wallet_address`; targets without a primary wallet cannot be represented and are omitted. PUT and DELETE are idempotent. Following any of the viewer's stored wallets is rejected.
+
+```mermaid
+sequenceDiagram
+  participant API
+  participant Users
+  participant Follows as FollowRepository
+  participant Social as SocialProvider
+  API->>Users: ensureUser(verified claims)
+  Users-->>API: viewer + owned wallets
+  API->>Follows: follow(viewer.id, target wallet)
+  Note over Follows: PK prevents duplicates; no target user FK
+  API->>Follows: listWallets(viewer.id)
+  Follows-->>API: followed wallet addresses
+  API->>Social: feed(wallets, cursor, limit)
+  Social-->>API: items + nextCursor
+```
+
+Feed remains deterministic demo content, independent of indexed leaderboard rankings; it does not query persisted trades/comments yet. Mock wallets are valid Solana addresses stable across leaderboard windows. The cursor encodes `(createdAt, id)` in base64url; both keys sort descending, with an exclusive boundary. Timestamps are integer Unix seconds. Anonymous leaderboard entries omit `isFollowing`; verified viewers receive a boolean per wallet for both mock and indexed rankings.

@@ -1,5 +1,6 @@
 import { env } from "./config/env";
 import { getDb } from "./db/client";
+import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
 import { PgPortfolioRepository } from "./repositories/portfolio.repository";
 import { PgTradeRepository } from "./repositories/trade.repository";
@@ -32,6 +33,7 @@ export interface Container {
   users: UserService;
   privyUsers: PrivyUserDirectory;
   social: SocialService;
+  follows: FollowRepository;
 }
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
@@ -49,6 +51,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
   const mockSocial = new MockSocialProvider();
+  const follows = overrides.follows ?? new PgFollowRepository(getDb());
   return {
     hub,
     leaderboardStore,
@@ -61,8 +64,10 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     market,
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
+    follows,
     social:
-      overrides.social ?? new SocialService(mockSocial, tokens, leaderboard ?? mockSocial, !leaderboard),
+      overrides.social ??
+      new SocialService(mockSocial, tokens, follows, leaderboard ?? mockSocial, !leaderboard),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };
 }
