@@ -14,6 +14,7 @@ import {
   type ReadonlyUint8Array,
   verifySignature,
 } from "@solana/kit";
+import { AppError } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import type { MarketDataProvider } from "../market-data";
 import { type FeeSponsor, type SponsorRegisterContext, SponsorRejectedError } from "./fee-sponsor";
@@ -114,6 +115,10 @@ export class ValidatedFeeSponsor implements FeeSponsor {
     try {
       return await action();
     } catch (error) {
+      if (error instanceof AppError && error.status === 503) {
+        this.event("reject", { reason: "quota" });
+        throw error;
+      }
       const rejection =
         error instanceof SponsorRejectedError ? error : new SponsorRejectedError("simulation");
       this.event("reject", { reason: rejection.reason });

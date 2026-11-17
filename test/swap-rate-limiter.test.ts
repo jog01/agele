@@ -26,3 +26,16 @@ it("fails closed when rate-limit storage fails", async () => {
     code: "rate_limit_unavailable",
   });
 });
+
+it("returns 503 by the deadline when rate-limit storage hangs", async () => {
+  const limiter = new RedisSwapRateLimiter(
+    {
+      eval: () => new Promise(() => {}),
+    } as unknown as Redis,
+    10,
+  );
+  await expect(limiter.consume("ip:test")).rejects.toMatchObject({
+    status: 503,
+    code: "rate_limit_unavailable",
+  });
+});

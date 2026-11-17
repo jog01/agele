@@ -89,8 +89,44 @@ it("fails closed when Redis is unavailable", async () => {
       throw new Error("offline");
     },
   } as unknown as Redis);
-  await expect(store.check("user")).rejects.toMatchObject({ reason: "quota" });
-  await expect(store.get("request")).rejects.toMatchObject({ reason: "record_missing" });
+  await expect(store.check("user")).rejects.toMatchObject({ status: 503, code: "rate_limit_unavailable" });
+  await expect(store.get("request")).rejects.toMatchObject({ status: 503, code: "rate_limit_unavailable" });
+});
+
+it("bounds every Redis sponsor operation and preserves 503 through the sponsor lifecycle", async () => {
+  const store = new RedisSponsorStore(
+    {
+      eval: () => new Promise(() => {}),
+      mget: () => new Promise(() => {}),
+    } as unknown as Redis,
+    1_000_000_000n,
+    Date.now,
+    10,
+  );
+  const r = record();
+  for (const action of [
+    () => store.check(r.context.userId),
+    () => store.issue(r),
+    () => store.get(r.id),
+    () => store.claim(r, 1n),
+    () => store.report(r.context.userId, r.id, "failed"),
+  ]) {
+    await expect(action()).rejects.toMatchObject({ status: 503, code: "rate_limit_unavailable" });
+  }
+  const s = await sponsorSetup();
+  const sponsor = new ValidatedFeeSponsor({ ...s.options, store });
+  await expect(sponsor.register(s.encoded(), s.context)).rejects.toMatchObject({
+    status: 503,
+    code: "rate_limit_unavailable",
+  });
+  await expect(
+    sponsor.cosign(await s.signUser(), {
+      userId: s.context.userId,
+      requestId: s.context.requestId,
+    }),
+  ).rejects.toMatchObject({ status: 503, code: "rate_limit_unavailable" });
+  expect(s.rpc.simulations).toBe(0);
+  expect(s.store.charges).toHaveLength(0);
 });
 
 // Dedicated local test database; never connects to a configured remote service.

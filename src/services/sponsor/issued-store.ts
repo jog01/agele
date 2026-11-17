@@ -1,5 +1,6 @@
 import type Redis from "ioredis";
 import { z } from "zod";
+import { withRedisDeadline } from "../../lib/redis-deadline";
 import type { SponsorRegisterContext } from "./fee-sponsor";
 import { refuse } from "./validator";
 
@@ -57,14 +58,11 @@ export class RedisSponsorStore implements SponsorStore {
     private readonly redis: Redis,
     private readonly dailyCap: bigint = 1_000_000_000n,
     private readonly now: () => number = Date.now,
+    private readonly timeoutMs = 1000,
   ) {}
 
   private async evaluate(script: string, keys: string[], args: (string | number)[] = []) {
-    try {
-      return await this.redis.eval(script, keys.length, ...keys, ...args);
-    } catch {
-      return refuse("quota");
-    }
+    return withRedisDeadline(() => this.redis.eval(script, keys.length, ...keys, ...args), this.timeoutMs);
   }
   async check(userId: string) {
     const result = await this.evaluate(
@@ -93,14 +91,10 @@ export class RedisSponsorStore implements SponsorStore {
     if (Number(result) !== 0) refuse("quota");
   }
   async get(requestId: string): Promise<IssuedRecord> {
-    let value: string | null, seen: string | null;
-    try {
-      const values = await this.redis.mget(`sponsor:issued:${requestId}`, `sponsor:seen:${requestId}`);
-      value = values[0] ?? null;
-      seen = values[1] ?? null;
-    } catch {
-      return refuse("record_missing");
-    }
+    const [value, seen] = await withRedisDeadline(
+      () => this.redis.mget(`sponsor:issued:${requestId}`, `sponsor:seen:${requestId}`),
+      this.timeoutMs,
+    );
     if (!value)
       return refuse(seen === "signing" ? "record_used" : seen ? "record_expired" : "record_missing");
     let json: unknown;
