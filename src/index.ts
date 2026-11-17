@@ -8,6 +8,7 @@ import { closeRedis } from "./lib/redis";
 import { initTelemetry, shutdownTelemetry } from "./lib/telemetry";
 import { WsHub } from "./ws/hub";
 import { startMockFeed } from "./ws/mock-feed";
+import { startPriceFeed } from "./ws/price-feed";
 
 initTelemetry();
 
@@ -38,11 +39,16 @@ app.get(
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch, websocket });
 hub.attach(server);
 const stopFeed = env.ENABLE_MOCK_FEED && env.MARKET_DATA_PROVIDER === "mock" ? startMockFeed(hub) : undefined;
+const stopPriceFeed =
+  container.market.name === "live"
+    ? startPriceFeed(hub, container.market, env.MARKET_TOKEN_ALLOWLIST)
+    : undefined;
 
 logger.info({ port: server.port, provider: container.market.name }, "api listening");
 
 async function shutdown() {
   stopFeed?.();
+  stopPriceFeed?.();
   await server.stop();
   await Promise.all([closeDb(), closeRedis(), shutdownTelemetry()]);
   process.exit(0);

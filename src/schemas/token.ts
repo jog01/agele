@@ -66,4 +66,13 @@ export const ListQuery = z.object({
 export type TokenDto = z.infer<typeof TokenSchema>;
 export type CandleDto = z.infer<typeof CandleSchema>;
 export type TradeDto = z.infer<typeof TradeSchema>;
+export const PriceTickSchema = z
+  .object({
+    mint: z.string(),
+    priceUsd: z.number(),
+    marketCapUsd: z.number(),
+    time: z.number().int().openapi({ description: "Unix seconds" }),
+  })
+  .openapi("PriceTick");
+export type PriceTick = z.infer<typeof PriceTickSchema>;
 export type IntervalValue = z.infer<typeof Interval>;
