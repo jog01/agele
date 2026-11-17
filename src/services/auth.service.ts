@@ -19,9 +19,9 @@ export class PrivyAuthVerifier implements AuthVerifier {
   constructor(
     private readonly appId: string,
     verificationKey?: string,
+    jwksUrl = new URL(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`),
   ) {
-    this.key =
-      verificationKey || createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`));
+    this.key = verificationKey || createRemoteJWKSet(jwksUrl);
   }
 
   async verify(accessToken: string): Promise<AuthClaims> {

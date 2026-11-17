@@ -13,13 +13,26 @@ const getMe = createRoute({
   responses: {
     200: { content: { "application/json": { schema: MeSchema } }, description: "Current user" },
     401: errorResponse("Missing or invalid token"),
+    503: errorResponse("Authentication is not configured"),
   },
 });
 
 export const meController = new OpenAPIHono<AppEnv>().openapi(getMe, async (c) => {
   const user = await c.get("container").users.ensureUser(c.get("auth"));
   return c.json(
-    { id: user.id, privyDid: user.privyDid, walletAddress: user.walletAddress, handle: user.handle },
+    {
+      id: user.id,
+      privyDid: user.privyDid,
+      walletAddress: user.walletAddress,
+      handle: user.handle,
+      wallets: user.wallets.map(({ address, chainType, walletClientType, privyWalletId, isPrimary }) => ({
+        address,
+        chainType,
+        walletClientType,
+        privyWalletId,
+        isPrimary,
+      })),
+    },
     200,
   );
 });
