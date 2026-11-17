@@ -255,7 +255,7 @@ export class SponsorValidator {
         });
         if (keys[1] !== ata) return refuse("instruction_not_allowed");
         if (++atas > 2) return refuse("instruction_not_allowed");
-        if (pre[accounts.indexOf(keys[1]!)] === null) {
+        if (!pre[accounts.indexOf(keys[1]!)]) {
           payerFundedAtas.add(keys[1]!);
           rentPaid += keys[5] === PROGRAMS.token2022 ? await this.rpc.rent(170) : rent;
         }
