@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { logger } from "../src/lib/logger";
 import type { UserRepository, UserWithWallets } from "../src/repositories/user.repository";
 import type { LinkedWallet } from "../src/services/privy-user-directory";
 import { UserService } from "../src/services/user.service";
@@ -10,7 +11,7 @@ const embedded: LinkedWallet = {
   privyWalletId: "wallet-id",
 };
 
-function setup(linked: LinkedWallet[], fails = false) {
+function setup(linked: LinkedWallet[], fails = false, storedWallets: UserWithWallets["wallets"] = []) {
   let calls = 0;
   let user: UserWithWallets = {
     id: "user",
@@ -21,7 +22,7 @@ function setup(linked: LinkedWallet[], fails = false) {
     avatarUrl: null,
     createdAt: new Date(),
     updatedAt: new Date(),
-    wallets: [],
+    wallets: storedWallets,
   };
   const repo: UserRepository = {
     findByPrivyDid: async () => user,
@@ -77,10 +78,36 @@ describe("UserService wallet linkage", () => {
     }
   });
 
-  it("propagates directory failures rather than caching a missing wallet", async () => {
-    const { service, calls } = setup([], true);
-    await expect(service.ensureUser(claims)).rejects.toThrow("Privy unavailable");
-    await expect(service.ensureUser(claims)).rejects.toThrow("Privy unavailable");
-    expect(calls()).toBe(2);
+  it("warns and returns stored wallets on directory failure, retrying on the next request", async () => {
+    const warn = spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      for (const wallets of [
+        [],
+        [
+          {
+            ...embedded,
+            walletClientType: "phantom",
+            privyWalletId: null,
+            id: "stored",
+            userId: "user",
+            isPrimary: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      ]) {
+        const { service, calls } = setup([], true, wallets);
+        expect(await service.ensureUser(claims)).toMatchObject({ walletAddress: null, wallets });
+        expect(await service.ensureUser(claims)).toMatchObject({ walletAddress: null, wallets });
+        expect(calls()).toBe(2);
+      }
+      expect(warn).toHaveBeenCalledTimes(4);
+      expect(warn).toHaveBeenCalledWith(
+        { userId: "user" },
+        "Privy wallet lookup failed; using stored wallets",
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
