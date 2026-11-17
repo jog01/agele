@@ -2,8 +2,12 @@ import { z } from "@hono/zod-openapi";
 
 export const PortfolioSchema = z
   .object({
-    equityUsd: z.number(),
-    usdcBalance: z.number(),
+    equityUsd: z
+      .number()
+      .describe(
+        "Open position value plus linked-wallet USDC, USDT (1 USD each), and native SOL at current USD price",
+      ),
+    usdcBalance: z.number().describe("Linked-wallet USDC balance only"),
     unrealizedPnlUsd: z.number(),
     realizedPnlUsd: z.number(),
     positions: z.array(

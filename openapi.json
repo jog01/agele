@@ -288,10 +288,12 @@
         "type": "object",
         "properties": {
           "equityUsd": {
-            "type": "number"
+            "type": "number",
+            "description": "Open position value plus linked-wallet USDC, USDT (1 USD each), and native SOL at current USD price"
           },
           "usdcBalance": {
-            "type": "number"
+            "type": "number",
+            "description": "Linked-wallet USDC balance only"
           },
           "unrealizedPnlUsd": {
             "type": "number"
@@ -674,6 +676,9 @@
                       "minimum": 0
                     },
                     "transactionError": {},
+                    "type": {
+                      "type": "string"
+                    },
                     "accountData": {
                       "type": "array",
                       "items": {

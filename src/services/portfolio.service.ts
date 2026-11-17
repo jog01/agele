@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { badRequest } from "../lib/errors";
 import type { PgPortfolioRepository, TradeCursor } from "../repositories/portfolio.repository";
+import { SOL_MINT } from "./helius-parser";
 import type { MarketDataProvider } from "./market-data";
 import type { WalletBalanceProvider } from "./wallet-balance.provider";
 
@@ -32,7 +33,11 @@ export class PortfolioService {
       this.repository.getPositions(userId),
       this.repository.getWallets(userId),
     ]);
-    const usdcBalance = await this.balances.getUsdcBalance(wallets.map((wallet) => wallet.address));
+    const { usdcBalance, usdtBalance, solBalance } = await this.balances.getBalances(
+      wallets.map((wallet) => wallet.address),
+    );
+    const solPrice = solBalance > 0 ? (await this.market.getToken(SOL_MINT))?.priceUsd : 0;
+    const solValueUsd = solPrice && Number.isFinite(solPrice) && solPrice > 0 ? solBalance * solPrice : 0;
     const positions = await Promise.all(
       rows
         .filter(({ position }) => Number(position.quantity) > 0)
@@ -57,7 +62,11 @@ export class PortfolioService {
         }),
     );
     return {
-      equityUsd: usdcBalance + positions.reduce((sum, position) => sum + position.valueUsd, 0),
+      equityUsd:
+        usdcBalance +
+        usdtBalance +
+        solValueUsd +
+        positions.reduce((sum, position) => sum + position.valueUsd, 0),
       usdcBalance,
       unrealizedPnlUsd: positions.reduce((sum, position) => sum + position.unrealizedPnlUsd, 0),
       realizedPnlUsd: rows.reduce((sum, { position }) => sum + Number(position.realizedPnlUsd), 0),

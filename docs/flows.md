@@ -228,7 +228,9 @@ flowchart TD
 Zero denominators produce zero. Native SOL network fees are added back before
 classification, not subtracted again from realized PnL. SOL-quoted USD values use
 current SOL pricing; historical prices remain a TODO. Unknown current token prices
-use average cost (zero unrealized). Transfers/unknown basis are not indexed.
+or zero prices use average cost (zero unrealized). Transfers are not indexed.
+Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
+sells without indexed holdings record zero realized PnL. Transactions are not reordered.
 Stablecoin quote legs take priority over SOL; dust below 0.000000001 units is ignored.
 
 ### Portfolio reads and daily snapshots
@@ -243,8 +245,8 @@ sequenceDiagram
   C->>A: GET /v1/me/portfolio
   A->>D: ensureUser; positions + linked wallets
   A->>M: Current held-token prices
-  A->>S: getTokenAccountsByOwner (USDC, jsonParsed)
-  A-->>C: equity = USDC + open value; open positions + total PnL
+  A->>S: getTokenAccountsByOwner (USDC + USDT, jsonParsed); getBalance (native SOL)
+  A-->>C: equity = USDC + USDT + SOL * current price + open value
   C->>A: GET /v1/me/portfolio/history?range=7d|30d|all
   A->>D: Daily snapshots ascending within range
   A-->>C: UTC midnight points + final live equity point
@@ -256,5 +258,7 @@ sequenceDiagram
 
 Closed positions contribute accumulated realized PnL but are not listed. Buys
 return `realizedPnlUsd: null` in `UserTrade`. Malformed cursors return 400; missing
-auth returns 401. USDC RPC failures log and return zero. Range start is UTC midnight
+auth returns 401. RPC failures log and omit only the failed wallet/asset, retaining
+successful balances. `usdcBalance` is USDC only. Missing/zero SOL prices value
+native SOL cash at zero. Range start is UTC midnight
 7/30 days before today (inclusive), or all stored days. No synthetic history is added.

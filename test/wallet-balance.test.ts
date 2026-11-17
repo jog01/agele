@@ -1,9 +1,68 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { logger } from "../src/lib/logger";
-import { USDC_MINT } from "../src/services/helius-parser";
+import { USDC_MINT, USDT_MINT } from "../src/services/helius-parser";
 import { RpcWalletBalanceProvider } from "../src/services/wallet-balance.provider";
 
 describe("RPC wallet USDC balances", () => {
+  it("sums USDT and native SOL independently, retaining other assets on partial failure", async () => {
+    const warn = spyOn(logger, "warn").mockImplementation(() => {});
+    const requests: unknown[] = [];
+    let failAll = false;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        const body = (await request.json()) as { method: string; params: [string, { mint: string }?] };
+        requests.push(body);
+        if (failAll || (body.params[0] === "partial" && body.params[1]?.mint === USDT_MINT)) {
+          return new Response("Unavailable", { status: 503 });
+        }
+        if (body.method === "getBalance") return Response.json({ result: { value: 2000000000 } });
+        return Response.json({
+          result: {
+            value: [
+              {
+                account: {
+                  data: {
+                    parsed: {
+                      info: {
+                        tokenAmount: {
+                          amount: body.params[1]?.mint === USDT_MINT ? "3000000" : "1000000",
+                          decimals: 6,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+      },
+    });
+    try {
+      const provider = new RpcWalletBalanceProvider(server.url.toString());
+      expect(await provider.getBalances(["healthy", "partial", "healthy"])).toEqual({
+        usdcBalance: 2,
+        usdtBalance: 3,
+        solBalance: 4,
+      });
+      expect(requests).toHaveLength(6);
+      expect(requests).toContainEqual(expect.objectContaining({ method: "getBalance", params: ["healthy"] }));
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(await provider.getBalances([])).toEqual({ usdcBalance: 0, usdtBalance: 0, solBalance: 0 });
+      expect(requests).toHaveLength(6);
+      failAll = true;
+      expect(await provider.getBalances(["healthy"])).toEqual({
+        usdcBalance: 0,
+        usdtBalance: 0,
+        solBalance: 0,
+      });
+      expect(warn).toHaveBeenCalledTimes(4);
+    } finally {
+      server.stop(true);
+      warn.mockRestore();
+    }
+  });
   it("retains successful balances when another wallet RPC fails", async () => {
     const warn = spyOn(logger, "warn").mockImplementation(() => {});
     const server = Bun.serve({

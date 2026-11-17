@@ -28,7 +28,7 @@ label fixture rankings with `X-Data-Source: demo` (indexed rankings: `indexed`).
 | `HELIUS_API_KEY` | Helius management API key for `bun run helius:sync` |
 | `HELIUS_WEBHOOK_SECRET` | Exact Authorization header expected on webhook delivery; enables indexed Redis rankings when set |
 | `HELIUS_WEBHOOK_URL` | Public HTTPS callback, including `/v1/webhooks/helius`, used by sync |
-| `SOLANA_RPC_URL` | JSON-RPC endpoint for linked-wallet USDC balances |
+| `SOLANA_RPC_URL` | JSON-RPC endpoint for linked-wallet USDC, USDT and native SOL balances |
 | `DATABASE_URL` / `REDIS_URL` | PostgreSQL source of truth / rebuildable rankings and BullMQ |
 | `PRIVY_APP_ID` / `PRIVY_APP_SECRET` | Auth verification / linked Solana wallet discovery |
 
@@ -49,7 +49,9 @@ include `webhookURL`, `accountAddresses`, `transactionTypes`, `webhookType`, `au
 
 Authenticated endpoints: `GET /v1/me/portfolio`, `GET /v1/me/portfolio/history?range=7d|30d|all`,
 and `GET /v1/me/trades?limit=25&cursor=...`. Run `bun run dev:worker` for daily
-UTC equity snapshots. The API rebuilds rankings at startup and every 60 seconds,
+UTC equity snapshots. Equity includes open positions plus linked-wallet USDC,
+USDT (1 USD each), and native SOL at current SOL price; `usdcBalance` remains USDC only.
+Missing/zero SOL prices value native SOL cash at zero. The API rebuilds rankings at startup and every 60 seconds,
 and refreshes a user's rankings after each indexed trade. WS `leaderboard:global`
 sends `{window,updatedAt}` invalidations; refetch `GET /v1/leaderboard`.
 
@@ -57,7 +59,10 @@ Limitations: only one non-quote token against USDC/USDT/SOL is indexed; transfer
 and failed transactions are skipped. Native SOL fees are added back, wSOL is
 merged with SOL, and SOL legs use **current**, not historical, USD pricing.
 Unknown market prices fall back to average cost (zero unrealized PnL); configure
-the market allowlist for held tokens. RPC balance errors log and return zero.
+the market allowlist for held tokens. RPC failures log and omit only the affected
+wallet/asset; successful balances are retained.
+Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
+sells without indexed holdings record zero realized PnL. Transactions are not reordered.
 Comments remain mock. Mock leaderboard responses stay explicitly demo-labelled;
 indexed rankings never fall back to synthetic entries on Redis failure.
 

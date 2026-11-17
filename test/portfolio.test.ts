@@ -9,6 +9,7 @@ import * as schema from "../src/models";
 import { PgPortfolioRepository } from "../src/repositories/portfolio.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import { PortfolioHistorySchema, UserTradesSchema } from "../src/schemas/portfolio";
+import { SOL_MINT } from "../src/services/helius-parser";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { PortfolioService } from "../src/services/portfolio.service";
 import { TradeIndexer } from "../src/services/trade-indexer";
@@ -28,26 +29,35 @@ describe("portfolio database integration", () => {
   const userIds: string[] = [];
   const balanceRequests: string[][] = [];
   let price: number | null = 15;
+  let solPrice: number | null = 20;
+  let solBalance = 0;
+  let usdtBalance = 0;
   market.getToken = async (requested) =>
-    requested === mint && price !== null
-      ? {
-          mint,
-          symbol: "TEST",
-          name: "Test Token",
-          decimals: 6,
-          imageUrl: null,
-          priceUsd: price,
-          priceChange24hPct: 0,
-          marketCapUsd: 0,
-          liquidityUsd: 0,
-          volume24hUsd: 0,
-          holders: 0,
-        }
-      : null;
+    requested === SOL_MINT && solPrice !== null
+      ? { ...(await new MockMarketDataProvider().getToken(SOL_MINT))!, priceUsd: solPrice }
+      : requested === mint && price !== null
+        ? {
+            mint,
+            symbol: "TEST",
+            name: "Test Token",
+            decimals: 6,
+            imageUrl: null,
+            priceUsd: price,
+            priceChange24hPct: 0,
+            marketCapUsd: 0,
+            liquidityUsd: 0,
+            volume24hUsd: 0,
+            holders: 0,
+          }
+        : null;
   const balances = {
-    getUsdcBalance: async (wallets: string[]) => {
+    getBalances: async (wallets: string[]) => {
       balanceRequests.push(wallets);
-      return wallets.length ? 50 : 0;
+      return {
+        usdcBalance: wallets.length ? 50 : 0,
+        usdtBalance: wallets.length ? usdtBalance : 0,
+        solBalance: wallets.length ? solBalance : 0,
+      };
     },
   };
   const portfolio = new PortfolioService(repository, market, balances, () => FIXED_NOW);
@@ -184,6 +194,27 @@ describe("portfolio database integration", () => {
     expect(await portfolio.getHistory(unknownUser, "all")).toEqual({
       points: [{ time: FIXED_NOW / 1000, valueUsd: 0 }],
     });
+  });
+
+  it("includes USDT and native SOL cash in equity but not in usdcBalance or position PnL", async () => {
+    solBalance = 2;
+    usdtBalance = 30;
+    try {
+      expect(await (await get("portfolio")).json()).toMatchObject({
+        equityUsd: 210,
+        usdcBalance: 50,
+        unrealizedPnlUsd: 30,
+      });
+      expect((await portfolio.getHistory(userIds[0]!, "all")).points.at(-1)!.valueUsd).toBe(210);
+      for (const missing of [null, 0]) {
+        solPrice = missing;
+        expect((await portfolio.getPortfolio(userIds[0]!)).equityUsd).toBe(170);
+      }
+    } finally {
+      solBalance = 0;
+      usdtBalance = 0;
+      solPrice = 20;
+    }
   });
 
   it("filters daily history by range and appends the live equity point", async () => {
