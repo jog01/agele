@@ -170,6 +170,39 @@ sequenceDiagram
 
 Topics: `token:<mint>:trades`, `token:<mint>:price`, `leaderboard:global`; per-user alert topics are reserved. The status strip shows Live / Connecting / Reconnecting and the age of the last message; the chart never fills gaps with invented candles.
 
+## Follow and following feed
+
+```mermaid
+sequenceDiagram
+  participant W as Web
+  participant A as API
+  participant U as UserService
+  participant R as FollowRepository
+  participant S as SocialProvider (demo)
+  W->>A: PUT /v1/follows/{wallet} (Bearer token)
+  A->>A: Verify token and validate Solana address
+  A->>U: ensureUser(auth)
+  U-->>A: viewer with owned wallets
+  alt Target is an owned wallet
+    A-->>W: 400
+  else Other wallet (registered or not)
+    A->>R: follow(viewer.id, wallet), on conflict do nothing
+    A-->>W: 204
+  end
+  W->>A: GET /v1/feed?scope=following&limit=25 (Bearer token)
+  A->>U: ensureUser(verified auth)
+  A->>R: listWallets(viewer.id)
+  R-->>A: wallets (possibly empty)
+  A->>S: feed(wallets, decoded cursor, limit)
+  S-->>A: newest items + opaque nextCursor
+  A-->>W: 200 items + nextCursor (null at end)
+  W->>A: DELETE /v1/follows/{wallet} (Bearer token)
+  A->>R: unfollow(viewer.id, wallet)
+  A-->>W: 204 (even when absent)
+```
+
+Global feed is public and is the default scope; following scope without a bearer token returns 401. Optional authentication on feed and leaderboard means no header is anonymous, but a present invalid header returns 401. Invalid cursors, limits, scopes and wallet addresses return 400. Following nobody returns an empty page. Feed content is demo data until trade indexing lands. Trades include side/amountUsd, theses include body, and both use the comment position enum and Unix-second timestamps.
+
 ## PnL
 
 Positions use average cost: buys raise quantity and blend cost; sells realize `(sell price - avg cost) × qty - fees` and leave avg cost unchanged. Transfers in with unknown basis are excluded from rankings. A daily BullMQ job writes `portfolio_snapshots` for the equity chart; leaderboards rank realized PnL per window from Redis sorted sets.

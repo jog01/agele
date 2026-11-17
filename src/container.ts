@@ -1,4 +1,5 @@
 import { getDb } from "./db/client";
+import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
 import { createMarketDataProvider, type MarketDataProvider } from "./services/market-data";
@@ -16,18 +17,21 @@ export interface Container {
   users: UserService;
   privyUsers: PrivyUserDirectory;
   social: SocialService;
+  follows: FollowRepository;
 }
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
   const market = overrides.market ?? createMarketDataProvider();
   const tokens = overrides.tokens ?? new TokenService(market);
   const privyUsers = overrides.privyUsers ?? createPrivyUserDirectory();
+  const follows = overrides.follows ?? new PgFollowRepository(getDb());
   return {
     privyUsers,
     market,
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
-    social: overrides.social ?? new SocialService(new MockSocialProvider(), tokens),
+    follows,
+    social: overrides.social ?? new SocialService(new MockSocialProvider(), tokens, follows),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };
 }
