@@ -29,6 +29,11 @@ const EnvSchema = z
     SPONSOR_ENABLED: boolish.default(false),
     MAX_SLIPPAGE_BPS: z.coerce.number().int().min(0).max(10_000).default(300),
     MAX_PRICE_IMPACT_PCT: z.coerce.number().positive().default(3),
+    MAX_CU_PRICE_MICROLAMPORTS: z.coerce.number().int().nonnegative().safe().default(2_000_000),
+    MAX_LAMPORTS_PER_TX: z.coerce.number().int().positive().max(1_000_000_000).default(10_000_000),
+    DAILY_SPEND_CAP_SOL: z.coerce.number().positive().max(1000).default(1),
+    SPONSOR_REFERRAL_ACCOUNT: z.string().optional(),
+    SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
     MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("live"),
     MARKET_TOKEN_ALLOWLIST: z

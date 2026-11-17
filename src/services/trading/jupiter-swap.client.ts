@@ -19,6 +19,7 @@ export const OrderSchema = z
     signatureFeePayer: z.string().nullable().optional(),
     prioritizationFeePayer: z.string().nullable().optional(),
     rentFeePayer: z.string().nullable().optional(),
+    lastValidBlockHeight: z.string().optional(),
     transaction: z.string().nullable(),
   })
   .refine(
@@ -53,6 +54,8 @@ export interface OrderRequest {
   taker?: string;
   payer?: string;
   slippageBps?: number;
+  referralAccount?: string;
+  referralFee?: number;
 }
 export type SwapFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 

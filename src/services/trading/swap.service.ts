@@ -39,7 +39,12 @@ export class SwapService {
     private readonly jupiter: JupiterSwapClient,
     private readonly sponsor: FeeSponsor,
     private readonly swaps: SwapRepository,
-    private readonly limits = { maxSlippageBps: 300, maxPriceImpactPct: 3 },
+    private readonly limits: {
+      maxSlippageBps: number;
+      maxPriceImpactPct: number;
+      referralAccount?: string;
+      referralFee?: number;
+    } = { maxSlippageBps: 300, maxPriceImpactPct: 3 },
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -74,6 +79,9 @@ export class SwapService {
       slippageBps,
       taker: wallet,
       payer: this.sponsor.feePayer,
+      ...(this.limits.referralAccount
+        ? { referralAccount: this.limits.referralAccount, referralFee: this.limits.referralFee }
+        : {}),
     });
     if (order.inputMint !== req.inputMint) reject("input_mint_mismatch");
     if (order.outputMint !== req.outputMint) reject("output_mint_mismatch");
@@ -97,6 +105,16 @@ export class SwapService {
         wallet,
         kind: "swap",
         requestId: order.requestId,
+        swap: {
+          inputMint: order.inputMint,
+          outputMint: order.outputMint,
+          inAmount: order.inAmount,
+          otherAmountThreshold: order.otherAmountThreshold,
+          router: order.router,
+          lastValidBlockHeight: order.lastValidBlockHeight,
+          feeBps: order.feeBps,
+          referralAccount: this.limits.referralAccount,
+        },
       }),
     );
     const expiry = Math.min(expiresAt, this.now() + 30_000);
@@ -156,6 +174,7 @@ export class SwapService {
         inputAmountResult: null,
         outputAmountResult: null,
       });
+      await this.sponsor.reportOutcome?.({ userId, requestId, status: "failed" });
       throw error;
     }
     let execution: JupiterExecution;
@@ -172,6 +191,7 @@ export class SwapService {
           inputAmountResult: null,
           outputAmountResult: null,
         });
+        await this.sponsor.reportOutcome?.({ userId, requestId, status: "submitted" });
         return { status: "submitted" as const };
       }
     }
@@ -184,6 +204,7 @@ export class SwapService {
       inputAmountResult: execution.inputAmountResult ?? null,
       outputAmountResult: execution.outputAmountResult ?? null,
     });
+    await this.sponsor.reportOutcome?.({ userId, requestId, status, signature: execution.signature });
     return {
       status,
       signature: execution.signature,

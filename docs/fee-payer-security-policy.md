@@ -3,7 +3,7 @@
 Status: v0.1 policy, binding for the backend fee-payer service.
 Owner: onchain security.
 Applies to: every transaction the backend signs with the fee-payer key (gasless Jupiter Swap V2 swaps and gasless withdrawals).
-Implemented by: `FeeSponsor` (`api/src/services/sponsor/fee-sponsor.ts`), the only code that holds the fee-payer key. Callers: `SwapService` (`api/src/services/trading/swap.service.ts`) and the future withdrawal service.
+Implemented by: `ValidatedFeeSponsor` (`src/services/sponsor/validated-fee-sponsor.ts`), behind the `FeeSponsor` interface (`src/services/sponsor/fee-sponsor.ts`), the only code that holds the fee-payer key. Caller: `SwapService` (`src/services/trading/swap.service.ts`). Withdrawals remain disabled.
 
 ## 1. Threat model
 
@@ -89,7 +89,7 @@ Every top-level instruction's program id must be on the allowlist for the transa
 | SPL Token `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` | yes | yes |
 | Token-2022 `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` (§3.8) | yes | yes |
 | Associated Token Account `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL` | yes | yes |
-| Jupiter Aggregator v6 `JUP6LkbZbJDUFiAtTvYD5ZLf2CRCK9Y1Qp9jhNRtKK` | yes | no |
+| Jupiter Aggregator v6 `JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4` | yes | no |
 | JupiterZ / RFQ program(s) returned by V2 `/order` | yes, pinned by pubkey | no |
 | Memo (optional) | yes | yes |
 
@@ -155,12 +155,12 @@ The fee payer must never be the owner/authority of any token account in the tran
 
 ### 3.10 Swap safety (`SwapService`)
 These protect the user, not the fee payer, and run in `SwapService.build` on the Jupiter `/order` response before `register`:
-- The `/order` response must match the request: `inputMint`, `outputMint` and `inAmount` equal what the user asked for; `taker` equals the user's wallet and `payer` equals `FEE_PAYER`. Any mismatch: reject.
+- The `/order` response must match the request: `inputMint`, `outputMint` and `inAmount` equal what the user asked for; `taker` equals the user's wallet. V2 has no single response `payer` field: `rentFeePayer` and any `prioritizationFeePayer` equal `FEE_PAYER`; `signatureFeePayer` also equals it except on JupiterZ, where it may differ but must not be the taker. Any mismatch: reject. Transaction role checks still run independently.
 - Both mints are on the v0.1 allowlist (§3.8).
 - `slippageBps ≤ MAX_SLIPPAGE_BPS` (default 300; the client default is 50). Reject a price impact above `MAX_PRICE_IMPACT_PCT` (default 3%).
 - The review dialog shows receive, minimum receive (`otherAmountThreshold`), fees, price impact, destination mint and expiry from this same `/order` response. A new quote means a new `requestId` and a new user signature.
 - Simulation (§3.7) also checks the user side: the user's input-mint balance decreases by at most `inAmount` (plus any wSOL wrap). The output-mint balance in the user's own ATA increases by at least `otherAmountThreshold`. No other user token balance decreases.
-- `submit` accepts only a `requestId` issued to the same user, at most once. The trade row is written from the `/execute` response, idempotent on signature.
+- `submit` accepts only a `requestId` issued to the same user, at most once. The swap row is written from the `/execute` response, idempotent on signature; indexing owns subsequent trade/PnL rows.
 
 ## 4. Limits and economics (V5, V10)
 
@@ -236,6 +236,47 @@ The `FeeSponsor`/`SwapService` PRs must include unit tests that build each of th
 12. Withdrawal to a token account, mint or PDA; over the daily limit; simulated user debit ≠ `amount + fee`.
 
 Plus one positive test per kind (swap via a recorded `/order` fixture, withdrawal with and without ATA creation) that passes and is signed exactly once.
+
+## Implementation map
+
+| Policy | Implementation |
+|---|---|
+| §2 / §2.1 issued identity, owner, TTL, user Ed25519 signature, CAS, co-sign | `src/services/sponsor/validated-fee-sponsor.ts`, `issued-store.ts` (Redis and in-memory) |
+| §3.1–§3.6, §3.8 message/ALT, program and account roles, instructions, fees, signatures, lifetime, mints | `src/services/sponsor/validator.ts`, `programs.ts`, `swap-mints.ts`; injectable `sponsor-rpc.ts` |
+| §3.7 / §3.10 payer and user balance simulation | `validated-fee-sponsor.ts` (`simulate`), `sponsor-rpc.ts` |
+| §3.10 order response constraints and execution persistence | `src/services/trading/swap.service.ts`, `jupiter-swap.client.ts`, `src/repositories/swap.repository.ts`; swap rows are authoritative, later indexing owns trades/PnL |
+| §4 user quota, open records, suspension, daily spend circuit breaker / Redis kill switch | `issued-store.ts`; transaction counts and maximum fee/rent are reserved atomically at CAS, conservatively charged even if simulation/execution fails |
+| §4 minimum balance/notional and estimated fee coverage | `validated-fee-sponsor.ts` (`eligibility`), injected live market data and RPC token balances; unavailable prices fail closed |
+| §5 development key loading and pubkey equality; co-sign-only signing | `validated-fee-sponsor.ts` (`ready`, `cosign`); `src/index.ts` awaits initialization before serving; `src/config/env.ts` prohibits raw secret outside development |
+| §6 structured issue/reject/co-sign/outcome logs and low-cardinality OTel event counter | `validated-fee-sponsor.ts`, outcome callback in `swap.service.ts` |
+| §7 adversarial transaction tests | `test/fee-sponsor.test.ts`, `sponsor-store.test.ts`, `sponsor-rpc.test.ts`, existing `swap.service.test.ts` |
+
+```mermaid
+flowchart TD
+  A[Backend Jupiter order] --> B[Enabled / Redis kill switch / suspension]
+  B --> C[Decode v0 or legacy / resolve ALTs / validate policy]
+  C --> D[Eligibility / minimum USDC / live notional / fee coverage]
+  D --> E[Simulate payer and user balances]
+  E --> F[Store hash and bounds / TTL 30s / max 3 open]
+  F --> G[Client returns user-signed transaction]
+  G --> H[Owner / state / time and blockheight expiry]
+  H --> I[Same message hash / valid user Ed25519 signature]
+  I --> J[Atomic issued to signing / reserve quotas and spend]
+  J --> K[Repeat policy, eligibility and simulation]
+  K --> L[Recheck kill switch / sign required payer slot only]
+  L --> M[Internal Jupiter execute / persist swap / report outcome]
+```
+
+### Restrictions and operational gaps
+
+- The original policy's Jupiter v6 string decoded to **31 bytes**, not a Solana pubkey. The pin above is corrected to Jupiter's [`declare_id!` in the official CPI source](https://github.com/jup-ag/jupiter-cpi/blob/main/src/lib.rs); account schemas/discriminators follow its IDL.
+- Only Jupiter v6 `route` and `shared_accounts_route` account schemas are accepted. The source is checked against the user's input token account. The fee payer is not accepted in Jupiter remaining accounts: undocumented intermediate-rent slots cannot safely be inferred. Token instructions, ATA and System payer slots are explicitly checked.
+- **JupiterZ is disabled**, including its three-signature exception. The public V2 order docs describe RFQ payer behavior but do not pin a settlement program/account schema. The RFQ Order Engine address from separate RFQ docs is not assumed to be the Swap V2 settlement program. Only the documented JUP6 address is pinned; unknown programs fail closed. This is the permitted fail-closed alternative, not a claim of JupiterZ support.
+- Native-SOL output/unwrapping fails closed: the required output increase must be in the user's own ATA. Native-SOL input wrapping into an ATA is also unsupported (System transfers are limited to same-message temporary accounts); already-funded wSOL input can pass. Temporary wSOL using an extra account signer is refused by the two-signature cap. Token-2022 permits metadata-only mint extensions; all transfer/authority-affecting extensions (including zero-fee configurations) are conservatively rejected. All token accounts referenced by the message must use allowlisted mints, so some intermediate routes are rejected.
+- `lastValidBlockHeight` is required for issuing. Cosigning checks both the 30-second wall-clock expiry and current height; Redis physically expires unclaimed records at 30 seconds and retains only an ID tombstone for stable `record_expired`. Claimed records retain metadata for one day for at-most-once outcomes; neither store persists transaction bytes or keys.
+- Referral settings are sent to Jupiter builds and the response fee must cover the configured requested fee. Eligibility uses the documented 80% integrator share for estimated revenue. Realized referral receipts are **not reconciled** here. Referral project setup and separate treasury authority are operator responsibilities.
+- **Not production-ready:** the managed/KMS signer, cold-treasury top-ups, key isolation at the process boundary, periodic fee-payer balance/webhook monitoring, unknown-outgoing-transaction detection, landed-delta reconciliation/paging, reject-spike alerts and trailing-seven-day hourly anomaly breaker are not implemented. The daily reservation cap and manual kill switch are implemented. These operational systems require separate deployment/alerting/indexing integrations; do not enable production sponsorship until they exist. Raw environment secrets remain development-only.
+- Unit transactions use real Solana serialization and generated Ed25519 keypairs with deterministic fake chain state/simulation. The positive route is synthetic but follows the Jupiter v6 IDL; no funded mainnet swap or actual pool execution has been performed. Existing order mismatch tests use the recorded preview fixture.
 
 ## 8. Out of scope for v0.1 (revisit triggers)
 

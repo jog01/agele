@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { DisabledFeeSponsor } from "../src/services/sponsor/disabled-fee-sponsor";
 import { SponsorRejectedError } from "../src/services/sponsor/fee-sponsor";
 import { SWAP_MINTS_V01 } from "../src/services/sponsor/swap-mints";
@@ -9,6 +9,26 @@ import { FIXED_NOW } from "./helpers";
 import { builtOrder, PAYER, REQUEST, swapSetup, USER, WALLET } from "./swap-helpers";
 
 describe("SwapService", () => {
+  for (const status of ["confirmed", "failed", "submitted"] as const)
+    it(`reports ${status} outcomes to the sponsor`, async () => {
+      const reportOutcome = mock(async () => {});
+      const { service } = swapSetup({
+        execute: status === "failed" ? failed : undefined,
+        executeStatus: status === "failed" ? 400 : 200,
+        executeError: status === "submitted",
+        sponsor: {
+          feePayer: PAYER,
+          register: async () => ({ expiresAt: FIXED_NOW + 30_000 }),
+          cosign: async () => "Y29zaWduZWQ=",
+          reportOutcome,
+        },
+      });
+      const built = await service.build(USER, WALLET, REQUEST);
+      await service.submit(USER, built.requestId, "user-signed");
+      expect(reportOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: USER, requestId: built.requestId, status }),
+      );
+    });
   it("previews without a taker and builds/registers before cosigning and executing only cosigned bytes", async () => {
     const { service, calls, register, cosign, repo } = swapSetup();
     const quote = await service.quote(REQUEST);
@@ -38,6 +58,16 @@ describe("SwapService", () => {
       wallet: WALLET,
       kind: "swap",
       requestId: built.requestId,
+      swap: {
+        inputMint: REQUEST.inputMint,
+        outputMint: REQUEST.outputMint,
+        inAmount: REQUEST.amount,
+        otherAmountThreshold: preview.otherAmountThreshold,
+        router: preview.router,
+        lastValidBlockHeight: undefined,
+        feeBps: preview.feeBps,
+        referralAccount: undefined,
+      },
     });
     expect(cosign).not.toHaveBeenCalled();
     expect((await service.get(USER, built.requestId)).status).toBe("issued");
