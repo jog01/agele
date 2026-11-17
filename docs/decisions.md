@@ -3,7 +3,7 @@
 Short records; each says what we chose, why, and what would change it.
 
 1. **Bun + TypeScript for API, WS and jobs; no Rust in v0.1.** Workload is I/O-bound (providers, DB, fan-out). Revisit Rust for a custom indexer or if WS fan-out exceeds a single Bun process.
-2. **Two plain packages (`api/`, `web/`), no workspace tooling.** Matches the "normal package manager, not a monorepo" ask. The contract between them is `api/openapi.json`, regenerated with `bun run openapi` (api) and `bun run api:types` (web).
+2. **Two repos, each a plain single package: jog01/agele (backend) and jog01/agele-web (frontend).** Matches the "normal package manager, not a monorepo" ask and lets each deploy on its own. The contract is `openapi.json`, committed here and regenerated with `bun run openapi`; agele-web commits the generated `src/lib/api/schema.d.ts` and refreshes it with `bun run api:types` (reads `OPENAPI_URL`, default the local API).
 3. **Hono + zod-openapi.** One schema per route gives validation, types and docs. Error envelope `{ error: { code, message } }`.
 4. **Drizzle + Postgres, SQL migrations committed.** Typed queries, readable migrations, no runtime codegen.
 5. **Providers behind interfaces, chosen in `container.ts`.** Market data, social, swaps and fee sponsorship are interfaces with mock implementations, so the UI is usable without keys and onchain/security owners can land real ones independently.
