@@ -1,6 +1,7 @@
-import { AppError, notFound } from "../../lib/errors";
+import { AppError, badRequest, notFound } from "../../lib/errors";
 import type { SwapRecord } from "../../models/swaps";
 import type { SwapRepository } from "../../repositories/swap.repository";
+import { decodeCursor, encodeCursor, type FeedCursor } from "../social/cursor";
 import { DisabledFeeSponsor } from "../sponsor/disabled-fee-sponsor";
 import { type FeeSponsor, SponsorRejectedError } from "../sponsor/fee-sponsor";
 import { isSwapMintAllowed } from "../sponsor/swap-mints";
@@ -145,13 +146,45 @@ export class SwapService {
 
   async get(userId: string, requestId: string) {
     const row = await this.record(userId, requestId);
+    return this.summary(row);
+  }
+
+  private summary(row: SwapRecord) {
     return {
-      requestId,
+      requestId: row.requestId,
       status: this.status(row),
       signature: row.signature ?? undefined,
       inAmount: row.inputAmountResult ?? row.inAmount,
       outAmount: row.outputAmountResult ?? row.quotedOutAmount,
       error: row.error ?? undefined,
+    };
+  }
+
+  async list(userId: string, input: { limit: number; cursor?: string }) {
+    let cursor: FeedCursor | undefined;
+    if (input.cursor !== undefined) {
+      try {
+        cursor = decodeCursor(input.cursor);
+        if (cursor.id.length > 200 || !Number.isFinite(new Date(cursor.createdAt).getTime()))
+          throw new Error();
+      } catch {
+        throw badRequest("Invalid swaps cursor");
+      }
+    }
+    const rows = await this.swaps.list(userId, { limit: input.limit + 1, cursor });
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
+    return {
+      items: page.map((row) => ({
+        ...this.summary(row),
+        inputMint: row.inputMint,
+        outputMint: row.outputMint,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      nextCursor:
+        rows.length > input.limit && last
+          ? encodeCursor({ createdAt: last.createdAt.getTime(), id: last.requestId })
+          : null,
     };
   }
 

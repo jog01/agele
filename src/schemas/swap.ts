@@ -47,3 +47,18 @@ export const SwapStatusSchema = z.object({
   outAmount: z.string().optional(),
   error: z.string().optional(),
 });
+export const SwapListQuery = z.object({
+  cursor: z.string().min(1).max(1024).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+export const SwapListItemSchema = SwapStatusSchema.extend({
+  inputMint: mint,
+  outputMint: mint,
+  inAmount: z.string(),
+  outAmount: z.string(),
+  createdAt: z.iso.datetime().openapi({ description: "Creation time in UTC; ISO 8601" }),
+});
+export const SwapListSchema = z.object({
+  items: z.array(SwapListItemSchema),
+  nextCursor: z.string().nullable(),
+});
