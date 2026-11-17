@@ -16,7 +16,9 @@ bun run db:migrate
 bun run dev                   # :4000, API docs at /docs, WebSocket at /ws
 ```
 
-Without provider keys the API serves labelled demo fixtures. Set `PRIVY_APP_ID` / `PRIVY_VERIFICATION_KEY` to enable authenticated routes.
+Keyless Jupiter market data works by default; candles/trades need a Birdeye key.
+Set `MARKET_DATA_PROVIDER=mock` for labelled demo fixtures. Set `PRIVY_APP_ID` /
+`PRIVY_VERIFICATION_KEY` to enable authenticated routes.
 
 ## Checks
 
@@ -33,7 +35,8 @@ bun run check   # biome, tsc, bun test
 Market data defaults to `MARKET_DATA_PROVIDER=live`: Jupiter Tokens V2 metadata
 and Price V3 prices. Without `JUPITER_API_KEY`, requests use lite-api.jup.ag;
 a key selects api.jup.ag. Metadata caches for 15 seconds, prices for 5 seconds,
-with shared in-flight requests. Missing numeric metrics default to zero.
+with shared in-flight requests, metadata batches of 100 and price batches of 50.
+Missing numeric metrics default to zero. See [market-data flows](docs/flows.md#market-data).
 
 v0.1 uses `MARKET_TOKEN_ALLOWLIST` (comma-separated mints), defaulting to the eight
 mock seed tokens. Unknown mints return 404; trending sorts these tokens by 24h

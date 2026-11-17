@@ -61,7 +61,9 @@ flowchart LR
   HEL -. webhooks .-> HONO
 ```
 
-Dotted edges are provider seams; v0.1 ships deterministic mock providers behind the same interfaces, so the app runs with no API keys.
+Dotted edges are provider seams. Market data defaults to live keyless Jupiter;
+Birdeye candles/trades require a key (503 otherwise). Deterministic mock market
+data remains opt-in. See [market-data flows](flows.md#market-data).
 
 ## Backend layout (`src/`, this repo)
 
@@ -123,7 +125,7 @@ flowchart LR
   A -- "subscribe token:&lt;mint&gt;:trades" --> HUB
   A -- "subscribe token:&lt;mint&gt;:price" --> HUB
   B -- "subscribe leaderboard:global" --> HUB
-  HUB[WsHub<br/>per-topic subscriber counts<br/>drops topics at zero] --> FEED[Feed source<br/>mock today, Helius later]
+  HUB[WsHub<br/>per-topic subscriber counts<br/>drops topics at zero] --> FEED[Feed source<br/>live Jupiter price poller or mock feed]
   FEED -- publish --> HUB
   HUB -- frames --> A
   HUB -- frames --> B
@@ -133,6 +135,6 @@ Topic grammar is validated (`ws/topics.ts`); unknown or malformed topics are rej
 
 ## Ownership seams for follow-up work
 
-- **Onchain backend owner:** implement `MarketDataProvider` (Jupiter Price V3 + Birdeye), `SwapService` (Jupiter Swap V2 quote/build/submit) and a Helius webhook controller that writes `trades`/`positions`. Swap the mocks in `container.ts`.
+- **Onchain backend owner:** extend the live `MarketDataProvider` (Jupiter Tokens V2 / Price V3 + Birdeye), implement `SwapService` (Jupiter Swap V2 quote/build/submit) and a Helius webhook controller that writes `trades`/`positions`.
 - **Security owner:** implement `FeeSponsor.cosign` (program allowlist, payer-position checks, compute and lamport caps, simulation, per-user quotas, replay protection). Nothing else holds the fee-payer key.
 - **Social:** implement `SocialProvider` on Redis sorted sets (`lb:{window}`) and the `token_comments` table.
