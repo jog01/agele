@@ -1,11 +1,28 @@
 import { z } from "zod";
-import { AppError } from "../../lib/errors";
+import { AppError, notFound } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { tracer } from "../../lib/telemetry";
-import type { IntervalValue, TokenDto } from "../../schemas/token";
+import type { IntervalValue, TokenDto, TokenHoldersDto } from "../../schemas/token";
 import { INTERVAL_SECONDS, type MarketDataProvider } from "./provider";
 
 const number = z.number().finite();
+const rawAmount = z.string().regex(/^\d+$/);
+const largestAccounts = z.object({ value: z.array(z.object({ address: z.string(), amount: rawAmount })) });
+const supplyResult = z.object({
+  value: z.object({ amount: rawAmount, decimals: z.number().int().min(0).max(255) }),
+});
+const ownerAccounts = z.object({
+  value: z.array(
+    z
+      .object({
+        data: z.object({ parsed: z.object({ info: z.object({ owner: z.string() }) }) }),
+      })
+      .nullable(),
+  ),
+});
+const POOL_AUTHORITIES: Record<string, string> = {
+  "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1": "Raydium",
+};
 const metadata = z.array(
   z.object({
     id: z.string(),
@@ -67,6 +84,8 @@ interface Options {
   allowlist: string[];
   jupiterApiKey?: string;
   birdeyeApiKey?: string;
+  solanaRpcUrl?: string;
+  heliusApiKey?: string;
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   now?: () => number;
 }
@@ -191,6 +210,88 @@ export class LiveMarketDataProvider implements MarketDataProvider {
   async getToken(mint: string) {
     if (!this.mints.includes(mint)) return null;
     return (await this.tokens()).find((t) => t.mint === mint) ?? null;
+  }
+
+  private async rpc<T>(method: string, params: unknown[], schema: z.ZodType<T>): Promise<T> {
+    const url = this.options.heliusApiKey
+      ? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(this.options.heliusApiKey)}`
+      : (this.options.solanaRpcUrl ?? "https://api.mainnet-beta.solana.com");
+    const span = tracer.startSpan("market-data.rpc", { attributes: { "rpc.method": method } });
+    try {
+      const response = await (this.options.fetch ?? fetch)(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) {
+        logger.error({ method, status: response.status }, "Market data RPC rejected request");
+        throw new Error("Non-ok RPC response");
+      }
+      const envelope = z
+        .object({ result: z.unknown(), error: z.unknown().optional() })
+        .parse(await response.json());
+      if (envelope.error != null) throw new Error("RPC error");
+      return schema.parse(envelope.result);
+    } catch {
+      logger.error({ method }, "Market data RPC failed or returned invalid data");
+      throw new AppError(502, "upstream_error", "Market data upstream unavailable");
+    } finally {
+      span.end();
+    }
+  }
+
+  async getHolders(mint: string, limit: number): Promise<TokenHoldersDto> {
+    if (!this.mints.includes(mint)) throw notFound("Token");
+    const snapshot = await this.cached(`holders:${mint}`, 60000, async () => {
+      const token = await this.getToken(mint);
+      if (!token) throw notFound("Token");
+      const [largest, supply] = await Promise.all([
+        this.rpc("getTokenLargestAccounts", [mint, { commitment: "confirmed" }], largestAccounts),
+        this.rpc("getTokenSupply", [mint, { commitment: "confirmed" }], supplyResult),
+      ]);
+      const accounts = largest.value.slice(0, 20);
+      const owners = accounts.length
+        ? await this.rpc(
+            "getMultipleAccounts",
+            [accounts.map((a) => a.address), { encoding: "jsonParsed", commitment: "confirmed" }],
+            ownerAccounts,
+          )
+        : { value: [] };
+      if (owners.value.length !== accounts.length) {
+        logger.error({ method: "getMultipleAccounts" }, "Market data RPC account count mismatch");
+        throw new AppError(502, "upstream_error", "Market data upstream unavailable");
+      }
+      const balances = new Map<string, bigint>();
+      accounts.forEach((account, i) => {
+        const owner = owners.value[i]?.data.parsed.info.owner;
+        if (owner) balances.set(owner, (balances.get(owner) ?? 0n) + BigInt(account.amount));
+      });
+      const totalSupply = Number(supply.value.amount);
+      const holders = [...balances]
+        .sort((a, b) => (a[1] === b[1] ? a[0].localeCompare(b[0]) : a[1] > b[1] ? -1 : 1))
+        .map(([wallet, raw], i) => {
+          const amount = Number(raw) / 10 ** supply.value.decimals;
+          const label = POOL_AUTHORITIES[wallet];
+          return {
+            rank: i + 1,
+            wallet,
+            amount,
+            pctSupply: totalSupply ? (Number(raw) / totalSupply) * 100 : 0,
+            valueUsd: amount * token.priceUsd,
+            isPool: !!label,
+            ...(label ? { label } : {}),
+          };
+        });
+      return {
+        mint,
+        totalHolders: token.holders,
+        top10Pct: holders.slice(0, 10).reduce((sum, h) => sum + h.pctSupply, 0),
+        holders,
+        updatedAt: Math.floor(this.now() / 1000),
+      };
+    });
+    return { ...snapshot, holders: snapshot.holders.slice(0, limit) };
   }
 
   private birdeye<T>(feature: string, path: string, params: Record<string, string>, schema: z.ZodType<T>) {

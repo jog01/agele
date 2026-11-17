@@ -12,6 +12,8 @@ export function createMarketDataProvider(name = env.MARKET_DATA_PROVIDER): Marke
         allowlist: env.MARKET_TOKEN_ALLOWLIST,
         jupiterApiKey: env.JUPITER_API_KEY,
         birdeyeApiKey: env.BIRDEYE_API_KEY,
+        solanaRpcUrl: env.SOLANA_RPC_URL,
+        heliusApiKey: env.HELIUS_API_KEY,
       });
     case "mock":
       return new MockMarketDataProvider();

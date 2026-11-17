@@ -20,6 +20,7 @@ describe("Helius webhook database integration", () => {
     listTrending: (...args) => market.listTrending(...args),
     getCandles: (...args) => market.getCandles(...args),
     getRecentTrades: (...args) => market.getRecentTrades(...args),
+    getHolders: (...args) => market.getHolders(...args),
     getToken: async (mint) =>
       mint === SOL_MINT ? { ...(await market.getToken(SOL_MINT))!, priceUsd: 100 } : null,
   });

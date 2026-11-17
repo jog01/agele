@@ -153,6 +153,7 @@ export async function sponsorSetup() {
     listTrending: async () => [],
     getCandles: async () => [],
     getRecentTrades: async () => [],
+    getHolders: async (mint) => ({ mint, totalHolders: 0, top10Pct: 0, holders: [], updatedAt: 0 }),
     getToken: async (mint) => ({
       mint,
       symbol: "TOKEN",

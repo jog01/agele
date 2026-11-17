@@ -24,4 +24,9 @@ export class TokenService {
     await this.getToken(mint);
     return this.market.getRecentTrades(mint, limit);
   }
+
+  async getHolders(mint: string, limit: number) {
+    await this.getToken(mint);
+    return this.market.getHolders(mint, limit);
+  }
 }
