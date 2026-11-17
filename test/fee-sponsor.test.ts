@@ -132,6 +132,64 @@ describe("FeeSponsor policy §7", () => {
       expect(s.store.charges).toHaveLength(0);
       expect(s.rpc.simulations).toBe(0);
     });
+  it("reserves rent for every ATA create even when the account already exists", async () => {
+    for (const data of [new Uint8Array(), new Uint8Array([0]), new Uint8Array([1])]) {
+      const s = await sponsorSetup();
+      const create = ix(
+        PROGRAMS.ata,
+        [
+          meta(s.payer, AccountRole.WRITABLE_SIGNER),
+          meta(s.destination, AccountRole.WRITABLE),
+          meta(s.wallet),
+          meta(MINTS.JUP),
+          meta(PROGRAMS.system),
+          meta(PROGRAMS.token),
+        ],
+        data,
+      );
+      const encoded = s.encoded([...s.compute, create, s.route]);
+      expect((await s.validator.validate(encoded, s.context)).expectedRentLamports).toBe(2_039_280n);
+      s.rpc.state.delete(s.destination);
+      expect((await s.validator.validate(encoded, s.context)).expectedRentLamports).toBe(2_039_280n);
+    }
+  });
+  it("charges worst-case rent when an idempotently created ATA disappears after issuance", async () => {
+    const s = await sponsorSetup();
+    const prices = s.market.getToken;
+    s.market.getToken = async (mint) => {
+      const price = await prices(mint);
+      return price && { ...price, priceUsd: 1 };
+    };
+    const create = ix(
+      PROGRAMS.ata,
+      [
+        meta(s.payer, AccountRole.WRITABLE_SIGNER),
+        meta(s.destination, AccountRole.WRITABLE),
+        meta(s.wallet),
+        meta(MINTS.JUP),
+        meta(PROGRAMS.system),
+        meta(PROGRAMS.token),
+      ],
+      new Uint8Array([1]),
+    );
+    const instructions = [...s.compute, create, s.route];
+    await s.sponsor.register(s.encoded(instructions), s.context);
+    expect((await s.store.get(s.context.requestId)).expectedRentLamports).toBe("2039280");
+    s.rpc.state.delete(s.destination);
+    const mutate = s.rpc.mutate;
+    s.rpc.mutate = (accounts, addresses) => {
+      const index = addresses.indexOf(s.destination);
+      accounts[index] = token(MINTS.JUP, s.wallet, 0n);
+      accounts[addresses.indexOf(s.payer)]!.lamports -= 2_039_280n;
+      mutate(accounts, addresses);
+    };
+    await s.sponsor.cosign(await s.signUser(s.transaction(instructions)), {
+      userId: s.context.userId,
+      requestId: s.context.requestId,
+    });
+    expect(s.store.charges).toHaveLength(1);
+    expect(s.store.charges[0]!.lamports).toBe(2_049_380n);
+  });
   it("rejects fee-payer ATA rent farming followed by close to user", async () => {
     const s = await sponsorSetup();
     s.rpc.state.delete(s.destination);
