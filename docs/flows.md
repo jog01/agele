@@ -88,13 +88,78 @@ stateDiagram-v2
 
 v0.1 stops at the review dialog: demo estimates come from fixture prices and submission is disabled. The quote/submit routes are specified by `SwapService` but not exposed yet.
 
-## Realtime market data
+## Market data
+
+Live is the default; `MARKET_DATA_PROVIDER=mock` keeps offline/demo feeds.
+Caches deduplicate in-flight requests; failures/timeouts return 502, not fixtures.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API / live provider
+  participant K as In-memory cache
+  participant J as Jupiter
+  participant B as Birdeye
+  C->>A: GET /v1/tokens/{mint} or /trending
+  alt Detail mint not allowlisted
+    A-->>C: 404
+  else Allowlisted detail or curated trending
+    A->>K: Read token snapshot (5s TTL)
+    alt Cache miss
+      K->>J: Tokens V2 search (15s cache, batches <=100)
+      J-->>K: Metadata + 24h stats
+      K->>J: Price V3 (batches <=50)
+      J-->>K: USD prices
+    end
+    K-->>A: Mapped tokens
+    A-->>C: Token or volume-ranked trending list (limit)
+  end
+  C->>A: GET /v1/tokens/{mint}/candles or /trades
+  Note over A,K: Resolve token first via the same allowlist/cache path; unknown = 404
+  alt BIRDEYE_API_KEY unset
+    A-->>C: 503 service_unavailable
+  else Key configured
+    A->>K: Read candles (30s) or trades (5s)
+    alt Cache miss
+      K->>B: OHLCV V3 or token swap txs (Solana, API key)
+      B-->>K: Candles with USD volume or swap legs
+    end
+    K-->>A: Oldest-first candles / newest-first trades
+    A-->>C: Mapped DTOs
+  end
+```
+
+### Price WebSocket ticks
+
+Payload: `{mint,priceUsd,marketCapUsd,time}`; time is Unix seconds.
+
+```mermaid
+flowchart TD
+  T[5s tick in live mode] --> R{Previous tick running?}
+  R -- Yes --> S[Skip tick]
+  R -- No --> H[Read active WsHub topics]
+  H --> F[Keep token:&lt;mint&gt;:price topics<br/>with subscribers and allowlisted mints]
+  F --> N{Any eligible topics?}
+  N -- No --> S
+  N -- Yes --> G[Concurrent getToken calls<br/>shared snapshot cache and in-flight dedupe]
+  G --> K{5s token snapshot cached?}
+  K -- Yes --> P
+  K -- No --> J[Batched Jupiter Price V3<br/>refresh Tokens V2 only after 15s]
+  J -- Success --> P[Recheck topic still subscribed]
+  J -- Failure --> S
+  P --> U[Publish price tick to subscribed topics only]
+```
+
+The shared provider batches the allowlist, not one request per subscriber.
+Mock mode emits synthetic price ticks on its mock-feed timer only.
+
+### Trade WebSocket topics (mock only)
 
 ```mermaid
 sequenceDiagram
   participant W as Web
   participant H as WS hub
-  participant F as Feed (mock / Helius)
+  participant F as Feed (mock only)
   W->>H: connect /ws
   W->>H: {"op":"subscribe","topic":"token:<mint>:trades"}
   F->>H: trade

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "bun:test";
+import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { testApp } from "./helpers";
 
 describe("system routes", () => {
   it("GET /health", async () => {
     const res = await testApp().request("/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ status: "ok" });
+    expect(await res.json()).toMatchObject({ status: "ok", marketData: "mock" });
+  });
+
+  it("reports the injected live provider, without fetching market data", async () => {
+    const res = await testApp({ market: new LiveMarketDataProvider({ allowlist: [] }) }).request("/health");
+    expect(await res.json()).toMatchObject({ status: "ok", marketData: "live" });
   });
 
   it("serves the OpenAPI document", async () => {
