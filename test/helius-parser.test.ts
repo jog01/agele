@@ -1,10 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import { decimal } from "../src/lib/decimal";
 import { EnhancedTransactionSchema, parseTrades, SOL_MINT, USDC_MINT } from "../src/services/helius-parser";
-import { buy, failed, MINT, sell, transfer, WALLET } from "./fixtures/helius";
+import { buy, failed, MINT, sell, transfer, usdtBuy, WALLET } from "./fixtures/helius";
 
 describe("Helius enhanced transaction parser", () => {
   const linked = new Set([WALLET]);
+  it("parses canonical USDT-quoted buys", () => {
+    expect(parseTrades(usdtBuy, linked)).toMatchObject([
+      {
+        mint: MINT,
+        side: "buy",
+        amount: decimal("10"),
+        quoteMint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+        quoteAmount: decimal("100"),
+      },
+    ]);
+  });
   it("parses a USDC buy and preserves unknown enhanced fields", () => {
     expect(parseTrades(EnhancedTransactionSchema.parse(buy), linked)).toEqual([
       {

@@ -61,3 +61,15 @@ export const failed: EnhancedTransaction = {
   signature: "FailedFixture",
   transactionError: { error: "InstructionError" },
 };
+
+export const usdtBuy: EnhancedTransaction = {
+  ...buy,
+  signature: "EnhancedUsdtBuyFixture",
+  accountData: buy.accountData.map((account) => ({
+    ...account,
+    tokenBalanceChanges: account.tokenBalanceChanges.map((change) => ({
+      ...change,
+      mint: change.mint === USDC_MINT ? "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" : change.mint,
+    })),
+  })),
+};

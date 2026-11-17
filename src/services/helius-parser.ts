@@ -3,7 +3,7 @@ import { rawDecimal } from "../lib/decimal";
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-export const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY2Lz7jPeHBTyw2a";
+export const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 const quotes = [USDC_MINT, USDT_MINT, SOL_MINT];
 
 export const EnhancedTransactionSchema = z
