@@ -1,6 +1,6 @@
 # Architecture (v0.1)
 
-`relay` is a working name for a social trading terminal for Solana spot markets, quoted in USDC. The product name lives in one constant: `web/src/lib/config.ts` (`PRODUCT_NAME`).
+Agele is a social trading terminal for Solana spot markets, quoted in USDC. The product name lives in one constant: `web/src/lib/config.ts` (`PRODUCT_NAME`).
 
 ## Tech stack
 

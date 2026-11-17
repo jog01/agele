@@ -1,6 +1,6 @@
-# relay (working name)
+# Agele
 
-Social trading terminal for Solana spot markets. `relay` is a placeholder; the name is set in `web/src/lib/config.ts`.
+Social trading terminal for Solana spot markets. The product name is set in one place, `web/src/lib/config.ts` (`PRODUCT_NAME`); the repo is still named `fomo` until it is renamed.
 
 - `api/`: Bun + Hono REST/WebSocket API, Drizzle/Postgres, BullMQ worker
 - `web/`: Next.js 16 + shadcn/ui terminal

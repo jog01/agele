@@ -4,5 +4,5 @@ export const DEFAULT_MINT = "So11111111111111111111111111111111111111112";
 /** v0.1 runs on fixture market data; trading stays disabled until real providers are wired. */
 export const DEMO_MODE = true;
 
-/** Working name; the final brand is undecided. Change it here only. */
-export const PRODUCT_NAME = "relay";
+/** Product name; change it here only. */
+export const PRODUCT_NAME = "Agele";
