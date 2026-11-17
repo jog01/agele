@@ -144,9 +144,19 @@ export class LiveMarketDataProvider implements MarketDataProvider {
   private tokens() {
     return this.cached("tokens", 5000, async () => {
       if (!this.mints.length) return [];
-      const meta = await this.cached("metadata", 15000, () =>
-        this.jupiter("/tokens/v2/search", { query: this.mints.join(",") }, metadata),
-      );
+      const meta = await this.cached("metadata", 15000, async () => {
+        const tokens: z.infer<typeof metadata> = [];
+        for (let i = 0; i < this.mints.length; i += 100) {
+          tokens.push(
+            ...(await this.jupiter(
+              "/tokens/v2/search",
+              { query: this.mints.slice(i, i + 100).join(",") },
+              metadata,
+            )),
+          );
+        }
+        return tokens;
+      });
       const allPrices: z.infer<typeof prices> = {};
       for (let i = 0; i < this.mints.length; i += 50) {
         Object.assign(

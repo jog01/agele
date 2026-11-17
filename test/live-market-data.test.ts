@@ -79,10 +79,29 @@ describe("live market data", () => {
       jupiterApiKey: "test-key",
     });
     await market.listTrending(5);
-    expect(calls).toHaveLength(4);
-    expect(calls.slice(1).map((c) => c.url.searchParams.get("ids")!.split(",").length)).toEqual([50, 50, 1]);
+    expect(calls).toHaveLength(5);
+    expect(calls.slice(2).map((c) => c.url.searchParams.get("ids")!.split(",").length)).toEqual([50, 50, 1]);
     expect(calls[0]!.url.host).toBe("api.jup.ag");
     expect(calls[0]!.init?.headers).toEqual({ "x-api-key": "test-key" });
+  });
+
+  it("chunks metadata at 100 mints without losing tokens beyond the first batch", async () => {
+    const fixtures = Array.from({ length: 201 }, (_, i) => ({ ...tokenFixture[0]!, id: `mint${i}` }));
+    const batches: string[][] = [];
+    const { market } = setup({
+      allowlist: fixtures.map((t) => t.id),
+      fetch: async (input) => {
+        const url = new URL(input);
+        if (!url.pathname.includes("search")) return Response.json({});
+        const query = url.searchParams.get("query")!.split(",");
+        batches.push(query);
+        return Response.json(fixtures.filter((t) => query.slice(0, 100).includes(t.id)));
+      },
+    });
+    expect(await market.listTrending(201)).toHaveLength(201);
+    expect(batches.map((batch) => batch.length)).toEqual([100, 100, 1]);
+    expect((await market.getToken("mint200"))?.mint).toBe("mint200");
+    expect(batches.flat()).toEqual(fixtures.map((t) => t.id));
   });
 
   it("falls back to metadata prices when Price V3 omits a mint", async () => {
