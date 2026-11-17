@@ -49,7 +49,8 @@ include `webhookURL`, `accountAddresses`, `transactionTypes`, `webhookType`, `au
 
 Authenticated endpoints: `GET /v1/me/portfolio`, `GET /v1/me/portfolio/history?range=7d|30d|all`,
 and `GET /v1/me/trades?limit=25&cursor=...`. Run `bun run dev:worker` for daily
-UTC equity snapshots. Equity includes open positions plus linked-wallet USDC,
+UTC equity snapshots for users with positions or linked Solana wallets (including cash-only users).
+Equity includes open positions plus linked-wallet USDC,
 USDT (1 USD each), and native SOL at current SOL price; `usdcBalance` remains USDC only.
 Missing/zero SOL prices value native SOL cash at zero. The API rebuilds rankings at startup and every 60 seconds,
 and refreshes a user's rankings after each indexed trade. WS `leaderboard:global`

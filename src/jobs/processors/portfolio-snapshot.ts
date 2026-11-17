@@ -13,7 +13,7 @@ export function createPortfolioSnapshotProcessor(
 ) {
   return async (_job: Job) => {
     const day = new Date(now()).toISOString().slice(0, 10);
-    const users = await repository.usersWithPositions();
+    const users = await repository.usersForSnapshots();
     for (const { userId } of users) {
       const { equityUsd } = await portfolio.getPortfolio(userId);
       await repository.upsertSnapshot(userId, day, equityUsd.toFixed(18));

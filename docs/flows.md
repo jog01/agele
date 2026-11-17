@@ -253,7 +253,7 @@ sequenceDiagram
   C->>A: GET /v1/me/trades?limit=25&cursor=opaque
   A->>D: Keyset by executedAt DESC, id DESC
   A-->>C: UserTrade entries + nextCursor or null
-  Note over A,D: Daily worker reuses valuation and upserts (userId, UTC day)
+  Note over A,D: Daily worker includes cash-only linked wallets and upserts (userId, UTC day)
 ```
 
 Closed positions contribute accumulated realized PnL but are not listed. Buys

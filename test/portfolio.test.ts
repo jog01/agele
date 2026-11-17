@@ -288,4 +288,28 @@ describe("portfolio database integration", () => {
     expect(today).toHaveLength(1);
     expect(Number(today[0]!.valueUsd)).toBe(140);
   });
+
+  it("snapshots cash-only linked wallets with no positions", async () => {
+    const [user] = await db
+      .insert(schema.users)
+      .values({ privyDid: `did:privy:cash-${suffix}` })
+      .returning();
+    userIds.push(user!.id);
+    await db.insert(schema.wallets).values({
+      userId: user!.id,
+      address: `cash-${suffix}`,
+      chainType: "solana",
+      walletClientType: "privy",
+    });
+    expect(await repository.getPositions(user!.id)).toEqual([]);
+    const users = await repository.usersForSnapshots();
+    expect(users.filter((row) => row.userId === user!.id)).toHaveLength(1);
+    expect(users.filter((row) => row.userId === userIds[0])).toHaveLength(1);
+    const processor = createPortfolioSnapshotProcessor(repository, portfolio, () => FIXED_NOW);
+    await processor({} as Job);
+    await processor({} as Job);
+    expect(await repository.history(user!.id)).toMatchObject([
+      { day: "2026-01-01", valueUsd: "50.000000000000000000" },
+    ]);
+  });
 });

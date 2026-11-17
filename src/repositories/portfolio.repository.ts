@@ -56,8 +56,11 @@ export class PgPortfolioRepository {
       .limit(limit);
   }
 
-  usersWithPositions() {
-    return this.db.selectDistinct({ userId: positions.userId }).from(positions);
+  usersForSnapshots() {
+    return this.db
+      .select({ userId: positions.userId })
+      .from(positions)
+      .union(this.db.select({ userId: wallets.userId }).from(wallets).where(eq(wallets.chainType, "solana")));
   }
 
   async upsertSnapshot(userId: string, day: string, valueUsd: string) {
