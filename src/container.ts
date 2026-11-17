@@ -2,11 +2,17 @@ import { env } from "./config/env";
 import { getDb } from "./db/client";
 import { getRedis } from "./lib/redis";
 import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
+import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
+import { PgPortfolioRepository } from "./repositories/portfolio.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
+import { PgTradeRepository } from "./repositories/trade.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
+import { LeaderboardService } from "./services/leaderboard.service";
 import { createMarketDataProvider, type MarketDataProvider } from "./services/market-data";
+import { PortfolioService } from "./services/portfolio.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
+import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
 import { MockSocialProvider } from "./services/social/mock.provider";
 import { SocialService } from "./services/social.service";
 import { DisabledFeeSponsor } from "./services/sponsor/disabled-fee-sponsor";
@@ -15,13 +21,22 @@ import { RedisSponsorStore } from "./services/sponsor/issued-store";
 import { HttpSponsorRpc } from "./services/sponsor/sponsor-rpc";
 import { ValidatedFeeSponsor } from "./services/sponsor/validated-fee-sponsor";
 import { TokenService } from "./services/token.service";
+import { TradeIndexer } from "./services/trade-indexer";
 import { JupiterSwapClient } from "./services/trading/jupiter-swap.client";
 import { SwapService } from "./services/trading/swap.service";
 import { RedisSwapRateLimiter, type SwapRateLimiter } from "./services/trading/swap-rate-limiter";
 import { UserService } from "./services/user.service";
+import { RpcWalletBalanceProvider, type WalletBalanceProvider } from "./services/wallet-balance.provider";
+import { WsHub } from "./ws/hub";
 
 /** Composition root: wires services so controllers and tests can swap dependencies. */
 export interface Container {
+  hub: WsHub;
+  leaderboardStore: LeaderboardStore;
+  leaderboard?: LeaderboardService;
+  balances: WalletBalanceProvider;
+  portfolio: PortfolioService;
+  tradeIndexer: TradeIndexer;
   market: MarketDataProvider;
   auth: AuthVerifier;
   tokens: TokenService;
@@ -55,6 +70,17 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
           })
         : new DisabledFeeSponsor()))
     : new DisabledFeeSponsor();
+  const balances = overrides.balances ?? new RpcWalletBalanceProvider();
+  const hub = overrides.hub ?? new WsHub();
+  const leaderboardStore = overrides.leaderboardStore ?? new RedisLeaderboard();
+  const leaderboard =
+    overrides.leaderboard ??
+    (env.HELIUS_WEBHOOK_SECRET
+      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, hub)
+      : undefined);
+  const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
+  if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
+  const mockSocial = new MockSocialProvider();
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   return {
     feeSponsor,
@@ -72,12 +98,21 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
           referralFee: env.SPONSOR_REFERRAL_FEE_BPS,
         },
       ),
+    hub,
+    leaderboardStore,
+    leaderboard,
+    balances,
+    portfolio:
+      overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances),
+    tradeIndexer,
     privyUsers,
     market,
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
     follows,
-    social: overrides.social ?? new SocialService(new MockSocialProvider(), tokens, follows),
+    social:
+      overrides.social ??
+      new SocialService(mockSocial, tokens, follows, leaderboard ?? mockSocial, !leaderboard),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };
 }

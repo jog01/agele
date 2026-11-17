@@ -225,8 +225,64 @@ sequenceDiagram
   A-->>W: 204 (even when absent)
 ```
 
-Global feed is public and is the default scope; following scope without a bearer token returns 401. Optional authentication on feed and leaderboard means no header is anonymous, but a present invalid header returns 401. Invalid cursors, limits, scopes and wallet addresses return 400. Following nobody returns an empty page. Feed content is demo data until trade indexing lands. Trades include side/amountUsd, theses include body, and both use the comment position enum and Unix-second timestamps.
+Global feed is public and is the default scope; following scope without a bearer token returns 401. Optional authentication on feed and leaderboard means no header is anonymous, but a present invalid header returns 401. Invalid cursors, limits, scopes and wallet addresses return 400. Following nobody returns an empty page. Feed content remains demo data, independent of indexed leaderboard rankings. Trades include side/amountUsd, theses include body, and both use the comment position enum and Unix-second timestamps. Authenticated leaderboard entries include `isFollowing` for both indexed and demo rankings; anonymous entries omit it.
 
 ## PnL
 
-Positions use average cost: buys raise quantity and blend cost; sells realize `(sell price - avg cost) × qty - fees` and leave avg cost unchanged. Transfers in with unknown basis are excluded from rankings. A daily BullMQ job writes `portfolio_snapshots` for the equity chart; leaderboards rank realized PnL per window from Redis sorted sets.
+```mermaid
+flowchart TD
+  T[Parsed trade: amount a, USD proceeds or spend u] --> SIDE{Side}
+  SIDE -- Buy --> BUY[qty += a; cost += u]
+  SIDE -- Sell --> SELL[s = min a, qty]
+  SELL --> BASIS[basis = cost * s / qty; zero if qty is zero]
+  BASIS --> REAL[realized = u * s / a - basis]
+  REAL --> REMAIN[cost -= basis; qty -= s; accumulate realized]
+  BUY --> VAL[Open value = qty * current price]
+  REMAIN --> VAL
+  VAL --> UNREAL[Unrealized = value - cost]
+  UNREAL --> RANK[Window PnL = window realized + all open unrealized]
+  RANK --> METRICS[Volume = window quote USD sum; trades = window count]
+  METRICS --> PCT[PnL percent = PnL / window buy volume * 100]
+  PCT --> WIN[Win rate = profitable sells / sells * 100]
+  WIN --> ELIG{At least one trade in window?}
+  ELIG -- Yes --> REDIS[Rank by PnL in Redis; publish WS invalidation]
+  ELIG -- No --> REMOVE[Remove from window]
+```
+
+Zero denominators produce zero. Native SOL network fees are added back before
+classification, not subtracted again from realized PnL. SOL-quoted USD values use
+current SOL pricing; historical prices remain a TODO. Unknown current token prices
+or zero prices use average cost (zero unrealized). Transfers are not indexed.
+Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
+sells without indexed holdings record zero realized PnL. Transactions are not reordered.
+Stablecoin quote legs take priority over SOL; dust below 0.000000001 units is ignored.
+
+### Portfolio reads and daily snapshots
+
+```mermaid
+sequenceDiagram
+  participant C as Authenticated client
+  participant A as PortfolioService
+  participant D as PostgreSQL
+  participant M as MarketDataProvider
+  participant S as Solana JSON-RPC
+  C->>A: GET /v1/me/portfolio
+  A->>D: ensureUser; positions + linked wallets
+  A->>M: Current held-token prices
+  A->>S: getTokenAccountsByOwner (USDC + USDT, jsonParsed); getBalance (native SOL)
+  A-->>C: equity = USDC + USDT + SOL * current price + open value
+  C->>A: GET /v1/me/portfolio/history?range=7d|30d|all
+  A->>D: Daily snapshots ascending within range
+  A-->>C: UTC midnight points + final live equity point
+  C->>A: GET /v1/me/trades?limit=25&cursor=opaque
+  A->>D: Keyset by executedAt DESC, id DESC
+  A-->>C: UserTrade entries + nextCursor or null
+  Note over A,D: Daily worker includes cash-only linked wallets and upserts (userId, UTC day)
+```
+
+Closed positions contribute accumulated realized PnL but are not listed. Buys
+return `realizedPnlUsd: null` in `UserTrade`. Malformed cursors return 400; missing
+auth returns 401. RPC failures log and omit only the failed wallet/asset, retaining
+successful balances. `usdcBalance` is USDC only. Missing/zero SOL prices value
+native SOL cash at zero. Range start is UTC midnight
+7/30 days before today (inclusive), or all stored days. No synthetic history is added.

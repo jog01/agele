@@ -29,7 +29,8 @@ const getLeaderboard = createRoute({
           schema: z.object({ window: LeaderboardWindow, entries: z.array(LeaderboardEntrySchema) }),
         },
       },
-      description: "Top traders by realized + unrealized PnL",
+      description:
+        "Top traders by realized + unrealized PnL. X-Data-Source is demo for mock rankings, indexed otherwise.",
     },
     401: errorResponse("Invalid bearer token"),
     503: errorResponse("Authentication is not configured"),
@@ -41,7 +42,7 @@ const getFeed = createRoute({
   path: "/feed",
   tags: ["social"],
   description:
-    "Newest first with stable keyset pagination. Feed content is demo data until trade indexing lands. Following scope requires a bearer token.",
+    "Newest first with stable keyset pagination. Feed content remains demo data, independent of indexed leaderboard rankings. Following scope requires a bearer token.",
   security: optionalSecurity,
   middleware: [optionalAuth] as const,
   request: { query: FeedQuery },
@@ -95,6 +96,7 @@ export const socialController = new OpenAPIHono<AppEnv>()
   .openapi(getLeaderboard, async (c) => {
     const { window, limit } = c.req.valid("query");
     const container = c.get("container");
+    c.header("X-Data-Source", container.social.leaderboardDemo ? "demo" : "indexed");
     const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
     return c.json({ window, entries: await container.social.leaderboard(window, limit, viewer?.id) }, 200);
   })

@@ -6,7 +6,7 @@ import { closeDb } from "./db/client";
 import { logger } from "./lib/logger";
 import { closeRedis } from "./lib/redis";
 import { initTelemetry, shutdownTelemetry } from "./lib/telemetry";
-import { WsHub } from "./ws/hub";
+import { startLeaderboardFeed } from "./ws/leaderboard-feed";
 import { startMockFeed } from "./ws/mock-feed";
 import { startPriceFeed } from "./ws/price-feed";
 
@@ -15,7 +15,7 @@ initTelemetry();
 const container = createContainer();
 await container.feeSponsor.ready?.();
 const app = createApp(container);
-const hub = new WsHub();
+const hub = container.hub;
 
 app.get(
   "/ws",
@@ -39,6 +39,7 @@ app.get(
 
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch, websocket });
 hub.attach(server);
+const stopLeaderboardFeed = container.leaderboard ? startLeaderboardFeed(container.leaderboard) : undefined;
 const stopFeed = env.ENABLE_MOCK_FEED && env.MARKET_DATA_PROVIDER === "mock" ? startMockFeed(hub) : undefined;
 const stopPriceFeed =
   container.market.name === "live"
@@ -48,6 +49,7 @@ const stopPriceFeed =
 logger.info({ port: server.port, provider: container.market.name }, "api listening");
 
 async function shutdown() {
+  stopLeaderboardFeed?.();
   stopFeed?.();
   stopPriceFeed?.();
   await server.stop();

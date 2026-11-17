@@ -26,8 +26,15 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1794946384044,
-      "tag": "0003_modern_colossus",
+      "when": 1794946698819,
+      "tag": "0003_mixed_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794947400135,
+      "tag": "0004_sponsored_swaps",
       "breakpoints": true
     }
   ]

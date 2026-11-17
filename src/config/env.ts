@@ -22,6 +22,8 @@ const EnvSchema = z
 
     SOLANA_RPC_URL: z.url().default("https://api.mainnet-beta.solana.com"),
     HELIUS_API_KEY: z.string().optional(),
+    HELIUS_WEBHOOK_SECRET: z.string().optional(),
+    HELIUS_WEBHOOK_URL: z.url().optional(),
     JUPITER_API_KEY: z.string().optional(),
     JUPITER_BASE_URL: z.url().default("https://api.jup.ag"),
     FEE_PAYER_PUBKEY: z.string().optional(),

@@ -11,10 +11,12 @@ export class SocialService {
     private readonly provider: SocialProvider,
     private readonly tokens: TokenService,
     private readonly follows: FollowRepository,
+    private readonly ranks: Pick<SocialProvider, "leaderboard"> = provider,
+    readonly leaderboardDemo = true,
   ) {}
 
   async leaderboard(window: LeaderboardWindowValue, limit: number, viewerId?: string) {
-    const rows = await this.provider.leaderboard(window, limit);
+    const rows = await this.ranks.leaderboard(window, limit);
     if (!viewerId) return rows.map(({ isFollowing: _, ...row }) => row);
     const wallets = new Set(await this.follows.listWallets(viewerId));
     return rows.map((row) => ({ ...row, isFollowing: wallets.has(row.wallet) }));

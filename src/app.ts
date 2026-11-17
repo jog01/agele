@@ -29,7 +29,7 @@ export function createApp(container: Container) {
   app.use(httpInstrumentationMiddleware({ serviceName: env.OTEL_SERVICE_NAME }));
   app.use(requestId());
   app.use(secureHeaders());
-  app.use(cors({ origin: env.CORS_ORIGINS, credentials: true }));
+  app.use(cors({ origin: env.CORS_ORIGINS, credentials: true, exposeHeaders: ["X-Data-Source"] }));
   app.use(requestLogger);
   app.use(withContainer(container));
 
