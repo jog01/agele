@@ -7,7 +7,7 @@ import { useToken } from "@/lib/api/queries";
 import { ActivityPanel } from "./activity-panel";
 import { AssetSummary } from "./asset-summary";
 import { MarketExplorer } from "./market-explorer";
-import { MarketContext, OrderTicket, PositionCard } from "./order-ticket";
+import { MarketContext, OrderTicket, PositionCard, type Side } from "./order-ticket";
 import { PriceChart } from "./price-chart";
 import { TopTraders } from "./top-traders";
 
@@ -17,7 +17,7 @@ export function Terminal({ mint }: { mint: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset live price on token switch
   useEffect(() => setLivePrice(null), [mint]);
   const price = livePrice ?? token?.priceUsd ?? null;
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetSide, setSheetSide] = useState<Side | null>(null);
 
   if (isError) {
     return (
@@ -48,22 +48,22 @@ export function Terminal({ mint }: { mint: string }) {
       <div className="fixed inset-x-0 bottom-14 z-20 grid grid-cols-2 gap-2 border-t bg-sidebar p-3 md:hidden">
         <Button
           className="h-11 bg-positive text-positive-foreground hover:bg-positive/90"
-          onClick={() => setSheetOpen(true)}
+          onClick={() => setSheetSide("buy")}
         >
           Buy {token?.symbol}
         </Button>
-        <Button variant="secondary" className="h-11" onClick={() => setSheetOpen(true)}>
+        <Button variant="secondary" className="h-11" onClick={() => setSheetSide("sell")}>
           Sell {token?.symbol}
         </Button>
       </div>
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      <Sheet open={sheetSide !== null} onOpenChange={(open) => !open && setSheetSide(null)}>
         <SheetContent side="bottom" className="max-h-[90dvh] overflow-auto">
           <SheetHeader>
             <SheetTitle>Trade {token?.symbol}</SheetTitle>
             <SheetDescription>Every order is reviewed before signing.</SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-4">
-            <OrderTicket token={token} price={price} />
+            <OrderTicket key={sheetSide} token={token} price={price} initialSide={sheetSide ?? "buy"} />
           </div>
         </SheetContent>
       </Sheet>

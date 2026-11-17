@@ -32,8 +32,16 @@ function Row({ label, value, tone }: { label: string; value: string; tone?: stri
   );
 }
 
-export function OrderTicket({ token, price }: { token: Token | undefined; price: number | null }) {
-  const [side, setSide] = useState<Side>("buy");
+export function OrderTicket({
+  token,
+  price,
+  initialSide = "buy",
+}: {
+  token: Token | undefined;
+  price: number | null;
+  initialSide?: Side;
+}) {
+  const [side, setSide] = useState<Side>(initialSide);
   const [raw, setRaw] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const symbol = token?.symbol ?? "";
