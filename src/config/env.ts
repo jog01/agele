@@ -21,6 +21,8 @@ const EnvSchema = z.object({
 
   SOLANA_RPC_URL: z.url().default("https://api.mainnet-beta.solana.com"),
   HELIUS_API_KEY: z.string().optional(),
+  HELIUS_WEBHOOK_SECRET: z.string().optional(),
+  HELIUS_WEBHOOK_URL: z.url().optional(),
   JUPITER_API_KEY: z.string().optional(),
   BIRDEYE_API_KEY: z.string().optional(),
   MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("live"),

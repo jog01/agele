@@ -1,0 +1,94 @@
+import { and, eq, inArray } from "drizzle-orm";
+import type { Db } from "../db/client";
+import { decimal, divide, formatDecimal } from "../lib/decimal";
+import { positions, type Trade, tokens, trades, users, wallets } from "../models";
+import type { ParsedTrade } from "../services/helius-parser";
+
+export interface IndexedTrade extends ParsedTrade {
+  userId: string;
+  usd: bigint;
+  symbol: string;
+  name: string;
+  imageUrl: string | null;
+}
+
+export interface TradeRepository {
+  linkedWallets(addresses: string[]): Promise<{ address: string; userId: string }[]>;
+  record(trade: IndexedTrade): Promise<Trade | null>;
+}
+
+export class PgTradeRepository implements TradeRepository {
+  constructor(private readonly db: Db) {}
+
+  async linkedWallets(addresses: string[]) {
+    if (!addresses.length) return [];
+    return this.db
+      .select({ address: wallets.address, userId: wallets.userId })
+      .from(wallets)
+      .where(and(inArray(wallets.address, addresses), eq(wallets.chainType, "solana")));
+  }
+
+  async record(trade: IndexedTrade): Promise<Trade | null> {
+    return this.db.transaction(async (tx) => {
+      // Serialize a user's position updates, including the first insert.
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, trade.userId)).for("update");
+      await tx
+        .insert(tokens)
+        .values({
+          mint: trade.mint,
+          symbol: trade.symbol,
+          name: trade.name,
+          decimals: trade.decimals,
+          imageUrl: trade.imageUrl,
+        })
+        .onConflictDoNothing();
+      const [inserted] = await tx
+        .insert(trades)
+        .values({
+          userId: trade.userId,
+          mint: trade.mint,
+          side: trade.side,
+          tokenAmount: formatDecimal(trade.amount),
+          quoteAmountUsd: formatDecimal(trade.usd),
+          priceUsd: formatDecimal(divide(trade.usd, trade.amount)),
+          signature: trade.signature,
+          executedAt: new Date(trade.timestamp * 1000),
+        })
+        .onConflictDoNothing({ target: [trades.signature, trades.userId] })
+        .returning();
+      if (!inserted) return null;
+      const predicate = and(eq(positions.userId, trade.userId), eq(positions.mint, trade.mint));
+      const [position] = await tx.select().from(positions).where(predicate);
+      let quantity = decimal(position?.quantity ?? "0");
+      let cost = decimal(position?.costBasisUsd ?? "0");
+      let realized = 0n;
+      if (trade.side === "buy") {
+        quantity += trade.amount;
+        cost += trade.usd;
+      } else {
+        let sold = trade.amount;
+        if (sold > quantity) sold = quantity;
+        const basis = quantity ? (cost * sold) / quantity : 0n;
+        realized = (trade.usd * sold) / trade.amount - basis;
+        quantity -= sold;
+        cost -= basis;
+      }
+      const values = {
+        quantity: formatDecimal(quantity),
+        costBasisUsd: formatDecimal(cost),
+        realizedPnlUsd: formatDecimal(decimal(position?.realizedPnlUsd ?? "0") + realized),
+        updatedAt: new Date(),
+      };
+      await tx
+        .insert(positions)
+        .values({ userId: trade.userId, mint: trade.mint, ...values })
+        .onConflictDoUpdate({ target: [positions.userId, positions.mint], set: values });
+      const [updated] = await tx
+        .update(trades)
+        .set({ realizedPnlUsd: formatDecimal(realized) })
+        .where(eq(trades.id, inserted.id))
+        .returning();
+      return updated!;
+    });
+  }
+}

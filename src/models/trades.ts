@@ -1,4 +1,4 @@
-import { index, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, numeric, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { tokens } from "./tokens";
 import { users } from "./users";
 
@@ -20,11 +20,12 @@ export const trades = pgTable(
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),
     priceUsd: numeric({ precision: 38, scale: 18 }).notNull(),
     realizedPnlUsd: numeric({ precision: 38, scale: 18 }),
-    signature: text().notNull().unique(),
+    signature: text().notNull(),
     executedAt: timestamp({ withTimezone: true }).notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    unique("trades_signature_user_id_unique").on(t.signature, t.userId),
     index("trades_user_executed_idx").on(t.userId, t.executedAt),
     index("trades_mint_executed_idx").on(t.mint, t.executedAt),
   ],
