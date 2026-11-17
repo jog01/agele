@@ -89,6 +89,67 @@
           "error"
         ]
       },
+      "TokenHolders": {
+        "type": "object",
+        "properties": {
+          "mint": {
+            "type": "string"
+          },
+          "totalHolders": {
+            "type": "integer"
+          },
+          "top10Pct": {
+            "type": "number"
+          },
+          "holders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rank": {
+                  "type": "integer"
+                },
+                "wallet": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "number"
+                },
+                "pctSupply": {
+                  "type": "number"
+                },
+                "valueUsd": {
+                  "type": "number"
+                },
+                "isPool": {
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rank",
+                "wallet",
+                "amount",
+                "pctSupply",
+                "valueUsd"
+              ]
+            }
+          },
+          "updatedAt": {
+            "type": "integer",
+            "description": "Snapshot time, Unix seconds"
+          }
+        },
+        "required": [
+          "mint",
+          "totalHolders",
+          "top10Pct",
+          "holders",
+          "updatedAt"
+        ]
+      },
       "Token": {
         "type": "object",
         "properties": {
@@ -882,6 +943,69 @@
           },
           "503": {
             "description": "Webhook or SOL pricing unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/holders": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Largest token accounts merged by owner wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenHolders"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Market data upstream unavailable",
             "content": {
               "application/json": {
                 "schema": {

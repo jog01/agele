@@ -42,6 +42,37 @@ export const TradeSchema = z
 
 export const Interval = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
 
+export const TokenHoldersSchema = z
+  .object({
+    mint: z.string(),
+    totalHolders: z.number().int(),
+    top10Pct: z.number(),
+    holders: z.array(
+      z.object({
+        rank: z.number().int(),
+        wallet: z.string(),
+        amount: z.number(),
+        pctSupply: z.number(),
+        valueUsd: z.number(),
+        isPool: z.boolean().optional(),
+        label: z.string().optional(),
+      }),
+    ),
+    updatedAt: z.number().int().openapi({ description: "Snapshot time, Unix seconds" }),
+  })
+  .openapi("TokenHolders");
+export type TokenHoldersDto = z.infer<typeof TokenHoldersSchema>;
+
+export const HoldersQuery = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(20)
+    .openapi({ param: { name: "limit", in: "query" } }),
+});
+
 export const CandlesQuery = z.object({
   interval: Interval.default("5m").openapi({ param: { name: "interval", in: "query" } }),
   limit: z.coerce

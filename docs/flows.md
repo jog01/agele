@@ -154,6 +154,36 @@ sequenceDiagram
   end
 ```
 
+### Token holders
+
+Amounts are numbers (like trades); `updatedAt` is Unix seconds. Rankings and
+top-10 concentration cover only the largest 20 token accounts, merged by owner,
+not every account held by those wallets. Known pool authorities are labelled
+(currently Raydium AMM v4); unrecognized owners have `isPool=false`, no label.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API / live provider
+  participant K as Holders cache (60s, in-flight dedupe)
+  participant J as Jupiter token cache
+  participant R as Solana RPC (Helius when keyed)
+  C->>A: GET /v1/tokens/{mint}/holders?limit=20
+  A->>A: Validate limit 1..20; unknown/non-allowlisted mint = 404
+  A->>K: Read full snapshot
+  alt Cache miss
+    K->>J: holderCount + current USD price
+    K->>R: getTokenLargestAccounts + getTokenSupply
+    R-->>K: Top 20 account balances + raw supply/decimals
+    K->>R: getMultipleAccounts (jsonParsed)
+    R-->>K: Owner wallet for each token account
+    K->>K: Merge owners, sort/rank, label known pools, calculate pct/value and top10Pct
+  end
+  K-->>A: Snapshot
+  A-->>C: Slice holders to limit; preserve full top10Pct
+  Note over A,R: RPC HTTP/JSON-RPC errors or 8s timeouts = 502; never log RPC URL/key
+```
+
 ### Price WebSocket ticks
 
 Payload: `{mint,priceUsd,marketCapUsd,time}`; time is Unix seconds.

@@ -1,6 +1,14 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { errorResponse, MintParam } from "../schemas/common";
-import { CandleSchema, CandlesQuery, ListQuery, TokenSchema, TradeSchema } from "../schemas/token";
+import {
+  CandleSchema,
+  CandlesQuery,
+  HoldersQuery,
+  ListQuery,
+  TokenHoldersSchema,
+  TokenSchema,
+  TradeSchema,
+} from "../schemas/token";
 import type { AppEnv } from "../types";
 
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -46,7 +54,24 @@ const getTrades = createRoute({
   },
 });
 
+const getHolders = createRoute({
+  method: "get",
+  path: "/tokens/{mint}/holders",
+  tags: ["tokens"],
+  request: { params: MintParam, query: HoldersQuery },
+  responses: {
+    200: json(TokenHoldersSchema, "Largest token accounts merged by owner wallet"),
+    404: errorResponse("Unknown token"),
+    502: errorResponse("Market data upstream unavailable"),
+  },
+});
+
 export const tokensController = new OpenAPIHono<AppEnv>()
+  .openapi(getHolders, async (c) => {
+    const { mint } = c.req.valid("param");
+    const { limit } = c.req.valid("query");
+    return c.json(await c.get("container").tokens.getHolders(mint, limit), 200);
+  })
   .openapi(listTrending, async (c) => {
     const { limit } = c.req.valid("query");
     return c.json({ tokens: await c.get("container").tokens.listTrending(limit) }, 200);

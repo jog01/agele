@@ -1,4 +1,4 @@
-import type { CandleDto, IntervalValue, TokenDto, TradeDto } from "../../schemas/token";
+import type { CandleDto, IntervalValue, TokenDto, TokenHoldersDto, TradeDto } from "../../schemas/token";
 
 /**
  * Source of market data (token stats, candles, trades). The mock implementation
@@ -10,6 +10,7 @@ export interface MarketDataProvider {
   getToken(mint: string): Promise<TokenDto | null>;
   getCandles(mint: string, interval: IntervalValue, limit: number): Promise<CandleDto[]>;
   getRecentTrades(mint: string, limit: number): Promise<TradeDto[]>;
+  getHolders(mint: string, limit: number): Promise<TokenHoldersDto>;
 }
 
 export const INTERVAL_SECONDS: Record<IntervalValue, number> = {

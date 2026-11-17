@@ -1,5 +1,6 @@
+import { notFound } from "../../lib/errors";
 import { hash, mulberry32 } from "../../lib/prng";
-import type { CandleDto, IntervalValue, TokenDto, TradeDto } from "../../schemas/token";
+import type { CandleDto, IntervalValue, TokenDto, TokenHoldersDto, TradeDto } from "../../schemas/token";
 import { INTERVAL_SECONDS, type MarketDataProvider } from "./provider";
 
 type Seed = Pick<TokenDto, "mint" | "symbol" | "name" | "decimals"> & {
@@ -137,6 +138,35 @@ export class MockMarketDataProvider implements MarketDataProvider {
   }
 
   static readonly mints = SEEDS.map((s) => s.mint);
+
+  async getHolders(mint: string, limit: number): Promise<TokenHoldersDto> {
+    const seed = SEEDS.find((s) => s.mint === mint);
+    if (!seed) throw notFound("Token");
+    const token = this.toToken(seed);
+    const rand = mulberry32(hash(`${mint}:holders`));
+    const holders = Array.from({ length: 20 }, (_, i) => {
+      const pctSupply = 8 / (i + 1);
+      const amount = (seed.supply * pctSupply) / 100;
+      return {
+        rank: i + 1,
+        wallet: Array.from(
+          { length: 44 },
+          () => TRADER_ALPHABET[Math.floor(rand() * TRADER_ALPHABET.length)],
+        ).join(""),
+        amount,
+        pctSupply,
+        valueUsd: amount * token.priceUsd,
+        isPool: false,
+      };
+    });
+    return {
+      mint,
+      totalHolders: token.holders,
+      top10Pct: holders.slice(0, 10).reduce((sum, h) => sum + h.pctSupply, 0),
+      holders: holders.slice(0, limit),
+      updatedAt: Math.floor(this.now() / 1000),
+    };
+  }
 
   private priceAt(s: Seed, time: number) {
     // Smooth pseudo-random walk: sum of a few sines keyed by the mint.
