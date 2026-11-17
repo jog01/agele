@@ -65,6 +65,23 @@ Dotted edges are provider seams; v0.1 ships deterministic mock providers behind 
 
 ## Backend layout (`src/`, this repo)
 
+```mermaid
+flowchart TB
+  REQ[HTTP request] --> MW[middlewares<br/>request-logger, container, auth, error-handler]
+  MW --> C[controllers<br/>zod-openapi routes]
+  C --> S[services<br/>business rules]
+  S --> R[repositories<br/>Drizzle queries]
+  S --> P[providers<br/>MarketDataProvider, SocialProvider,<br/>SwapService, FeeSponsor]
+  R --> DB[(Postgres)]
+  P -.-> EXT[Jupiter / Birdeye / Helius / Privy]
+  S --> RD[(Redis)]
+  WK[worker.ts<br/>BullMQ processors] --> S
+  WS[ws/hub.ts<br/>topic fan-out] --> S
+  CT[container.ts<br/>composition root] -. wires .-> S
+  CT -. picks .-> P
+```
+
+
 | Folder          | Role                                                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `config/`       | Zod-validated env (`env.ts`); the process fails fast on bad config                                                                   |
@@ -94,6 +111,25 @@ Tests in `test/` build the app from `createApp(container)` with fakes, so routes
 | `stores/`              | Zustand: terminal prefs (persisted), realtime status                                 |
 
 Desktop terminal is `264px explorer | flexible chart | 320px order rail`; below `md` it becomes one column with bottom navigation and a Buy/Sell bar that opens the order ticket in a sheet.
+
+## WebSocket topics
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    A[Terminal tab]
+    B[Leaderboard tab]
+  end
+  A -- "subscribe token:&lt;mint&gt;:trades" --> HUB
+  A -- "subscribe token:&lt;mint&gt;:price" --> HUB
+  B -- "subscribe leaderboard:global" --> HUB
+  HUB[WsHub<br/>per-topic subscriber counts<br/>drops topics at zero] --> FEED[Feed source<br/>mock today, Helius later]
+  FEED -- publish --> HUB
+  HUB -- frames --> A
+  HUB -- frames --> B
+```
+
+Topic grammar is validated (`ws/topics.ts`); unknown or malformed topics are rejected, and the feed only publishes to topics with at least one subscriber.
 
 ## Ownership seams for follow-up work
 
