@@ -151,6 +151,7 @@ export function PriceChart({
       candleSeries.current.update(toBar(next));
       volumeSeries.current.update(toVol(next));
       last.current = next;
+      setLegend(next);
     },
     [interval, onLivePrice],
   );
