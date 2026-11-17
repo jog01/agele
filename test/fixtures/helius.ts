@@ -62,6 +62,21 @@ export const failed: EnhancedTransaction = {
   transactionError: { error: "InstructionError" },
 };
 
+export const rentRefundTransfer: EnhancedTransaction = {
+  ...transfer,
+  signature: "TransferWithClosedTokenAccountFixture",
+  accountData: [
+    { account: WALLET, nativeBalanceChange: 2039280 - 5000, tokenBalanceChanges: [] },
+    {
+      account: "ClosedTokenAccount",
+      nativeBalanceChange: -2039280,
+      tokenBalanceChanges: [
+        { userAccount: WALLET, mint: MINT, rawTokenAmount: { tokenAmount: "-10000000", decimals: 6 } },
+      ],
+    },
+  ],
+};
+
 export const usdtBuy: EnhancedTransaction = {
   ...buy,
   signature: "EnhancedUsdtBuyFixture",

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { decimal } from "../src/lib/decimal";
 import { EnhancedTransactionSchema, parseTrades, SOL_MINT, USDC_MINT } from "../src/services/helius-parser";
-import { buy, failed, MINT, sell, transfer, usdtBuy, WALLET } from "./fixtures/helius";
+import { buy, failed, MINT, rentRefundTransfer, sell, transfer, usdtBuy, WALLET } from "./fixtures/helius";
 
 describe("Helius enhanced transaction parser", () => {
   const linked = new Set([WALLET]);
+  it("does not treat token-account rent refunds on transfers as sale proceeds", () => {
+    expect(parseTrades(EnhancedTransactionSchema.parse(rentRefundTransfer), linked)).toEqual([]);
+    expect(parseTrades({ ...buy, type: "TRANSFER" }, linked)).toEqual([]);
+  });
   it("parses canonical USDT-quoted buys", () => {
     expect(parseTrades(usdtBuy, linked)).toMatchObject([
       {

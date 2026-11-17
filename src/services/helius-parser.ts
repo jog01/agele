@@ -13,6 +13,7 @@ export const EnhancedTransactionSchema = z
     feePayer: z.string(),
     fee: z.number().int().nonnegative(),
     transactionError: z.unknown().optional(),
+    type: z.string().optional(),
     accountData: z.array(
       z
         .object({
@@ -55,7 +56,7 @@ export interface ParsedTrade {
 
 /** Ignores legs below 0.000000001 units; amounts use 18 fixed decimal places. */
 export function parseTrades(tx: EnhancedTransaction, linkedWallets: ReadonlySet<string>): ParsedTrade[] {
-  if (tx.transactionError != null) return [];
+  if (tx.transactionError != null || tx.type === "TRANSFER") return [];
   const result: ParsedTrade[] = [];
   for (const wallet of linkedWallets) {
     const deltas = new Map<string, bigint>();
