@@ -55,6 +55,9 @@ export function TopBar({ section, onSearch }: { section?: NavSection; onSearch?:
         <kbd className="ml-auto rounded border px-1.5 font-mono text-[11px]">⌘K</kbd>
       </button>
       <div className="ml-auto flex items-center gap-2 md:ml-0">
+        <Button variant="ghost" size="icon" className="md:hidden" onClick={onSearch} aria-label="Search markets">
+          <Search className="size-4" />
+        </Button>
         {DEMO_MODE && <DemoBadge />}
         {auth.authenticated ? (
           <>
