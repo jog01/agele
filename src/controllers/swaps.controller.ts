@@ -10,6 +10,8 @@ import {
   QuoteSchema,
   SubmitSwapRequest,
   SwapIdParam,
+  SwapListQuery,
+  SwapListSchema,
   SwapRequest,
   SwapResultSchema,
   SwapStatusSchema,
@@ -45,6 +47,24 @@ async function limit(c: Context<AppEnv>, userId?: string) {
 }
 
 export const swapsController = new OpenAPIHono<AppEnv>()
+  .openapi(
+    createRoute({
+      ...secured,
+      method: "get",
+      path: "/swaps",
+      request: { query: SwapListQuery },
+      responses: {
+        200: json(SwapListSchema, "Owned swaps, newest first; pass nextCursor unchanged for the next page"),
+        400: errorResponse("Invalid pagination parameters"),
+        401: errorResponse("Missing or invalid token"),
+      },
+    }),
+    async (c) => {
+      const container = c.get("container");
+      const user = await container.users.ensureUser(c.get("auth"));
+      return c.json(await container.swaps.list(user.id, c.req.valid("query")), 200);
+    },
+  )
   .openapi(
     createRoute({
       method: "get",

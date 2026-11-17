@@ -1,7 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
+import { SwapListSchema } from "../src/schemas/swap";
+import { decodeCursor, encodeCursor } from "../src/services/social/cursor";
 import { SponsorRejectedError } from "../src/services/sponsor/fee-sponsor";
 import type { UserService } from "../src/services/user.service";
-import { testApp } from "./helpers";
+import { FIXED_NOW, testApp } from "./helpers";
 import { PAYER, REQUEST, swapSetup, USER, WALLET } from "./swap-helpers";
 
 function setup(linked = true, swaps = swapSetup().service) {
@@ -25,6 +27,87 @@ const headers = { authorization: "Bearer good", "content-type": "application/jso
 const post = (body: unknown) => ({ method: "POST", headers, body: JSON.stringify(body) });
 
 describe("swap HTTP routes", () => {
+  it("lists owner-bound history with stable ordering, opaque pagination and status-compatible amounts", async () => {
+    const fake = swapSetup();
+    const built = await fake.service.build(USER, WALLET, REQUEST);
+    const seed = fake.repo.records.get(built.requestId)!;
+    fake.repo.records.clear();
+    for (const [id, userId, createdAt] of [
+      ["a", USER, FIXED_NOW],
+      ["b", USER, FIXED_NOW],
+      ["c", USER, FIXED_NOW + 1000],
+      ["private", "other", FIXED_NOW + 2000],
+    ] as const)
+      fake.repo.records.set(id, { ...seed, requestId: id, userId, createdAt: new Date(createdAt) });
+    Object.assign(fake.repo.records.get("c")!, {
+      status: "confirmed",
+      signature: "signature-c",
+      inputAmountResult: "9999999",
+      outputAmountResult: "40000000",
+    });
+    fake.setNow(FIXED_NOW + 30_000);
+    const { app } = setup(false, fake.service);
+    const response = await app.request("/v1/swaps?limit=2", { headers });
+    expect(response.status).toBe(200);
+    const page = SwapListSchema.parse(await response.json());
+    expect(page.items.map((r: { requestId: string }) => r.requestId)).toEqual(["c", "b"]);
+    expect(page.items[0]).toEqual({
+      requestId: "c",
+      status: "confirmed",
+      signature: "signature-c",
+      inAmount: "9999999",
+      outAmount: "40000000",
+      inputMint: REQUEST.inputMint,
+      outputMint: REQUEST.outputMint,
+      createdAt: new Date(FIXED_NOW + 1000).toISOString(),
+    });
+    expect(page.items[1]!.status).toBe("expired");
+    expect(decodeCursor(page.nextCursor!)).toEqual({ createdAt: FIXED_NOW, id: "b" });
+    const next = await app.request(`/v1/swaps?limit=2&cursor=${page.nextCursor}`, { headers });
+    expect(await next.json()).toMatchObject({ items: [{ requestId: "a" }], nextCursor: null });
+    const end = await app.request(`/v1/swaps?cursor=${encodeCursor({ createdAt: FIXED_NOW, id: "a" })}`, {
+      headers,
+    });
+    expect(await end.json()).toEqual({ items: [], nextCursor: null });
+    const foreign = await app.request(
+      `/v1/swaps?cursor=${encodeCursor({ createdAt: FIXED_NOW + 2000, id: "private" })}`,
+      { headers },
+    );
+    expect(SwapListSchema.parse(await foreign.json()).items.map((r) => r.requestId)).toEqual(["c", "b", "a"]);
+  });
+  it("defaults to 25 history rows, accepts 100, handles empty history and rejects bad pagination", async () => {
+    const fake = swapSetup();
+    const { app } = setup(true, fake.service);
+    expect(await (await app.request("/v1/swaps", { headers })).json()).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    const { requestId } = await fake.service.build(USER, WALLET, REQUEST);
+    const seed = fake.repo.records.get(requestId)!;
+    fake.repo.records.clear();
+    for (let n = 0; n < 26; n++) {
+      const id = `request-${n.toString().padStart(2, "0")}`;
+      fake.repo.records.set(id, { ...seed, requestId: id });
+    }
+    const page = SwapListSchema.parse(await (await app.request("/v1/swaps", { headers })).json());
+    expect(page.items).toHaveLength(25);
+    expect(page.nextCursor).toBeString();
+    const all = SwapListSchema.parse(await (await app.request("/v1/swaps?limit=100", { headers })).json());
+    expect(all.items).toHaveLength(26);
+    expect(all.nextCursor).toBeNull();
+    for (const query of [
+      "limit=0",
+      "limit=101",
+      "limit=1.5",
+      "limit=no",
+      "cursor=",
+      "cursor=bad",
+      `cursor=${Buffer.from(JSON.stringify({ createdAt: -1, id: "x" })).toString("base64url")}`,
+      `cursor=${encodeCursor({ createdAt: Number.MAX_SAFE_INTEGER, id: "x" })}`,
+      `cursor=${encodeCursor({ createdAt: FIXED_NOW, id: "x".repeat(201) })}`,
+    ])
+      expect((await app.request(`/v1/swaps?${query}`, { headers })).status).toBe(400);
+  });
   it("previews publicly and exposes authenticated build, submit and status contracts", async () => {
     const { app, consume } = setup();
     const quote = await app.request(`/v1/swaps/quote?${new URLSearchParams(REQUEST)}`);
@@ -64,6 +147,7 @@ describe("swap HTTP routes", () => {
   });
 
   for (const [path, method] of [
+    ["/v1/swaps", "GET"],
     ["/v1/swaps", "POST"],
     ["/v1/swaps/request/submit", "POST"],
     ["/v1/swaps/request", "GET"],

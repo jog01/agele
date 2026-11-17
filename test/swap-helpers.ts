@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
 import type { NewSwapRecord, SwapRecord } from "../src/models/swaps";
-import type { SwapOutcome, SwapRepository } from "../src/repositories/swap.repository";
+import type { SwapListOptions, SwapOutcome, SwapRepository } from "../src/repositories/swap.repository";
 import type { FeeSponsor } from "../src/services/sponsor/fee-sponsor";
 import { SWAP_MINTS_V01 } from "../src/services/sponsor/swap-mints";
 import { JupiterSwapClient, type SwapFetch } from "../src/services/trading/jupiter-swap.client";
@@ -45,6 +45,22 @@ export class MemorySwapRepository implements SwapRepository {
   async find(userId: string, requestId: string) {
     const record = this.records.get(requestId);
     return record?.userId === userId ? record : undefined;
+  }
+  async list(userId: string, { limit, cursor }: SwapListOptions) {
+    return [...this.records.values()]
+      .filter(
+        (row) =>
+          row.userId === userId &&
+          (!cursor ||
+            row.createdAt.getTime() < cursor.createdAt ||
+            (row.createdAt.getTime() === cursor.createdAt && row.requestId < cursor.id)),
+      )
+      .sort(
+        (a, b) =>
+          b.createdAt.getTime() - a.createdAt.getTime() ||
+          (a.requestId < b.requestId ? 1 : a.requestId > b.requestId ? -1 : 0),
+      )
+      .slice(0, limit);
   }
   async claim(userId: string, requestId: string, now: Date) {
     const record = await this.find(userId, requestId);
