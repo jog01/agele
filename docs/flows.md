@@ -12,9 +12,31 @@ sequenceDiagram
   W->>P: Auth
   P-->>W: Access token + embedded Solana wallet
   W->>A: GET /v1/me (Bearer token)
-  A->>A: verifyAccessToken (Privy verification key)
-  A->>A: Upsert user by Privy DID + wallet
-  A-->>W: Profile
+  alt No PRIVY_APP_ID
+    A-->>W: 503 auth_not_configured
+  else Auth configured
+    A->>A: verifyAccessToken (pinned key or JWKS)
+    alt Invalid or expired token
+      A-->>W: 401
+    else Valid token
+      A->>A: Upsert user by Privy DID
+      opt walletAddress is null
+        alt No PRIVY_APP_SECRET
+          Note over A: Wallet linkage disabled; use stored wallets
+        else Linkage enabled
+          A->>P: Privy API users()._get(did)
+          alt Privy lookup succeeds
+            P-->>A: Linked accounts
+            A->>A: Upsert Solana wallets; skip addresses owned by others
+            A->>A: Set first stored embedded wallet as primary + walletAddress
+          else Privy lookup fails
+            Note over A: Warn; use stored wallets, walletAddress stays null
+          end
+        end
+      end
+      A-->>W: Profile + stored wallets
+    end
+  end
 ```
 
 Signed-out users can browse every market; sign-in only gates trading, posting and following. Without `NEXT_PUBLIC_PRIVY_APP_ID` the web app runs in demo mode with sign-in disabled.

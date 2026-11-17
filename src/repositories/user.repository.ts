@@ -1,14 +1,66 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { type NewUser, type User, users } from "../models";
+import { logger } from "../lib/logger";
+import { type NewUser, type User, users, type Wallet, wallets } from "../models";
+import type { LinkedWallet } from "../services/privy-user-directory";
+
+export type UserWithWallets = User & { wallets: Wallet[] };
 
 export interface UserRepository {
   findByPrivyDid(privyDid: string): Promise<User | undefined>;
   upsertByPrivyDid(input: NewUser): Promise<User>;
+  getWithWallets(userId: string): Promise<UserWithWallets>;
+  linkWallets(userId: string, linked: LinkedWallet[]): Promise<UserWithWallets>;
 }
 
 export class PgUserRepository implements UserRepository {
   constructor(private readonly db: Db) {}
+
+  async getWithWallets(userId: string): Promise<UserWithWallets> {
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId));
+    if (!user) throw new Error("User not found");
+    return { ...user, wallets: await this.db.select().from(wallets).where(eq(wallets.userId, userId)) };
+  }
+
+  async linkWallets(userId: string, linked: LinkedWallet[]): Promise<UserWithWallets> {
+    return this.db.transaction(async (tx) => {
+      const [user] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+      if (!user) throw new Error("User not found");
+      if (!user.walletAddress) {
+        let primary: LinkedWallet | undefined;
+        for (const wallet of new Map(linked.map((wallet) => [wallet.address, wallet])).values()) {
+          const [stored] = await tx
+            .insert(wallets)
+            .values({ ...wallet, userId, isPrimary: false })
+            .onConflictDoUpdate({
+              target: wallets.address,
+              set: { ...wallet, isPrimary: false, updatedAt: new Date() },
+              setWhere: eq(wallets.userId, userId),
+            })
+            .returning();
+          if (!stored) {
+            logger.warn({ userId, address: wallet.address }, "Skipping wallet owned by another user");
+            continue;
+          }
+          if (!primary && wallet.walletClientType === "privy") primary = wallet;
+        }
+        if (primary) {
+          await tx
+            .update(wallets)
+            .set({ isPrimary: false })
+            .where(and(eq(wallets.userId, userId), eq(wallets.isPrimary, true)));
+          await tx.update(wallets).set({ isPrimary: true }).where(eq(wallets.address, primary.address));
+          const [updated] = await tx
+            .update(users)
+            .set({ walletAddress: primary.address })
+            .where(eq(users.id, userId))
+            .returning();
+          Object.assign(user, updated);
+        }
+      }
+      return { ...user, wallets: await tx.select().from(wallets).where(eq(wallets.userId, userId)) };
+    });
+  }
 
   async findByPrivyDid(privyDid: string) {
     return this.db.query.users.findFirst({ where: eq(users.privyDid, privyDid) });

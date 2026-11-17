@@ -15,6 +15,7 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
 
   PRIVY_APP_ID: z.string().optional(),
+  PRIVY_APP_SECRET: z.string().optional(),
   PRIVY_VERIFICATION_KEY: z.string().optional(),
 
   SOLANA_RPC_URL: z.url().default("https://api.mainnet-beta.solana.com"),

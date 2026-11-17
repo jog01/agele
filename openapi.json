@@ -205,13 +205,50 @@
               "string",
               "null"
             ]
+          },
+          "wallets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "chainType": {
+                  "type": "string",
+                  "enum": [
+                    "solana"
+                  ]
+                },
+                "walletClientType": {
+                  "type": "string"
+                },
+                "privyWalletId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "address",
+                "chainType",
+                "walletClientType",
+                "privyWalletId",
+                "isPrimary"
+              ]
+            }
           }
         },
         "required": [
           "id",
           "privyDid",
           "walletAddress",
-          "handle"
+          "handle",
+          "wallets"
         ]
       },
       "LeaderboardEntry": {
@@ -570,6 +607,16 @@
           },
           "401": {
             "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
             "content": {
               "application/json": {
                 "schema": {

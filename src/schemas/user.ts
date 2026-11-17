@@ -6,5 +6,14 @@ export const MeSchema = z
     privyDid: z.string(),
     walletAddress: z.string().nullable(),
     handle: z.string().nullable(),
+    wallets: z.array(
+      z.object({
+        address: z.string(),
+        chainType: z.literal("solana"),
+        walletClientType: z.string(),
+        privyWalletId: z.string().nullable(),
+        isPrimary: z.boolean(),
+      }),
+    ),
   })
   .openapi("Me");
