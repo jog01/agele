@@ -102,6 +102,23 @@ Tests in `test/` build the app from `createApp(container)` with fakes. Indexing,
 portfolio and snapshot integration tests use migrated PostgreSQL; leaderboard
 storage also has an isolated real Redis integration test.
 
+## Token terminal indexed APIs
+
+| Endpoint | Auth | Contract |
+| --- | --- | --- |
+| `GET /v1/tokens/{mint}/positions` | Required bearer | `{position: TokenPosition \| null}`; viewer's single user/mint row, open or closed |
+| `GET /v1/tokens/{mint}/traders?limit=25&cursor=...` | Public | `{traders: TokenTrader[], nextCursor: string \| null}`; lifetime indexed volume descending, user ID ascending on ties |
+
+`TokenActivityService` reads PostgreSQL through `PgTokenActivityRepository` and
+values open positions using `MarketDataProvider`. Both endpoints always return
+`X-Data-Source: indexed`, even when empty or when mock market prices are selected;
+the positions/trades themselves are never synthetic. They do not depend on Redis
+or the webhook secret being configured. Only app-indexed users/trades are represented,
+not all on-chain traders. Known means present in the token metadata table or current
+market provider; entirely unknown mints return 404. See [token terminal flows](flows.md#token-terminal-positions-and-traders)
+for field definitions, price fallback and pagination semantics. Holders and my-swaps
+are outside these APIs.
+
 ## Indexing and derived ranks
 
 ```mermaid
