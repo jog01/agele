@@ -3,6 +3,7 @@ import { AppError, notFound } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { tracer } from "../../lib/telemetry";
 import type { IntervalValue, TokenDto, TokenHoldersDto } from "../../schemas/token";
+import { SOL_MINT } from "../helius-parser";
 import { INTERVAL_SECONDS, type MarketDataProvider } from "./provider";
 
 const number = z.number().finite();
@@ -10,6 +11,9 @@ const rawAmount = z.string().regex(/^\d+$/);
 const largestAccounts = z.object({ value: z.array(z.object({ address: z.string(), amount: rawAmount })) });
 const supplyResult = z.object({
   value: z.object({ amount: rawAmount, decimals: z.number().int().min(0).max(255) }),
+});
+const nativeSupplyResult = z.object({
+  value: z.object({ total: number.nonnegative().refine(Number.isInteger) }),
 });
 const ownerAccounts = z.object({
   value: z.array(
@@ -248,7 +252,13 @@ export class LiveMarketDataProvider implements MarketDataProvider {
       if (!token) throw notFound("Token");
       const [largest, supply] = await Promise.all([
         this.rpc("getTokenLargestAccounts", [mint, { commitment: "confirmed" }], largestAccounts),
-        this.rpc("getTokenSupply", [mint, { commitment: "confirmed" }], supplyResult),
+        mint === SOL_MINT
+          ? this.rpc(
+              "getSupply",
+              [{ commitment: "confirmed", excludeNonCirculatingAccountsList: true }],
+              nativeSupplyResult,
+            ).then((supply) => ({ value: { amount: String(supply.value.total), decimals: 9 } }))
+          : this.rpc("getTokenSupply", [mint, { commitment: "confirmed" }], supplyResult),
       ]);
       const accounts = largest.value.slice(0, 20);
       const owners = accounts.length

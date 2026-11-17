@@ -5,7 +5,14 @@ import { MockMarketDataProvider } from "../src/services/market-data/mock.provide
 import { TokenService } from "../src/services/token.service";
 import prices from "./fixtures/jupiter-prices.json";
 import metadata from "./fixtures/jupiter-tokens.json";
-import { largest, owners, RAYDIUM_AUTHORITY, supply } from "./fixtures/token-holders";
+import {
+  largest,
+  nativeSupply,
+  owners,
+  RAYDIUM_AUTHORITY,
+  supply,
+  wrappedSolLargest,
+} from "./fixtures/token-holders";
 import { FIXED_NOW, SOL, testApp } from "./helpers";
 
 const mint = metadata[0]!.id;
@@ -41,6 +48,35 @@ function setup(overrides: Partial<Options> = {}, rpcResult?: (method: string) =>
 }
 
 describe("token holders", () => {
+  it("uses native SOL total supply and 9 decimals for wrapped SOL concentration", async () => {
+    const { market, calls } = setup({ allowlist: [SOL] }, (method) =>
+      Response.json(
+        method === "getSupply"
+          ? nativeSupply
+          : method === "getTokenLargestAccounts"
+            ? wrappedSolLargest
+            : method === "getTokenSupply"
+              ? { result: { value: { amount: "0", decimals: 9 } } }
+              : owners,
+      ),
+    );
+    const result = await market.getHolders(SOL, 5);
+    expect(result.holders[0]!.amount).toBe(39_000_000);
+    expect(result.holders[0]!.pctSupply).toBeCloseTo(6.5);
+    expect(result.top10Pct).toBeCloseTo(27.5);
+    expect(result.holders[0]!.valueUsd).toBe(39_000_000 * prices[SOL]!.usdPrice);
+    expect(calls.filter((c) => c.method === "getSupply")).toHaveLength(1);
+    expect(calls.some((c) => c.method === "getTokenSupply")).toBe(false);
+  });
+
+  it("maps a native SOL supply RPC error to 502", async () => {
+    const { market } = setup({ allowlist: [SOL] }, (method) =>
+      Response.json(
+        method === "getSupply" ? { error: { code: -32005, message: "unhealthy" } } : wrappedSolLargest,
+      ),
+    );
+    await expect(market.getHolders(SOL, 5)).rejects.toMatchObject({ status: 502, code: "upstream_error" });
+  });
   it("merges owners before ranking, computes percentages/value, labels known pools, and limits after top10", async () => {
     const { market, calls } = setup();
     const result = TokenHoldersSchema.parse(await market.getHolders(mint, 5));

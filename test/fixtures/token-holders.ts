@@ -45,3 +45,31 @@ export const supply = {
     value: { amount: "100000", decimals: 2, uiAmount: 1000, uiAmountString: "1000" },
   },
 };
+
+export const nativeSupply = {
+  jsonrpc: "2.0",
+  id: 1,
+  result: {
+    context: { slot: 123 },
+    value: {
+      total: 600_000_000_000_000_000,
+      circulating: 590_000_000_000_000_000,
+      nonCirculating: 10_000_000_000_000_000,
+      nonCirculatingAccounts: [],
+    },
+  },
+};
+
+export const wrappedSolLargest = {
+  ...largest,
+  result: {
+    ...largest.result,
+    value: largest.result.value.map((account, i) => ({
+      ...account,
+      amount: String(BigInt(20 - i) * 1_000_000_000_000_000n),
+      decimals: 9,
+      uiAmount: (20 - i) * 1_000_000,
+      uiAmountString: String((20 - i) * 1_000_000),
+    })),
+  },
+};
