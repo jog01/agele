@@ -6,13 +6,13 @@ Applies to: every transaction the backend signs with the fee-payer key (gasless 
 
 ## 1. Threat model
 
-fomo runs a backend-owned **fee-payer hot wallet** that pays signature fees, priority fees and rent for user transactions. Users sign with their Privy embedded wallet; the backend co-signs as fee payer and broadcasts.
+Agele runs a backend-owned **fee-payer hot wallet** that pays signature fees, priority fees and rent for user transactions. Users sign with their Privy embedded wallet; the backend co-signs as fee payer and broadcasts.
 
 A fee-payer signature authorizes **every** instruction in the transaction that lists the fee payer as a signer, including through CPI. Whoever controls what the fee payer signs controls its balance. The policy below exists to make the following true:
 
 > The fee payer only ever signs a message the backend built itself, that passed every check in §3, for an authenticated user within their limits, and the most any single signature can cost us is a small, fixed number of lamports.
 
-Attack vectors covered (numbering from the research doc, `fomo-crypto-integrations.md` §5):
+Attack vectors covered (numbering from the v0.1 onchain integrations research, §5 "Fee-payer attack vectors"):
 
 | # | Vector | Primary controls |
 |---|---|---|
