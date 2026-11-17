@@ -218,6 +218,91 @@
           "time"
         ]
       },
+      "TokenPosition": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "avgCostUsd": {
+            "type": "number"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "valueUsd": {
+            "type": "number"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "mint",
+          "symbol",
+          "quantity",
+          "avgCostUsd",
+          "priceUsd",
+          "valueUsd",
+          "unrealizedPnlUsd",
+          "realizedPnlUsd"
+        ]
+      },
+      "TokenTrader": {
+        "type": "object",
+        "properties": {
+          "wallet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Primary wallet, or null if the user has none"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "buys": {
+            "type": "integer"
+          },
+          "sells": {
+            "type": "integer"
+          },
+          "volumeUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "pnlUsd": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "wallet",
+          "handle",
+          "buys",
+          "sells",
+          "volumeUsd",
+          "realizedPnlUsd",
+          "unrealizedPnlUsd",
+          "pnlUsd"
+        ]
+      },
       "Me": {
         "type": "object",
         "properties": {
@@ -1021,6 +1106,183 @@
                   "required": [
                     "trades"
                   ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/positions": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "description": "Viewer's indexed position, including closed positions. Missing/zero price falls back to average cost. X-Data-Source: indexed.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Position or null when the viewer has none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "$ref": "#/components/schemas/TokenPosition"
+                    }
+                  },
+                  "required": [
+                    "position"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid mint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/traders": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "description": "Indexed users ranked by lifetime token volume USD descending, ties by user ID ascending. Buys/sells are trade counts; PnL is lifetime realized plus current open unrealized. Keyset pagination is live, not snapshot-isolated. X-Data-Source: indexed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traders and opaque next cursor; empty when no indexed trades exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "traders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TokenTrader"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "traders",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid mint, limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

@@ -5,6 +5,7 @@ import { type FollowRepository, PgFollowRepository } from "./repositories/follow
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
 import { PgPortfolioRepository } from "./repositories/portfolio.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
+import { PgTokenActivityRepository } from "./repositories/token-activity.repository";
 import { PgTradeRepository } from "./repositories/trade.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
@@ -21,6 +22,7 @@ import { RedisSponsorStore } from "./services/sponsor/issued-store";
 import { HttpSponsorRpc } from "./services/sponsor/sponsor-rpc";
 import { ValidatedFeeSponsor } from "./services/sponsor/validated-fee-sponsor";
 import { TokenService } from "./services/token.service";
+import { TokenActivityService } from "./services/token-activity.service";
 import { TradeIndexer } from "./services/trade-indexer";
 import { JupiterSwapClient } from "./services/trading/jupiter-swap.client";
 import { SwapService } from "./services/trading/swap.service";
@@ -40,6 +42,7 @@ export interface Container {
   market: MarketDataProvider;
   auth: AuthVerifier;
   tokens: TokenService;
+  tokenActivity: TokenActivityService;
   users: UserService;
   privyUsers: PrivyUserDirectory;
   social: SocialService;
@@ -109,6 +112,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     market,
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
+    tokenActivity:
+      overrides.tokenActivity ?? new TokenActivityService(new PgTokenActivityRepository(getDb()), market),
     follows,
     social:
       overrides.social ??

@@ -286,3 +286,61 @@ auth returns 401. RPC failures log and omit only the failed wallet/asset, retain
 successful balances. `usdcBalance` is USDC only. Missing/zero SOL prices value
 native SOL cash at zero. Range start is UTC midnight
 7/30 days before today (inclusive), or all stored days. No synthetic history is added.
+
+## Token terminal positions and traders
+
+```mermaid
+sequenceDiagram
+  participant C as Token page
+  participant A as TokenActivityService
+  participant D as PostgreSQL
+  participant M as MarketDataProvider
+  C->>A: GET /v1/tokens/{mint}/positions (Bearer token)
+  A->>D: ensureUser; token metadata; viewer's position by mint
+  A->>M: Current token price
+  A-->>C: position or null; X-Data-Source: indexed
+  C->>A: GET /v1/tokens/{mint}/traders?limit=25&cursor=opaque (public)
+  A->>D: Aggregate mint trades by user; join users + mint positions
+  Note over A,D: Volume DESC, userId ASC; exclusive cursor; fetch limit + 1
+  A->>M: Current token price
+  A-->>C: traders + nextCursor; X-Data-Source: indexed
+```
+
+The authenticated **positions** response is `{position: TokenPosition | null}`.
+`TokenPosition` reuses the portfolio fields `mint`, `symbol`, `quantity`,
+`avgCostUsd`, `priceUsd`, `valueUsd`, `unrealizedPnlUsd`, `realizedPnlUsd`.
+It includes closed positions (`quantity: 0`, `avgCostUsd: 0`) so their realized
+PnL remains visible; no position row returns null. Requests never return another
+user's position. There are no position query parameters because there is at most
+one row per user/mint.
+
+The public **traders** response is `{traders: TokenTrader[], nextCursor: string | null}`.
+Each entry has `wallet` (primary wallet, nullable when absent), `handle` (fallback:
+first eight characters of wallet or user ID), `buys`, `sells` (trade counts),
+`volumeUsd`, `realizedPnlUsd`, `unrealizedPnlUsd`, and `pnlUsd` (the last two summed).
+Metrics cover **all indexed history for this mint**, not a time window and not all
+on-chain traders. Only users with at least one trade in the mint are listed.
+Ranking is by lifetime USD volume, not PnL. `limit` is 1–100 (default 25).
+The opaque base64url cursor holds the mint, exact decimal volume, and user ID;
+it is exclusive, tied to its mint, and returns 400 when malformed. Numeric ordering
+and the user ID tie-breaker prevent duplicates on unchanged data. Pagination is
+live, not snapshot-isolated: newly indexed trades can move a user across pages.
+
+```mermaid
+flowchart TD
+  P[Current price] --> VALID{Finite and positive?}
+  VALID -- Yes --> VALUE[Value = quantity * price]
+  VALID -- No --> COST[Value = stored cost; price = average cost]
+  VALUE --> U[Unrealized = value - cost]
+  COST --> U
+  U --> TOTAL[Trader PnL = sum of mint trade realized + unrealized]
+```
+
+Known mints without data return null/empty with 200; a mint absent from both
+PostgreSQL metadata and the market provider returns 404. Invalid mint length or
+query input returns 400; missing/invalid position authentication returns 401.
+Missing/zero prices fall back to each user's own cost (zero unrealized PnL).
+Provider/DB errors propagate rather than returning synthetic data. Both responses
+are labelled `indexed`, even with mock market prices or disabled webhook ingestion.
+The frontend must wire these new endpoints; its existing tabs have no API contract.
+No holders or my-swaps endpoint is added.
