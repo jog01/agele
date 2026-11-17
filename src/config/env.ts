@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MockMarketDataProvider } from "../services/market-data/mock.provider";
 
 const boolish = z.enum(["true", "false", "1", "0"]).transform((v) => v === "true" || v === "1");
 
@@ -29,7 +30,18 @@ const EnvSchema = z
     MAX_SLIPPAGE_BPS: z.coerce.number().int().min(0).max(10_000).default(300),
     MAX_PRICE_IMPACT_PCT: z.coerce.number().positive().default(3),
     BIRDEYE_API_KEY: z.string().optional(),
-    MARKET_DATA_PROVIDER: z.enum(["mock"]).default("mock"),
+    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("live"),
+    MARKET_TOKEN_ALLOWLIST: z
+      .string()
+      .default(MockMarketDataProvider.mints.join(","))
+      .transform((v) => [
+        ...new Set(
+          v
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        ),
+      ]),
     ENABLE_MOCK_FEED: boolish.default(true),
 
     OTEL_SERVICE_NAME: z.string().default("fomo-api"),

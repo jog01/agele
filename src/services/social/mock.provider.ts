@@ -1,5 +1,12 @@
+import { getBase58Decoder } from "@solana/kit";
 import { hash, mulberry32 } from "../../lib/prng";
-import type { CommentDto, LeaderboardEntryDto, LeaderboardWindowValue } from "../../schemas/social";
+import type {
+  CommentDto,
+  FeedItemDto,
+  LeaderboardEntryDto,
+  LeaderboardWindowValue,
+} from "../../schemas/social";
+import { encodeCursor, type FeedCursor } from "./cursor";
 import type { SocialProvider } from "./provider";
 
 const HANDLES = [
@@ -28,7 +35,10 @@ const HANDLES = [
   "deepbook",
   "candlewick",
 ];
-const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function walletFor(handle: string) {
+  const rand = mulberry32(hash(handle));
+  return getBase58Decoder().decode(Uint8Array.from({ length: 32 }, () => Math.floor(rand() * 256)));
+}
 const WINDOW_SCALE: Record<LeaderboardWindowValue, number> = { "24h": 1, "7d": 4.2, "30d": 13 };
 const THESES = [
   "Volume is rotating in hard, holding through the next leg.",
@@ -48,9 +58,7 @@ export class MockSocialProvider implements SocialProvider {
     const scale = WINDOW_SCALE[window];
     const rows = HANDLES.map((handle) => {
       const rand = mulberry32(hash(`${handle}:${window}`));
-      const wallet = Array.from({ length: 44 }, () => ALPHABET[Math.floor(rand() * ALPHABET.length)]).join(
-        "",
-      );
+      const wallet = walletFor(handle);
       const volumeUsd = Math.round(10 ** (4 + rand() * 2.5) * scale);
       const pnlPct = (rand() * 1.4 - 0.25) * 100 * Math.sqrt(scale);
       return {
@@ -67,6 +75,35 @@ export class MockSocialProvider implements SocialProvider {
       .sort((a, b) => b.pnlUsd - a.pnlUsd)
       .slice(0, limit)
       .map((r, i) => ({ rank: i + 1, ...r }));
+  }
+
+  async feed({ wallets, cursor, limit }: { wallets?: string[]; cursor?: FeedCursor; limit: number }) {
+    const allowed = wallets === undefined ? undefined : new Set(wallets);
+    const rows: FeedItemDto[] = Array.from({ length: HANDLES.length * 4 }, (_, i) => {
+      const handle = HANDLES[i % HANDLES.length]!;
+      const common = {
+        id: `demo-${i.toString().padStart(4, "0")}`,
+        handle,
+        wallet: walletFor(handle),
+        mint: "So11111111111111111111111111111111111111112",
+        position: (["long", "short", "none"] as const)[i % 3]!,
+        createdAt: 1767268800 - Math.floor(i / 2) * 60,
+      };
+      return i % 2 === 0
+        ? { ...common, kind: "thesis", body: THESES[i % THESES.length]! }
+        : { ...common, kind: "trade", side: i % 4 === 1 ? "buy" : "sell", amountUsd: 100 + i * 37 };
+    });
+    const matching = rows
+      .filter(
+        (row) =>
+          (!allowed || allowed.has(row.wallet)) &&
+          (!cursor ||
+            row.createdAt < cursor.createdAt ||
+            (row.createdAt === cursor.createdAt && row.id < cursor.id)),
+      )
+      .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    const items = matching.slice(0, limit);
+    return { items, nextCursor: matching.length > limit ? encodeCursor(items[items.length - 1]!) : null };
   }
 
   async comments(mint: string, limit: number): Promise<CommentDto[]> {

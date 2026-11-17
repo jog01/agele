@@ -19,8 +19,15 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1794946035174,
-      "tag": "0002_modern_colossus",
+      "when": 1794945926540,
+      "tag": "0002_fearless_energizer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794946384044,
+      "tag": "0003_modern_colossus",
       "breakpoints": true
     }
   ]

@@ -11,6 +11,7 @@ import { healthController } from "./controllers/health.controller";
 import { withContainer } from "./middlewares/container";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { requestLogger } from "./middlewares/request-logger";
+import { PriceTickSchema } from "./schemas/token";
 import type { AppEnv } from "./types";
 
 export function createApp(container: Container) {
@@ -34,6 +35,7 @@ export function createApp(container: Container) {
 
   app.route("/", healthController);
   app.route("/v1", v1);
+  app.openAPIRegistry.register("PriceTick", PriceTickSchema);
 
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
     type: "http",
@@ -42,7 +44,12 @@ export function createApp(container: Container) {
   });
   app.doc31("/openapi.json", {
     openapi: "3.1.0",
-    info: { title: "fomo API", version: "0.1.0" },
+    info: {
+      title: "fomo API",
+      version: "0.1.0",
+      description:
+        'WebSocket /ws: subscribe with {"op":"subscribe","topic":"token:<mint>:price"}. Events contain {type:"event",topic,data:PriceTick}; time is Unix seconds. Live price ticks poll every 5 seconds only for subscribed allowlisted mints. token:<mint>:trades is synthetic in mock mode only; live trades are available via REST with a Birdeye key.',
+    },
   });
   app.get("/docs", Scalar({ url: "/openapi.json" }));
 

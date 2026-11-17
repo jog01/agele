@@ -10,3 +10,11 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   c.set("auth", await c.get("container").auth.verify(token));
   await next();
 });
+
+export const optionalAuth = createMiddleware<AppEnv>(async (c, next) => {
+  if (c.req.header("authorization") !== undefined) {
+    await requireAuth(c, next);
+  } else {
+    await next();
+  }
+});

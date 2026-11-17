@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "fomo API",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"token:<mint>:price\"}. Events contain {type:\"event\",topic,data:PriceTick}; time is Unix seconds. Live price ticks poll every 5 seconds only for subscribed allowlisted mints. token:<mint>:trades is synthetic in mock mode only; live trades are available via REST with a Birdeye key."
   },
   "components": {
     "securitySchemes": {
@@ -13,6 +14,30 @@
       }
     },
     "schemas": {
+      "PriceTick": {
+        "type": "object",
+        "properties": {
+          "mint": {
+            "type": "string"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "marketCapUsd": {
+            "type": "number"
+          },
+          "time": {
+            "type": "integer",
+            "description": "Unix seconds"
+          }
+        },
+        "required": [
+          "mint",
+          "priceUsd",
+          "marketCapUsd",
+          "time"
+        ]
+      },
       "Health": {
         "type": "object",
         "properties": {
@@ -24,11 +49,19 @@
           },
           "uptimeSec": {
             "type": "number"
+          },
+          "marketData": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live"
+            ]
           }
         },
         "required": [
           "status",
-          "uptimeSec"
+          "uptimeSec",
+          "marketData"
         ]
       },
       "Token": {
@@ -277,6 +310,9 @@
           },
           "winRatePct": {
             "type": "number"
+          },
+          "isFollowing": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -288,6 +324,114 @@
           "volumeUsd",
           "trades",
           "winRatePct"
+        ]
+      },
+      "FeedItem": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "short",
+                  "none"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "thesis"
+                ]
+              },
+              "wallet": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "mint",
+              "handle",
+              "body",
+              "position",
+              "createdAt",
+              "kind",
+              "wallet"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "short",
+                  "none"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "trade"
+                ]
+              },
+              "wallet": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "amountUsd": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "mint",
+              "handle",
+              "position",
+              "createdAt",
+              "kind",
+              "wallet",
+              "side",
+              "amountUsd"
+            ]
+          }
         ]
       },
       "Comment": {
@@ -1306,6 +1450,12 @@
         "tags": [
           "social"
         ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -1360,6 +1510,246 @@
                     "window",
                     "entries"
                   ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feed": {
+      "get": {
+        "tags": [
+          "social"
+        ],
+        "description": "Newest first with stable keyset pagination. Feed content is demo data until trade indexing lands. Following scope requires a bearer token.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global",
+                "following"
+              ],
+              "default": "global"
+            },
+            "required": false,
+            "name": "scope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Social feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FeedItem"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/follows/{wallet}": {
+      "put": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Wallet followed (idempotent)"
+          },
+          "400": {
+            "description": "Invalid wallet or cannot follow own wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Wallet unfollowed (idempotent)"
+          },
+          "400": {
+            "description": "Invalid wallet or cannot follow own wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

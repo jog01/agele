@@ -1,6 +1,7 @@
 import { env } from "./config/env";
 import { getDb } from "./db/client";
 import { getRedis } from "./lib/redis";
+import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
@@ -27,6 +28,7 @@ export interface Container {
   swaps: SwapService;
   feeSponsor: FeeSponsor;
   swapRateLimiter: SwapRateLimiter;
+  follows: FollowRepository;
 }
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
@@ -36,6 +38,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const feeSponsor = env.SPONSOR_ENABLED
     ? (overrides.feeSponsor ?? new DisabledFeeSponsor())
     : new DisabledFeeSponsor();
+  const follows = overrides.follows ?? new PgFollowRepository(getDb());
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),
@@ -51,7 +54,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     market,
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
-    social: overrides.social ?? new SocialService(new MockSocialProvider(), tokens),
+    follows,
+    social: overrides.social ?? new SocialService(new MockSocialProvider(), tokens, follows),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };
 }
