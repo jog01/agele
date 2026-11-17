@@ -43,7 +43,10 @@ export class LeaderboardService {
     for (const position of positions) {
       if (Number(position.quantity) <= 0) continue;
       const token = prices.get(position.mint);
-      const pnl = token ? Number(position.quantity) * token.priceUsd - Number(position.costBasisUsd) : 0;
+      const pnl =
+        token && Number.isFinite(token.priceUsd) && token.priceUsd > 0
+          ? Number(position.quantity) * token.priceUsd - Number(position.costBasisUsd)
+          : 0;
       unrealized.set(position.userId, (unrealized.get(position.userId) ?? 0) + pnl);
     }
     const result: LeaderboardSnapshot = { "24h": [], "7d": [], "30d": [] };

@@ -157,13 +157,15 @@ describe("portfolio database integration", () => {
       ],
     });
     expect(balanceRequests.at(-1)).toEqual([addresses[0]!]);
-    price = null;
     try {
-      expect(await (await get("portfolio")).json()).toMatchObject({
-        equityUsd: 110,
-        unrealizedPnlUsd: 0,
-        positions: [{ priceUsd: 10, valueUsd: 60 }],
-      });
+      for (const unavailable of [null, 0]) {
+        price = unavailable;
+        expect(await (await get("portfolio")).json()).toMatchObject({
+          equityUsd: 110,
+          unrealizedPnlUsd: 0,
+          positions: [{ priceUsd: 10, valueUsd: 60 }],
+        });
+      }
     } finally {
       price = 15;
     }

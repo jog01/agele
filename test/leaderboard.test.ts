@@ -67,6 +67,22 @@ function setup() {
 }
 
 describe("leaderboard math and ranking", () => {
+  it.each([null, 0])("values open positions at cost when market price is %s", async (price) => {
+    const test = setup();
+    test.addTrade("alice", "buy", "100", null);
+    const token = (await test.market.getToken(SOL))!;
+    test.market.getToken = async () => (price === null ? null : { ...token, priceUsd: price });
+    test.positions.push({
+      userId: "alice",
+      mint: SOL,
+      quantity: "2",
+      costBasisUsd: "100",
+      realizedPnlUsd: "0",
+      updatedAt: new Date(),
+    });
+    await test.leaderboard.rebuild();
+    expect((await test.store.top("24h", 10))[0]!.pnlUsd).toBe(0);
+  });
   it("combines window realized PnL with open unrealized PnL and sorts indexed users", async () => {
     const test = setup();
     test.addTrade("alice", "buy", "100", null);

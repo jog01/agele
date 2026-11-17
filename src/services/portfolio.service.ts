@@ -41,8 +41,9 @@ export class PortfolioService {
           const cost = Number(position.costBasisUsd);
           const avgCostUsd = cost / quantity;
           const token = await this.market.getToken(position.mint);
-          const priceUsd = token?.priceUsd ?? avgCostUsd;
-          const valueUsd = token ? quantity * priceUsd : cost;
+          const hasPrice = token && Number.isFinite(token.priceUsd) && token.priceUsd > 0;
+          const priceUsd = hasPrice ? token.priceUsd : avgCostUsd;
+          const valueUsd = hasPrice ? quantity * priceUsd : cost;
           return {
             mint: position.mint,
             symbol,
