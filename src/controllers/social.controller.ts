@@ -21,7 +21,8 @@ const getLeaderboard = createRoute({
           schema: z.object({ window: LeaderboardWindow, entries: z.array(LeaderboardEntrySchema) }),
         },
       },
-      description: "Top traders by realized + unrealized PnL",
+      description:
+        "Top traders by realized + unrealized PnL. X-Data-Source is demo for mock rankings, indexed otherwise.",
     },
   },
 });
@@ -43,6 +44,7 @@ const getComments = createRoute({
 export const socialController = new OpenAPIHono<AppEnv>()
   .openapi(getLeaderboard, async (c) => {
     const { window, limit } = c.req.valid("query");
+    c.header("X-Data-Source", c.get("container").social.leaderboardDemo ? "demo" : "indexed");
     return c.json({ window, entries: await c.get("container").social.leaderboard(window, limit) }, 200);
   })
   .openapi(getComments, async (c) => {

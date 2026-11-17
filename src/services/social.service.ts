@@ -6,10 +6,12 @@ export class SocialService {
   constructor(
     private readonly provider: SocialProvider,
     private readonly tokens: TokenService,
+    private readonly ranks: Pick<SocialProvider, "leaderboard"> = provider,
+    readonly leaderboardDemo = true,
   ) {}
 
   leaderboard(window: LeaderboardWindowValue, limit: number) {
-    return this.provider.leaderboard(window, limit);
+    return this.ranks.leaderboard(window, limit);
   }
 
   async comments(mint: string, limit: number) {
