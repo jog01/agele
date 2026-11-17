@@ -92,6 +92,21 @@ describe("live market data", () => {
     expect((await market.getToken(jup))?.priceUsd).toBe(tokenFixture[0]!.usdPrice);
   });
 
+  it("keeps a metadata batch usable with null, absent, or partial 24h stats", async () => {
+    const sparse = tokenFixture.map(({ stats24h: _stats, ...token }, i) => ({
+      ...token,
+      ...(i === 0 ? { stats24h: null } : i === 1 ? {} : { stats24h: { buyVolume: null } }),
+    }));
+    const { market } = setup({ fetch: async (url) => Response.json(url.includes("search") ? sparse : {}) });
+    const tokens = await market.listTrending(3);
+    expect(tokens).toHaveLength(3);
+    for (const token of tokens) {
+      expect(token.volume24hUsd).toBe(0);
+      expect(token.priceChange24hPct).toBe(0);
+      expect(token.priceUsd).toBe(tokenFixture.find((t) => t.id === token.mint)!.usdPrice);
+    }
+  });
+
   it("returns 503 for candles and trades without Birdeye credentials", async () => {
     const { market, calls } = setup();
     await expect(market.getCandles(jup, "1m", 2)).rejects.toMatchObject({

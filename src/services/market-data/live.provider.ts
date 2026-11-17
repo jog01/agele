@@ -19,7 +19,7 @@ const metadata = z.array(
     holderCount: number.int().nullish(),
     stats24h: z
       .object({ priceChange: number.nullish(), buyVolume: number.nullish(), sellVolume: number.nullish() })
-      .optional(),
+      .nullish(),
   }),
 );
 const prices = z.record(z.string(), z.object({ usdPrice: number, priceChange24h: number.nullish() }));
