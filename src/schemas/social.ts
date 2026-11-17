@@ -12,6 +12,7 @@ export const LeaderboardEntrySchema = z
     volumeUsd: z.number(),
     trades: z.number().int(),
     winRatePct: z.number(),
+    isFollowing: z.boolean().optional(),
   })
   .openapi("LeaderboardEntry");
 
@@ -41,3 +42,24 @@ export const LeaderboardQuery = z.object({
 export type LeaderboardWindowValue = z.infer<typeof LeaderboardWindow>;
 export type LeaderboardEntryDto = z.infer<typeof LeaderboardEntrySchema>;
 export type CommentDto = z.infer<typeof CommentSchema>;
+
+export const FeedItemSchema = z
+  .discriminatedUnion("kind", [
+    CommentSchema.omit({ likes: true }).extend({ kind: z.literal("thesis"), wallet: z.string() }),
+    CommentSchema.omit({ likes: true, body: true }).extend({
+      kind: z.literal("trade"),
+      wallet: z.string(),
+      side: z.enum(["buy", "sell"]),
+      amountUsd: z.number(),
+    }),
+  ])
+  .openapi("FeedItem");
+
+export const FeedQuery = z.object({
+  scope: z.enum(["global", "following"]).default("global"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+export const FeedSchema = z.object({ items: z.array(FeedItemSchema), nextCursor: z.string().nullable() });
+export type FeedItemDto = z.infer<typeof FeedItemSchema>;
+export type FeedPage = z.infer<typeof FeedSchema>;

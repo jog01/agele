@@ -15,6 +15,13 @@
       "when": 1794945215979,
       "tag": "0001_burly_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794945926540,
+      "tag": "0002_fearless_energizer",
+      "breakpoints": true
     }
   ]
 }
