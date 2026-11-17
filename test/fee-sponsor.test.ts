@@ -8,6 +8,7 @@ import {
   getBase58Decoder,
   getCompiledTransactionMessageDecoder,
   getCompiledTransactionMessageEncoder,
+  getProgramDerivedAddress,
   getPublicKeyFromAddress,
   getTransactionDecoder,
   verifySignature,
@@ -21,6 +22,7 @@ import { encode, ix, meta, numeric, sponsorSetup, token } from "./sponsor-helper
 describe("FeeSponsor policy §7", () => {
   it("registers a realistic order-shaped v0 route, verifies the user, signs once and produces a valid payer signature", async () => {
     const s = await sponsorSetup();
+    expect((await s.validator.validate(s.encoded(), s.context)).payerFundedAtas).toEqual([]);
     expect(await s.sponsor.register(s.encoded(), s.context)).toEqual({ expiresAt: 1_030_000 });
     const signed = await s.sponsor.cosign(await s.signUser(), {
       userId: "user",
@@ -397,7 +399,7 @@ describe("FeeSponsor policy §7", () => {
         expect(s.store.charges).toHaveLength(0);
       }
     });
-  for (const mode of ["error", "payer", "input", "output", "other-token", "sol"] as const)
+  for (const mode of ["error", "payer", "input", "output", "other-token", "sol", "sol-gain"] as const)
     it(`rejects simulation ${mode} without signing`, async () => {
       const s = await sponsorSetup();
       await s.sponsor.register(s.encoded(), s.context);
@@ -413,12 +415,65 @@ describe("FeeSponsor policy §7", () => {
         if (mode === "other-token")
           new DataView(accounts[addresses.indexOf(s.extra)]!.data.buffer).setBigUint64(64, 0n, true);
         if (mode === "sol") accounts[addresses.indexOf(s.wallet)]!.lamports -= 1n;
+        if (mode === "sol-gain") accounts[addresses.indexOf(s.wallet)]!.lamports += 1n;
       };
       if (mode === "error") s.rpc.error = { InstructionError: [2, "Custom"] };
       await expect(
         s.sponsor.cosign(await s.signUser(), { userId: "user", requestId: s.context.requestId }),
       ).rejects.toMatchObject({ reason: "simulation" });
       expect(s.store.records.get(s.context.requestId)!.state).toBe("signing");
+    });
+  for (const mode of ["present", "missing", "existing-missing", "wrong-owner", "non-token"] as const)
+    it(`checks payer-funded ATA post-simulation state: ${mode}`, async () => {
+      const s = await sponsorSetup();
+      const getToken = s.market.getToken;
+      s.market.getToken = async (mint) => {
+        const result = await getToken(mint);
+        return result && { ...result, priceUsd: 1 };
+      };
+      const [ata] = await getProgramDerivedAddress({
+        programAddress: address(PROGRAMS.ata),
+        seeds: [
+          getAddressEncoder().encode(s.wallet),
+          getAddressEncoder().encode(address(PROGRAMS.token)),
+          getAddressEncoder().encode(address(MINTS.BONK)),
+        ],
+      });
+      if (mode === "existing-missing") s.rpc.state.set(ata, token(MINTS.BONK, s.wallet, 0n));
+      const transaction = s.transaction([
+        ...s.compute,
+        ix(PROGRAMS.ata, [
+          meta(s.payer, AccountRole.WRITABLE_SIGNER),
+          meta(ata, AccountRole.WRITABLE),
+          meta(s.wallet),
+          meta(MINTS.BONK),
+          meta(PROGRAMS.system),
+          meta(PROGRAMS.token),
+        ]),
+        s.route,
+      ]);
+      const encoded = encode(transaction);
+      expect((await s.validator.validate(encoded, s.context)).payerFundedAtas).toEqual([ata]);
+      const original = s.rpc.mutate;
+      s.rpc.mutate = (accounts, addresses) => {
+        original(accounts, addresses);
+        accounts[addresses.indexOf(s.payer)]!.lamports -= 2_039_280n;
+        accounts[addresses.indexOf(ata)] = token(MINTS.BONK, s.wallet, 0n);
+      };
+      await s.sponsor.register(encoded, s.context);
+      const valid = s.rpc.mutate;
+      s.rpc.mutate = (accounts, addresses) => {
+        valid(accounts, addresses);
+        if (mode === "missing" || mode === "existing-missing") accounts[addresses.indexOf(ata)] = null;
+        if (mode === "wrong-owner") accounts[addresses.indexOf(ata)] = token(MINTS.BONK, s.extra, 0n);
+        if (mode === "non-token") accounts[addresses.indexOf(ata)]!.owner = PROGRAMS.system;
+      };
+      const result = s.sponsor.cosign(await s.signUser(transaction), {
+        userId: "user",
+        requestId: s.context.requestId,
+      });
+      if (mode === "present") await expect(result).resolves.toBeString();
+      else await expect(result).rejects.toMatchObject({ reason: "simulation" });
     });
   it("rejects withdrawal, JupiterZ, malformed and oversized transactions", async () => {
     const s = await sponsorSetup();

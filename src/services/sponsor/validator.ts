@@ -46,6 +46,7 @@ export function decodeTransaction(encoded: string): Transaction {
 export interface SponsorValidation {
   transaction: Transaction;
   addresses: string[];
+  payerFundedAtas: string[];
   expectedFeeLamports: bigint;
   expectedRentLamports: bigint;
   lastValidBlockHeight: number;
@@ -173,6 +174,7 @@ export class SponsorValidator {
       routes = 0;
     const temporary = new Map<string, string>();
     const initialized = new Set<string>();
+    const payerFundedAtas = new Set<string>();
     for (const ix of message.instructions) {
       const program = accounts[ix.programAddressIndex];
       const keys = (ix.accountIndices ?? []).map((index) => accounts[index]);
@@ -253,6 +255,7 @@ export class SponsorValidator {
         });
         if (keys[1] !== ata) return refuse("instruction_not_allowed");
         if (++atas > 2) return refuse("instruction_not_allowed");
+        payerFundedAtas.add(keys[1]!);
         rentPaid += keys[5] === PROGRAMS.token2022 ? await this.rpc.rent(170) : rent;
       } else if (program === PROGRAMS.token || program === PROGRAMS.token2022) {
         const kind = data[0];
@@ -329,6 +332,7 @@ export class SponsorValidator {
     return {
       transaction,
       addresses: accounts,
+      payerFundedAtas: [...payerFundedAtas],
       expectedFeeLamports,
       expectedRentLamports: rentPaid,
       lastValidBlockHeight,

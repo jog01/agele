@@ -178,6 +178,9 @@ export class ValidatedFeeSponsor implements FeeSponsor {
     const before = await this.options.rpc.accounts(addresses, "processed");
     const simulated = await this.options.rpc.simulate(encoded, addresses);
     if (simulated.err !== null || simulated.accounts.length !== addresses.length) return refuse("simulation");
+    for (const ata of validation.payerFundedAtas)
+      if (tokenAccount(simulated.accounts[addresses.indexOf(ata)])?.owner !== context.wallet)
+        return refuse("simulation");
     const payerIndex = addresses.indexOf(this.feePayer);
     const prePayer = before[payerIndex],
       postPayer = simulated.accounts[payerIndex];
@@ -223,6 +226,7 @@ export class ValidatedFeeSponsor implements FeeSponsor {
     const walletIndex = addresses.indexOf(context.wallet);
     const preSol = before[walletIndex]?.lamports ?? 0n,
       postSol = simulated.accounts[walletIndex]?.lamports ?? 0n;
+    if (postSol > preSol) return refuse("simulation");
     if (expected.inputMint === SWAP_MINTS_V01.SOL) {
       if (preSol - postSol - (deltas.get(SWAP_MINTS_V01.SOL) ?? 0n) > BigInt(expected.inAmount))
         return refuse("simulation");
