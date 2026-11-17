@@ -143,8 +143,8 @@ export function PriceChart({
           : {
               time: bucket,
               open: prev.close,
-              high: t.priceUsd,
-              low: t.priceUsd,
+              high: Math.max(prev.close, t.priceUsd),
+              low: Math.min(prev.close, t.priceUsd),
               close: t.priceUsd,
               volume: t.amountUsd,
             };
