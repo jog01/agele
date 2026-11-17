@@ -146,8 +146,8 @@ describe("live market data", () => {
           success: true,
           data: {
             items: [
-              { unix_time: 1726671600, o: 2, h: 4, l: 1, c: 3, v: 50 },
-              { unix_time: 1726670700, o: 1, h: 3, l: 1, c: 2, v: 40 },
+              { unix_time: 1726671600, o: 2, h: 4, l: 1, c: 3, v: 500, v_usd: 50 },
+              { unix_time: 1726670700, o: 1, h: 3, l: 1, c: 2, v: 400, v_usd: 40 },
             ],
           },
         });

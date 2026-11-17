@@ -33,7 +33,7 @@ const candles = z.object({
         h: number,
         l: number,
         c: number,
-        v: number,
+        v_usd: number,
       }),
     ),
   }),
@@ -222,7 +222,7 @@ export class LiveMarketDataProvider implements MarketDataProvider {
         candles,
       );
       return result.data.items
-        .map((c) => ({ time: c.unix_time, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v }))
+        .map((c) => ({ time: c.unix_time, open: c.o, high: c.h, low: c.l, close: c.c, volume: c.v_usd }))
         .sort((a, b) => a.time - b.time)
         .slice(-limit);
     });
