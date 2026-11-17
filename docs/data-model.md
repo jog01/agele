@@ -5,6 +5,7 @@ PostgreSQL schema managed by Drizzle (`src/models/`, migrations in `sql/migratio
 ```mermaid
 erDiagram
   USERS ||--o{ TRADES : executes
+  USERS ||--o{ WALLETS : owns
   USERS ||--o{ POSITIONS : holds
   USERS ||--o{ PORTFOLIO_SNAPSHOTS : "has daily"
   USERS ||--o{ COMMENTS : writes
@@ -17,7 +18,7 @@ erDiagram
   USERS {
     uuid id PK
     text privy_did UK
-    text wallet_address
+    text wallet_address UK "nullable primary wallet address"
     text handle
     text display_name
     text avatar_url
@@ -28,6 +29,17 @@ erDiagram
     text name
     int decimals
     text image_url
+  }
+  WALLETS {
+    uuid id PK
+    uuid user_id FK
+    text address UK
+    text chain_type
+    text wallet_client_type
+    text privy_wallet_id "nullable"
+    boolean is_primary
+    timestamptz created_at
+    timestamptz updated_at
   }
   TRADES {
     uuid id PK

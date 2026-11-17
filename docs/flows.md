@@ -39,25 +39,6 @@ sequenceDiagram
   end
 ```
 
-```mermaid
-erDiagram
-  users ||--o{ wallets : owns
-  users {
-    uuid id PK
-    text privyDid UK
-    text walletAddress UK "nullable primary address"
-  }
-  wallets {
-    uuid id PK
-    uuid userId FK
-    text address UK
-    text chainType
-    text walletClientType
-    text privyWalletId "nullable"
-    boolean isPrimary
-  }
-```
-
 Signed-out users can browse every market; sign-in only gates trading, posting and following. Without `NEXT_PUBLIC_PRIVY_APP_ID` the web app runs in demo mode with sign-in disabled.
 
 ## Trade (quote, review, sign, receipt)
