@@ -51,10 +51,18 @@ sequenceDiagram
   participant S as FeeSponsor
   participant J as Jupiter Swap V2
   U->>W: Enter amount, Review
-  W->>A: POST /v1/swaps/quote
-  A->>J: order (user wallet, our fee payer)
-  J-->>A: Unsigned tx + quote (expiry)
-  A-->>W: Quote: receive, min receive, fees, impact, expiry
+  W->>A: GET /v1/swaps/quote (mints, base-unit amount)
+  A->>J: order (no taker, no transaction)
+  J-->>A: Preview quote
+  A-->>W: Preview: receive, min receive, fees, impact
+  W->>A: POST /v1/swaps (authenticated)
+  A->>J: order (linked user wallet, our fee payer)
+  J-->>A: Unsigned tx + quote
+  A->>A: Validate mints, amount, taker, payer fields, caps
+  A->>S: register (validate, simulate, quotas, issued record)
+  S-->>A: expiresAt
+  A->>A: Persist issued swap
+  A-->>W: requestId, transaction, expiresAt + quote fields
   W->>U: Review dialog (explicit, no silent signing)
   U->>W: Confirm
   W->>W: Privy wallet signs
@@ -62,8 +70,11 @@ sequenceDiagram
   A->>S: cosign (validate + simulate + quota)
   S-->>A: Fee-payer signature
   A->>J: execute
-  J-->>A: Signature
-  A-->>W: Receipt; Helius webhook later confirms fill
+  J-->>A: Success / Failed + signature and actual amounts
+  A->>A: Persist confirmed / failed (ambiguous = submitted)
+  A-->>W: Receipt (confirmed / failed / submitted)
+  W->>A: GET /v1/swaps/:requestId (authenticated owner only)
+  A-->>W: Persisted status and amounts
 ```
 
 ### Trade states
@@ -78,7 +89,8 @@ stateDiagram-v2
   Reviewing --> Signing: Confirm
   Signing --> Editing: user rejected
   Signing --> Submitting: signed
-  Submitting --> Pending: accepted (signature)
+  Submitting --> Confirmed: Jupiter Success
+  Submitting --> Pending: ambiguous / timeout
   Submitting --> Failed: sponsor or Jupiter rejected
   Pending --> Confirmed: Helius webhook
   Pending --> Failed: expired / dropped
@@ -86,7 +98,19 @@ stateDiagram-v2
   Failed --> Editing
 ```
 
-v0.1 stops at the review dialog: demo estimates come from fixture prices and submission is disabled. The quote/submit routes are specified by `SwapService` but not exposed yet.
+Routes:
+- `GET /v1/swaps/quote?inputMint=...&outputMint=...&amount=...&slippageBps=50` is public and returns `{inAmount,outAmount,otherAmountThreshold,priceImpactPct,slippageBps,feeBps,router}`. Amounts are base-unit decimal strings; `priceImpactPct` is percentage points, not a decimal fraction.
+- `POST /v1/swaps` requires Privy auth and a primary linked Solana wallet, with body `{inputMint,outputMint,amount,slippageBps?}`. Returns 201 `{requestId,transaction,expiresAt,...quoteFields}`. Expiry is Unix milliseconds, capped at 30 seconds and the sponsor's blockhash lifetime. The review dialog uses this build response, not an earlier preview; a new build requires a new signature.
+- `POST /v1/swaps/{requestId}/submit` requires auth, body `{signedTransaction}`. Returns `{status:"confirmed"|"failed"|"submitted",signature?,inputAmountResult?,outputAmountResult?,code?,error?}`. Co-signed bytes go only to Jupiter, never the client or storage. A request is claimed atomically before co-signing; retries cannot sign or execute it again. Unknown execution outcomes stay `submitted`; reconciliation is indexing work, not an automatic resubmission.
+- `GET /v1/swaps/{requestId}` requires auth and returns 404 unless owned by the caller. Response `{requestId,status,signature?,inAmount?,outAmount?,error?}`; status is `issued|submitted|confirmed|failed|expired`. `expired` is derived for unsubmitted issued swaps. Amounts are execution results when available, otherwise the original input and quoted output, not proof of a fill.
+
+Build/submit return `503 trading_disabled` until a concrete enabled FeeSponsor is wired. Sponsor policy rejections return `422 sponsor_rejected`; order safety checks return `422 swap_rejected` with `details.reason`. The shared v0.1 mint list lives in `src/services/sponsor/swap-mints.ts`. Sponsor registration/co-signing owns the remaining policy checks (simulation, $5 minimums, rent/account limits, sponsored transaction/spend/failure quotas); no enabled fallback exists without them.
+
+Jupiter V2 returns no single `payer` field: validate `rentFeePayer`, `prioritizationFeePayer` when present, and `signatureFeePayer` against our payer. JupiterZ may use a market maker for signatures (never the taker); the sponsor validates actual account roles. Current docs expose `priceImpact` in percentage points; legacy `priceImpactPct` is a decimal ratio and is multiplied by 100. Jupiter `Success` means landed, not merely submitted.
+
+The `swaps` table is the source of truth for issued swaps and raw execution outcomes, with a unique signature. Existing `trades`/PnL rows are populated by indexing work; the swap API does not invent USD prices or token metadata.
+
+The demo frontend may still show fixture estimates; live submission remains disabled until the concrete sponsor passes the security-policy checks.
 
 ## Realtime market data
 
