@@ -21,6 +21,20 @@ Set `MARKET_DATA_PROVIDER=mock` for demo market fixtures. Leaderboard responses
 label fixture rankings with `X-Data-Source: demo` (indexed rankings: `indexed`). Set `PRIVY_APP_ID` /
 `PRIVY_VERIFICATION_KEY` to enable authenticated routes.
 
+### Swap environment
+
+- `JUPITER_BASE_URL`: defaults to `https://api.jup.ag`; `JUPITER_API_KEY` sets the `x-api-key` header when configured. Swap previews use live Jupiter, not demo quotes.
+- `SPONSOR_ENABLED`: boolish (`true`/`false`/`1`/`0`), default `false`. With matching keys, wires the validating sponsor; otherwise build/submit return `503 trading_disabled`. Public quotes still work. Redis key `sponsor:kill` immediately blocks new sponsorship (delete manually after investigating).
+- `FEE_PAYER_PUBKEY`: sponsor wallet address. `FEE_PAYER_SECRET`: development-only base58 64-byte secret or JSON 64-byte array; rejected outside `NODE_ENV=development`. Startup refuses a public-key mismatch. Neither is used by the disabled sponsor. Production managed signing is not yet implemented.
+- `MAX_SLIPPAGE_BPS`: default `300`, client default `50`. `MAX_PRICE_IMPACT_PCT`: default `3` percentage points.
+- `MAX_CU_PRICE_MICROLAMPORTS`: default `2000000`; `MAX_LAMPORTS_PER_TX`: default `10000000` (fees plus rent); `DAILY_SPEND_CAP_SOL`: default `1` (reserved globally before signing; exceeding it latches the Redis kill switch).
+- `SPONSOR_REFERRAL_ACCOUNT` and `SPONSOR_REFERRAL_FEE_BPS` (50–255, default 50): Jupiter referral project account and requested fee. Required for sponsorship economics; referral/treasury keys must be separate from the SOL-only fee payer. Live market data must value the input mint and SOL; mock or missing prices fail closed. Users need ≥5 USDC and swaps ≥$5; estimated referral proceeds (80% integrator share) must cover gas/rent.
+
+The sponsor checks v0/legacy messages, ALTs, programs/accounts/instructions, token extensions, message identity and user signatures; Redis atomically claims issued records and reserves quotas/spend before co-signing. It simulates at issue and co-sign, verifying payer and user balance bounds. JupiterZ and native-SOL output routes fail closed in this version; see the security policy's implementation map for all deliberate restrictions and operational gaps. Security tests use generated real Solana messages and fake chain state; Redis Lua integration tests use **local Redis database 15**, and repository tests need Postgres.
+- Postgres persists issued swaps and execution outcomes; Redis enforces quote/issue limits (30/min per IP and authenticated issuing user), sponsorship quotas and the kill switch.
+
+Swap routes: public `GET /v1/swaps/quote`, authenticated `POST /v1/swaps`, `POST /v1/swaps/{requestId}/submit`, and `GET /v1/swaps/{requestId}`. See [Trade](docs/flows.md#trade-quote-review-sign-receipt) and `/docs` for contracts.
+
 ## Trade indexing and portfolios
 
 | Environment variable | Purpose |

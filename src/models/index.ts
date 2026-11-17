@@ -1,6 +1,7 @@
 export * from "./portfolio-snapshots";
 export * from "./positions";
 export * from "./social";
+export * from "./swaps";
 export * from "./tokens";
 export * from "./trades";
 export * from "./users";

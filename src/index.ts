@@ -13,6 +13,7 @@ import { startPriceFeed } from "./ws/price-feed";
 initTelemetry();
 
 const container = createContainer();
+await container.feeSponsor.ready?.();
 const app = createApp(container);
 const hub = container.hub;
 

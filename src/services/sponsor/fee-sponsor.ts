@@ -12,14 +12,31 @@ export interface SponsorRegisterContext {
   wallet: string;
   kind: SponsorKind;
   requestId: string;
+  swap?: {
+    inputMint: string;
+    outputMint: string;
+    inAmount: string;
+    otherAmountThreshold: string;
+    router: string;
+    lastValidBlockHeight?: string;
+    feeBps?: number;
+    referralAccount?: string;
+  };
 }
 
 export interface FeeSponsor {
   readonly feePayer: string;
+  ready?(): Promise<void>;
   /** Validates a backend-built transaction before the user signs it and stores the issued record (policy §2-§4). */
   register(transactionBase64: string, context: SponsorRegisterContext): Promise<{ expiresAt: number }>;
   /** Re-validates and co-signs a registered, user-signed transaction. Returns base64 for submission only. */
   cosign(transactionBase64: string, context: { userId: string; requestId: string }): Promise<string>;
+  reportOutcome?(context: {
+    userId: string;
+    requestId: string;
+    status: "confirmed" | "failed" | "submitted";
+    signature?: string;
+  }): Promise<void>;
 }
 
 export type SponsorRejectReason =
