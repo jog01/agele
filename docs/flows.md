@@ -44,6 +44,26 @@ sequenceDiagram
   A-->>W: Receipt; Helius webhook later confirms fill
 ```
 
+### Trade states
+
+```mermaid
+stateDiagram-v2
+  [*] --> Editing
+  Editing --> Quoting: Review
+  Quoting --> Reviewing: quote ok
+  Quoting --> Editing: quote failed
+  Reviewing --> Editing: Back / quote expired
+  Reviewing --> Signing: Confirm
+  Signing --> Editing: user rejected
+  Signing --> Submitting: signed
+  Submitting --> Pending: accepted (signature)
+  Submitting --> Failed: sponsor or Jupiter rejected
+  Pending --> Confirmed: Helius webhook
+  Pending --> Failed: expired / dropped
+  Confirmed --> [*]
+  Failed --> Editing
+```
+
 v0.1 stops at the review dialog: demo estimates come from fixture prices and submission is disabled. The quote/submit routes are specified by `SwapService` but not exposed yet.
 
 ## Realtime market data

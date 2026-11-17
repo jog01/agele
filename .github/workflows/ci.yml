@@ -8,9 +8,6 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
     services:
       postgres:
         image: postgres:17-alpine
@@ -33,19 +30,3 @@ jobs:
       - run: bun run typecheck
       - run: bun run db:migrate
       - run: bun run test
-
-  web:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run typecheck
-      - run: bun run test
-      - run: bun run build
