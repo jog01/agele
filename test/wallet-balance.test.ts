@@ -4,6 +4,42 @@ import { USDC_MINT } from "../src/services/helius-parser";
 import { RpcWalletBalanceProvider } from "../src/services/wallet-balance.provider";
 
 describe("RPC wallet USDC balances", () => {
+  it("retains successful balances when another wallet RPC fails", async () => {
+    const warn = spyOn(logger, "warn").mockImplementation(() => {});
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        const body = (await request.json()) as { params: string[] };
+        if (body.params[0] === "failed") return new Response("Unavailable", { status: 503 });
+        return Response.json({
+          result: {
+            value: [
+              {
+                account: {
+                  data: {
+                    parsed: {
+                      info: {
+                        tokenAmount: { amount: "3000000", decimals: 6 },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+      },
+    });
+    try {
+      const provider = new RpcWalletBalanceProvider(server.url.toString());
+      expect(await provider.getUsdcBalance(["healthy", "failed"])).toBe(3);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toMatchObject({ address: "failed" });
+    } finally {
+      server.stop(true);
+      warn.mockRestore();
+    }
+  });
   it("sums parsed token accounts across distinct linked wallets", async () => {
     const requests: unknown[] = [];
     const server = Bun.serve({
