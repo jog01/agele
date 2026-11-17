@@ -1,12 +1,17 @@
-import { afterAll, expect, it } from "bun:test";
+import { afterAll, expect, it, mock } from "bun:test";
 import Redis from "ioredis";
+import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
+import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import {
   type IssuedRecord,
   MemorySponsorStore,
   RedisSponsorStore,
   SPONSOR_KILL_KEY,
 } from "../src/services/sponsor/issued-store";
+import { SWAP_MINTS_V01 as MINTS } from "../src/services/sponsor/swap-mints";
 import { ValidatedFeeSponsor } from "../src/services/sponsor/validated-fee-sponsor";
+import priceFixture from "./fixtures/jupiter-prices.json";
+import tokenFixture from "./fixtures/jupiter-tokens.json";
 import { sponsorSetup } from "./sponsor-helpers";
 
 let now = 1_000_000;
@@ -171,6 +176,28 @@ it("rejects ineligible balance/notional, missing referral, mock prices and live 
     });
     expect(s.store.charges).toHaveLength(0);
   }
+});
+it("values USDC at face value without metadata and keeps SOL priced on the default live allowlist", async () => {
+  const s = await sponsorSetup();
+  const market = new LiveMarketDataProvider({
+    allowlist: MockMarketDataProvider.mints,
+    fetch: async (url) => Response.json(url.includes("search") ? tokenFixture : priceFixture),
+  });
+  expect(await market.getToken(MINTS.USDC)).toBeNull();
+  expect((await market.getToken(MINTS.SOL))?.priceUsd).toBeGreaterThan(0);
+  const getToken = mock(market.getToken.bind(market));
+  market.getToken = getToken;
+  const sponsor = new ValidatedFeeSponsor({ ...s.options, market });
+  await expect(sponsor.register(s.encoded(), s.context)).resolves.toEqual({ expiresAt: 1_030_000 });
+  expect(getToken.mock.calls).toEqual([[MINTS.SOL]]);
+  s.context.swap!.inAmount = "4000000";
+  await expect(sponsor.register(s.encoded(), s.context)).rejects.toMatchObject({ reason: "quota" });
+});
+it("still requires live SOL pricing for USDC swaps", async () => {
+  const s = await sponsorSetup();
+  s.market.getToken = async () => null;
+  await expect(s.sponsor.register(s.encoded(), s.context)).rejects.toMatchObject({ reason: "quota" });
+  expect(s.store.records.size).toBe(0);
 });
 it("never uses the fee payer as the referral account", async () => {
   const s = await sponsorSetup();

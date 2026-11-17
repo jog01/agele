@@ -133,7 +133,9 @@ export class ValidatedFeeSponsor implements FeeSponsor {
     if (usdc < 5_000_000n) refuse("quota");
     if (this.options.market.name !== "live") refuse("quota");
     const [input, sol] = await Promise.all([
-      this.options.market.getToken(expected.inputMint),
+      expected.inputMint === SWAP_MINTS_V01.USDC
+        ? Promise.resolve({ decimals: 6, priceUsd: 1 })
+        : this.options.market.getToken(expected.inputMint),
       this.options.market.getToken(SWAP_MINTS_V01.SOL),
     ]);
     if (
@@ -145,10 +147,7 @@ export class ValidatedFeeSponsor implements FeeSponsor {
       sol.priceUsd <= 0
     )
       return refuse("quota");
-    const notional =
-      expected.inputMint === SWAP_MINTS_V01.USDC
-        ? Number(BigInt(expected.inAmount)) / 1e6
-        : (Number(BigInt(expected.inAmount)) / 10 ** input.decimals) * input.priceUsd;
+    const notional = (Number(BigInt(expected.inAmount)) / 10 ** input.decimals) * input.priceUsd;
     if (!Number.isFinite(notional) || notional < 5) return refuse("quota");
     const fee = this.options.referralFeeBps ?? 0;
     if (this.options.referralAccount === this.feePayer) return refuse("fee_payer_role");
