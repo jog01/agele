@@ -31,7 +31,9 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
-  const parsed = EnvSchema.safeParse(source);
+  // Blank values from a copied .env.example mean "unset", not "".
+  const defined = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ""));
+  const parsed = EnvSchema.safeParse(defined);
   if (!parsed.success) {
     console.error("Invalid environment:", z.prettifyError(parsed.error));
     process.exit(1);
