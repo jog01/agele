@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client";
+import { logger } from "../lib/logger";
 import { type NewUser, type User, users, type Wallet, wallets } from "../models";
 import type { LinkedWallet } from "../services/privy-user-directory";
 
@@ -26,18 +27,22 @@ export class PgUserRepository implements UserRepository {
       const [user] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
       if (!user) throw new Error("User not found");
       if (!user.walletAddress) {
-        const primary = linked.find((wallet) => wallet.walletClientType === "privy");
+        let primary: LinkedWallet | undefined;
         for (const wallet of new Map(linked.map((wallet) => [wallet.address, wallet])).values()) {
           const [stored] = await tx
             .insert(wallets)
-            .values({ ...wallet, userId, isPrimary: wallet.address === primary?.address })
+            .values({ ...wallet, userId, isPrimary: false })
             .onConflictDoUpdate({
               target: wallets.address,
-              set: { ...wallet, isPrimary: wallet.address === primary?.address, updatedAt: new Date() },
+              set: { ...wallet, isPrimary: false, updatedAt: new Date() },
               setWhere: eq(wallets.userId, userId),
             })
             .returning();
-          if (!stored) throw new Error("Wallet already belongs to another user");
+          if (!stored) {
+            logger.warn({ userId, address: wallet.address }, "Skipping wallet owned by another user");
+            continue;
+          }
+          if (!primary && wallet.walletClientType === "privy") primary = wallet;
         }
         if (primary) {
           await tx
