@@ -127,8 +127,8 @@ All processes share DATABASE_URL and REDIS_URL. Run migrations once before deplo
 `NEXT_PUBLIC_WS_URL=ws://localhost:4001/ws` (use wss and the gateway hostname in production).
 Helius now receives `202 {queued: n}`; this acknowledges accepted transactions,
 not completed indexing. Duplicate signatures count in n but share one queue job.
-Completed/failed trade jobs are retained for deduplication and diagnosis; monitor
-queue storage and explicitly archive/remove old jobs according to your retention policy.
+Completed trade jobs are kept for 7 days and failed ones for 30 days, for deduplication
+and diagnosis; PostgreSQL uniqueness still prevents duplicate trades after that.
 Removing them allows replay, with database trade uniqueness still preventing double accounting.
 
 Default `docker compose up -d` starts only Postgres and Redis. Build the app images
