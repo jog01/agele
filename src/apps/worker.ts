@@ -24,6 +24,7 @@ const leaderboard = env.HELIUS_WEBHOOK_SECRET
 const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
 if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
 const connection = getRedis();
+const scheduledRetention = { removeOnComplete: 100, removeOnFail: 500 };
 const workers = [
   new Worker(QUEUE.tradeIndex, createTradeIndexProcessor(indexer), { connection }),
   new Worker(QUEUE.portfolioSnapshot, portfolioSnapshotProcessor, { connection }),
@@ -35,11 +36,19 @@ const workers = [
     { connection },
   ),
 ];
-await getQueue(QUEUE.portfolioSnapshot).upsertJobScheduler("daily-portfolio-snapshot", {
-  pattern: "5 0 * * *",
-  tz: "UTC",
-});
-await getQueue(QUEUE.leaderboardRebuild).upsertJobScheduler("leaderboard-rebuild", { every: 60000 });
+await getQueue(QUEUE.portfolioSnapshot).upsertJobScheduler(
+  "daily-portfolio-snapshot",
+  {
+    pattern: "5 0 * * *",
+    tz: "UTC",
+  },
+  { opts: scheduledRetention },
+);
+await getQueue(QUEUE.leaderboardRebuild).upsertJobScheduler(
+  "leaderboard-rebuild",
+  { every: 60000 },
+  { opts: scheduledRetention },
+);
 for (const w of workers)
   w.on("failed", (job, err) => logger.error({ queue: w.name, jobId: job?.id, err }, "job failed"));
 logger.info({ queues: workers.map((w) => w.name) }, "worker started");

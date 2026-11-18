@@ -125,7 +125,7 @@ describe("Helius webhook database integration", () => {
       expect(response.status).toBe(202);
       expect(await response.json()).toEqual({ queued: 4 });
       expect(queued).toHaveLength(4);
-      for (const data of queued.splice(0)) await processTrade({ data });
+      await processTrade({ data: queued.splice(0) });
       const [position] = await db.select().from(schema.positions).where(eq(schema.positions.userId, userId));
       expect(Number(position!.quantity)).toBe(6);
       expect(Number(position!.costBasisUsd)).toBe(60);
@@ -140,7 +140,7 @@ describe("Helius webhook database integration", () => {
       for (const duplicate of duplicates) {
         expect(await duplicate.json()).toEqual({ queued: 2 });
       }
-      for (const data of queued.splice(0)) await processTrade({ data });
+      await processTrade({ data: queued.splice(0) });
       expect(await db.select().from(schema.positions).where(eq(schema.positions.userId, userId))).toEqual([
         position!,
       ]);

@@ -86,22 +86,28 @@ describe("process boundaries", () => {
     }
   });
 
-  it("enqueues by signature with retries and deduplication", async () => {
+  it("enqueues one ordered, deduplicated batch job with retries", async () => {
+    const sell = { ...buy, signature: `test-${crypto.randomUUID()}`, timestamp: buy.timestamp + 10 };
     const tx = { ...buy, signature: `test-${crypto.randomUUID()}` };
     const queue = getQueue(QUEUE.tradeIndex);
+    const before = await queue.getJobCountByTypes("waiting", "delayed");
+    let job: Awaited<ReturnType<typeof queue.getJob>>;
     try {
       expect(await enqueueTrades([])).toEqual({ queued: 0 });
-      expect(await enqueueTrades([tx, tx])).toEqual({ queued: 2 });
-      const job = await queue.getJob(tx.signature);
-      expect(job?.data).toEqual(tx);
+      expect(await enqueueTrades([sell, tx])).toEqual({ queued: 2 });
+      expect(await enqueueTrades([tx, sell])).toEqual({ queued: 2 });
+      expect(await queue.getJobCountByTypes("waiting", "delayed")).toBe(before + 1);
+      const jobs = await queue.getJobs(["waiting", "delayed"]);
+      job = jobs.find((j) => j.data?.[0]?.signature === tx.signature);
+      expect(job?.data).toEqual([tx, sell]);
       expect(job?.opts.attempts).toBe(5);
       expect(job?.opts.backoff).toEqual({ type: "exponential", delay: 1000 });
     } finally {
-      await (await queue.getJob(tx.signature))?.remove();
+      await job?.remove();
     }
   });
 
-  it("indexes one transaction and propagates failures for BullMQ retry", async () => {
+  it("indexes a batch and propagates failures for BullMQ retry", async () => {
     const calls: unknown[] = [];
     const processor = createTradeIndexProcessor({
       index: async (txs) => {
@@ -109,13 +115,13 @@ describe("process boundaries", () => {
         return { indexed: 1, skipped: 0 };
       },
     });
-    expect(await processor({ data: buy })).toEqual({ indexed: 1, skipped: 0 });
+    expect(await processor({ data: [buy] })).toEqual({ indexed: 1, skipped: 0 });
     expect(calls).toEqual([[buy]]);
     const failure = createTradeIndexProcessor({
       index: async () => {
         throw new Error("database unavailable");
       },
     });
-    await expect(failure({ data: buy })).rejects.toThrow("database unavailable");
+    await expect(failure({ data: [buy] })).rejects.toThrow("database unavailable");
   });
 });
