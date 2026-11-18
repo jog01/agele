@@ -1,4 +1,5 @@
 import { getBase58Decoder } from "@solana/kit";
+import { badRequest } from "../../lib/errors";
 import { hash, mulberry32 } from "../../lib/prng";
 import type {
   CommentDto,
@@ -98,7 +99,11 @@ export class MockSocialProvider implements SocialProvider {
     if (cursor && cursorItem) {
       // Keep the first page's timeline even if the clock advances before the next request.
       const offset = cursor.createdAt - cursorItem.createdAt;
-      for (const row of rows) row.createdAt += offset;
+      for (const row of rows) {
+        const createdAt = row.createdAt + offset;
+        if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw badRequest("Invalid feed cursor");
+        row.createdAt = createdAt;
+      }
     }
     const matching = rows
       .filter(
