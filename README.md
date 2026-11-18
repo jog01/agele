@@ -4,6 +4,43 @@ Backend for Agele, a social trading terminal for Solana spot markets: Bun + Hono
 
 - `docs/`: [architecture](docs/architecture.md), [flows](docs/flows.md), [decisions](docs/decisions.md), [data model](docs/data-model.md), [fee-payer security policy](docs/fee-payer-security-policy.md)
 
+## Architecture
+
+```mermaid
+flowchart LR
+  web["agele-web (Next.js)"]
+  helius["Helius webhooks"]
+  providers["Market data: Jupiter / Birdeye"]
+  solana["Solana RPC + Jupiter swaps"]
+  privy["Privy auth"]
+
+  subgraph backend["Agele backend (one repo, shared src/services)"]
+    api["api: REST + webhook intake :4000"]
+    ws["ws: websocket gateway :4001"]
+    worker["worker: indexing + scheduled jobs"]
+    feed["feed: market-data poller (singleton)"]
+  end
+
+  pg[("Postgres")]
+  redis[("Redis: queues, pub/sub, locks")]
+
+  web -->|REST| api
+  web -->|websocket| ws
+  helius --> api
+  api --> privy
+  api --> solana
+  api --> pg
+  api -->|enqueue| redis
+  redis -->|jobs| worker
+  worker --> pg
+  worker -->|events| redis
+  feed --> providers
+  feed -->|events| redis
+  redis -->|pub/sub| ws
+```
+
+Details in [docs/architecture.md](docs/architecture.md).
+
 ## Run locally
 
 Requires Bun 1.4+ and Docker.
