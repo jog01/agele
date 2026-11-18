@@ -91,4 +91,26 @@ describe("WS live price polling", () => {
     expect(s.requests).toHaveLength(2);
     expect(s.events).toHaveLength(0);
   });
+
+  it("recovers after an asynchronous topic registry failure", async () => {
+    let fail = true;
+    const events: unknown[] = [];
+    const tick = createPricePoller(
+      {
+        activeTopics: async () => {
+          if (fail) throw new Error("redis unavailable");
+          return [];
+        },
+        publish: (_topic, data) => {
+          events.push(data);
+        },
+      },
+      new LiveMarketDataProvider({ allowlist: mints }),
+      mints,
+    );
+    await tick();
+    fail = false;
+    await tick();
+    expect(events).toEqual([]);
+  });
 });

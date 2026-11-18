@@ -6,6 +6,7 @@ const boolish = z.enum(["true", "false", "1", "0"]).transform((v) => v === "true
 const EnvSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    WS_PORT: z.coerce.number().int().positive().default(4001),
     PORT: z.coerce.number().int().positive().default(4000),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
     CORS_ORIGINS: z

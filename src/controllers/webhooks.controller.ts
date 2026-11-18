@@ -25,18 +25,18 @@ const webhook = createRoute({
     body: { required: true, content: { "application/json": { schema: z.array(EnhancedTransactionSchema) } } },
   },
   responses: {
-    200: {
-      description: "Transactions processed; skipped includes duplicates and non-trades",
+    202: {
+      description: "Transactions queued for asynchronous indexing",
       content: {
-        "application/json": { schema: z.object({ indexed: z.number().int(), skipped: z.number().int() }) },
+        "application/json": { schema: z.object({ queued: z.number().int() }) },
       },
     },
     400: errorResponse("Invalid enhanced transactions"),
     401: errorResponse("Invalid webhook secret"),
-    503: errorResponse("Webhook or SOL pricing unavailable"),
+    503: errorResponse("Webhook unavailable"),
   },
 });
 
 export const webhooksController = new OpenAPIHono<AppEnv>().openapi(webhook, async (c) =>
-  c.json(await c.get("container").tradeIndexer.index(c.req.valid("json")), 200),
+  c.json(await c.get("container").tradeQueue.enqueue(c.req.valid("json")), 202),
 );

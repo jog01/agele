@@ -2,6 +2,8 @@ import { Queue } from "bullmq";
 import { getRedis } from "../lib/redis";
 
 export const QUEUE = {
+  tradeIndex: "trade-index",
+  leaderboardRebuild: "leaderboard-rebuild",
   portfolioSnapshot: "portfolio-snapshot",
 } as const;
 
@@ -16,4 +18,9 @@ export function getQueue(name: QueueName) {
     queues.set(name, q);
   }
   return q;
+}
+
+export async function closeQueues() {
+  await Promise.all([...queues.values()].map((q) => q.close()));
+  queues.clear();
 }

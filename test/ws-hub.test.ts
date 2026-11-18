@@ -30,4 +30,19 @@ describe("WsHub", () => {
     );
     expect(hub.handle("{", fakeSocket()).type).toBe("error");
   });
+
+  it("keeps activity until the last client disconnects", () => {
+    const hub = new WsHub();
+    const topic = `token:${SOL}:price`;
+    const frame = JSON.stringify({ op: "subscribe", topic });
+    const a = fakeSocket();
+    hub.handle(frame, a);
+    hub.handle(frame, a);
+    hub.handle(frame, fakeSocket());
+    hub.release([topic]);
+    expect(hub.activeTopics()).toEqual([topic]);
+    hub.release([topic]);
+    expect(hub.activeTopics()).toEqual([]);
+    hub.publish(topic, {});
+  });
 });

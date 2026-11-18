@@ -13,7 +13,7 @@ docker compose up -d          # Postgres + Redis (add --profile observability fo
 bun install
 cp .env.example .env
 bun run db:migrate
-bun run dev                   # :4000, API docs at /docs, WebSocket at /ws
+bun run dev                   # all four processes; REST :4000, WebSocket :4001/ws
 ```
 
 Keyless Jupiter market data works by default; candles/trades need a Birdeye key.
@@ -110,3 +110,29 @@ without it they return 503, never synthetic data. Upstream errors/timeouts retur
 events contain `{mint,priceUsd,marketCapUsd,time}` (Unix seconds), polled every
 5 seconds for subscribed allowlisted tokens only. Live trade data uses REST;
 the `token:<mint>:trades` WS feed remains mock-only.
+
+## Process deployment
+
+One package, four independently runnable entrypoints:
+
+| Process | Development | Production | Responsibility |
+| --- | --- | --- | --- |
+| API | `bun run dev:api` | `bun run start:api` | REST and webhook validation/enqueue |
+| WS | `bun run dev:ws` | `bun run start:ws` | /ws and GET /health on WS_PORT (4001) |
+| Worker | `bun run dev:worker` | `bun run start:worker` | trade-index, leaderboard rebuild, daily snapshots |
+| Feed | `bun run dev:feed` | `bun run start:feed` | Market ticks; Redis lease elects one active ingester |
+
+All processes share DATABASE_URL and REDIS_URL. Run migrations once before deploying:
+`bun run db:migrate`. API no longer serves /ws. In agele-web set the existing
+`NEXT_PUBLIC_WS_URL=ws://localhost:4001/ws` (use wss and the gateway hostname in production).
+Helius now receives `202 {queued: n}`; this acknowledges accepted transactions,
+not completed indexing. Duplicate signatures count in n but share one queue job.
+Completed/failed trade jobs are retained for deduplication and diagnosis; monitor
+queue storage and explicitly archive/remove old jobs according to your retention policy.
+Removing them allows replay, with database trade uniqueness still preventing double accounting.
+
+Default `docker compose up -d` starts only Postgres and Redis. Build the app images
+with `docker compose --profile apps build`, then migrate before starting apps:
+`docker compose --profile apps run --rm api bun run db:migrate`.
+Start them with `docker compose --profile apps up -d`. The Dockerfile has independent
+api, ws, worker and feed targets. Each process handles SIGINT/SIGTERM.

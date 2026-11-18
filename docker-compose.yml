@@ -26,5 +26,77 @@ services:
     ports: ["16686:16686", "4318:4318"]
     profiles: [observability]
 
+  api:
+    build:
+      context: .
+      target: api
+    profiles: [apps]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://fomo:fomo@postgres:5432/fomo
+      REDIS_URL: redis://redis:6379
+      PORT: 4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["4000:4000"]
+
+  ws:
+    build:
+      context: .
+      target: ws
+    profiles: [apps]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://fomo:fomo@postgres:5432/fomo
+      REDIS_URL: redis://redis:6379
+      WS_PORT: 4001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["4001:4001"]
+
+  worker:
+    build:
+      context: .
+      target: worker
+    profiles: [apps]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://fomo:fomo@postgres:5432/fomo
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  feed:
+    build:
+      context: .
+      target: feed
+    profiles: [apps]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://fomo:fomo@postgres:5432/fomo
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:

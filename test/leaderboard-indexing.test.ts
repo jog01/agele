@@ -84,7 +84,7 @@ describe("indexed leaderboard wiring", () => {
       leaderboardStore: store,
       leaderboard,
       tradeIndexer: indexer,
-      hub,
+      events: hub,
     });
     const app = createApp(container);
     const tx = {

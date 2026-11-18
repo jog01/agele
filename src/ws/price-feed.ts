@@ -1,10 +1,10 @@
+import type { EventPublisher, TopicSource } from "../events/bus";
 import { logger } from "../lib/logger";
 import type { PriceTick } from "../schemas/token";
 import type { MarketDataProvider } from "../services/market-data/provider";
-import type { WsHub } from "./hub";
 
 export function createPricePoller(
-  hub: Pick<WsHub, "activeTopics" | "publish">,
+  hub: EventPublisher & TopicSource,
   market: MarketDataProvider,
   allowlist: readonly string[],
   now: () => number = Date.now,
@@ -12,25 +12,25 @@ export function createPricePoller(
   let running = false;
   return async () => {
     if (running) return;
-    const topics = hub.activeTopics().filter((topic) => {
-      const [entity, mint, stream] = topic.split(":");
-      return entity === "token" && stream === "price" && !!mint && allowlist.includes(mint);
-    });
-    if (!topics.length) return;
     running = true;
     try {
+      const topics = (await hub.activeTopics()).filter((topic) => {
+        const [entity, mint, stream] = topic.split(":");
+        return entity === "token" && stream === "price" && !!mint && allowlist.includes(mint);
+      });
+      if (!topics.length) return;
       await Promise.all(
         topics.map(async (topic) => {
           const mint = topic.split(":")[1]!;
           const token = await market.getToken(mint);
-          if (!token || !hub.activeTopics().includes(topic)) return;
+          if (!token || !(await hub.activeTopics()).includes(topic)) return;
           const data: PriceTick = {
             mint,
             priceUsd: token.priceUsd,
             marketCapUsd: token.marketCapUsd,
             time: Math.floor(now() / 1000),
           };
-          hub.publish(topic, data);
+          await hub.publish(topic, data);
         }),
       );
     } catch {
@@ -41,7 +41,11 @@ export function createPricePoller(
   };
 }
 
-export function startPriceFeed(hub: WsHub, market: MarketDataProvider, allowlist: readonly string[]) {
+export function startPriceFeed(
+  hub: EventPublisher & TopicSource,
+  market: MarketDataProvider,
+  allowlist: readonly string[],
+) {
   const tick = createPricePoller(hub, market, allowlist);
   const timer = setInterval(() => {
     void tick();

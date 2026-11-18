@@ -1,5 +1,7 @@
 import { env } from "./config/env";
 import { getDb } from "./db/client";
+import { type EventPublisher, RedisEventPublisher } from "./events/bus";
+import { enqueueTrades, type TradeQueue } from "./jobs/trade-queue";
 import { getRedis } from "./lib/redis";
 import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
@@ -31,11 +33,11 @@ import { SwapService } from "./services/trading/swap.service";
 import { RedisSwapRateLimiter, type SwapRateLimiter } from "./services/trading/swap-rate-limiter";
 import { UserService } from "./services/user.service";
 import { RpcWalletBalanceProvider, type WalletBalanceProvider } from "./services/wallet-balance.provider";
-import { WsHub } from "./ws/hub";
 
 /** Composition root: wires services so controllers and tests can swap dependencies. */
 export interface Container {
-  hub: WsHub;
+  events: EventPublisher;
+  tradeQueue: TradeQueue;
   leaderboardStore: LeaderboardStore;
   leaderboard?: LeaderboardService;
   balances: WalletBalanceProvider;
@@ -77,12 +79,12 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         : new DisabledFeeSponsor()))
     : new DisabledFeeSponsor();
   const balances = overrides.balances ?? new RpcWalletBalanceProvider();
-  const hub = overrides.hub ?? new WsHub();
+  const events = overrides.events ?? new RedisEventPublisher();
   const leaderboardStore = overrides.leaderboardStore ?? new RedisLeaderboard();
   const leaderboard =
     overrides.leaderboard ??
     (env.HELIUS_WEBHOOK_SECRET
-      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, hub)
+      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, events)
       : undefined);
   const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
@@ -106,7 +108,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
           referralFee: env.SPONSOR_REFERRAL_FEE_BPS,
         },
       ),
-    hub,
+    events,
+    tradeQueue: overrides.tradeQueue ?? { enqueue: enqueueTrades },
     leaderboardStore,
     leaderboard,
     balances,
@@ -117,7 +120,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         new PgTraderRepository(getDb()),
         portfolio,
         leaderboard ??
-          new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, hub),
+          new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, events),
         mockSocial,
         follows,
         !!leaderboard,
