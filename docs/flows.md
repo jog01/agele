@@ -249,6 +249,7 @@ sequenceDiagram
   A->>R: listWallets(viewer.id)
   R-->>A: wallets (possibly empty)
   A->>S: feed(wallets, decoded cursor, limit)
+  Note over S: Anchor timestamps to now for a fresh feed,<br/>or to the cursor's timeline for later pages
   S-->>A: newest items + opaque nextCursor
   A-->>W: 200 items + nextCursor (null at end)
   W->>A: DELETE /v1/follows/{wallet} (Bearer token)
