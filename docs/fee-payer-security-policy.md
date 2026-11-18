@@ -247,7 +247,7 @@ Plus one positive test per kind (swap via a recorded `/order` fixture, withdrawa
 | §3.10 order response constraints and execution persistence | `src/services/trading/swap.service.ts`, `jupiter-swap.client.ts`, `src/repositories/swap.repository.ts`; swap rows are authoritative, later indexing owns trades/PnL |
 | §4 user quota, open records, suspension, daily spend circuit breaker / Redis kill switch | `issued-store.ts`; transaction counts and maximum fee/rent are reserved atomically at CAS, conservatively charged even if simulation/execution fails |
 | §4 minimum balance/notional and estimated fee coverage | `validated-fee-sponsor.ts` (`eligibility`), injected live market data and RPC token balances; unavailable prices fail closed |
-| §5 development key loading and pubkey equality; co-sign-only signing | `validated-fee-sponsor.ts` (`ready`, `cosign`); `src/index.ts` awaits initialization before serving; `src/config/env.ts` prohibits raw secret outside development |
+| §5 development key loading and pubkey equality; co-sign-only signing | `validated-fee-sponsor.ts` (`ready`, `cosign`); `src/apps/api.ts` awaits initialization before serving; `src/config/env.ts` prohibits raw secret outside development |
 | §6 structured issue/reject/co-sign/outcome logs and low-cardinality OTel event counter | `validated-fee-sponsor.ts`, outcome callback in `swap.service.ts` |
 | §7 adversarial transaction tests | `test/fee-sponsor.test.ts`, `sponsor-store.test.ts`, `sponsor-rpc.test.ts`, existing `swap.service.test.ts` |
 

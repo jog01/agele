@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 import { ClientMessage, type ServerMessage } from "./topics";
 
-/** Thin wrapper over Bun's native pub/sub; one process, fan-out via Redis later. */
+/** Per-gateway subscriptions and Bun native pub/sub fan-out. */
 export class WsHub {
   private server: Server<unknown> | undefined;
   private readonly counts = new Map<string, number>();

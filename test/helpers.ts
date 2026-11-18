@@ -10,6 +10,7 @@ export const SOL = "So11111111111111111111111111111111111111112";
 export function testApp(overrides: Partial<Container> = {}) {
   const market = new MockMarketDataProvider(() => FIXED_NOW);
   const container = createContainer({
+    events: { publish() {} },
     market,
     tokens: new TokenService(market),
     follows: new InMemoryFollowRepository(),

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../src/config/env";
+import { createTradeIndexProcessor } from "../src/jobs/processors/trade-index";
 import * as schema from "../src/models";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import { SOL_MINT } from "../src/services/helius-parser";
@@ -24,7 +25,16 @@ describe("Helius webhook database integration", () => {
     getToken: async (mint) =>
       mint === SOL_MINT ? { ...(await market.getToken(SOL_MINT))!, priceUsd: 100 } : null,
   });
-  const app = testApp({ tradeIndexer: indexer });
+  const queued: (typeof buy)[] = [];
+  const app = testApp({
+    tradeQueue: {
+      enqueue: async (transactions) => {
+        queued.push(...transactions);
+        return { queued: transactions.length };
+      },
+    },
+  });
+  const processTrade = createTradeIndexProcessor(indexer);
   const originalSecret = env.HELIUS_WEBHOOK_SECRET;
   const suffix = crypto.randomUUID();
   const address = `${WALLET}-${suffix}`;
@@ -84,8 +94,26 @@ describe("Helius webhook database integration", () => {
     }
   });
   it("accepts empty payloads and rejects malformed ones", async () => {
-    expect(await (await deliver([])).json()).toEqual({ indexed: 0, skipped: 0 });
+    const empty = await deliver([]);
+    expect(empty.status).toBe(202);
+    expect(await empty.json()).toEqual({ queued: 0 });
     expect((await deliver([{}])).status).toBe(400);
+  });
+
+  it("does not acknowledge enqueue failures", async () => {
+    const unavailable = testApp({
+      tradeQueue: {
+        enqueue: async () => {
+          throw new Error("queue unavailable");
+        },
+      },
+    });
+    const response = await unavailable.request("/v1/webhooks/helius", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "test-webhook-secret" },
+      body: JSON.stringify([buy]),
+    });
+    expect(response.status).toBe(500);
   });
   it("indexes a buy and partial sell once and updates average-cost realized PnL", async () => {
     const events: string[] = [];
@@ -94,8 +122,10 @@ describe("Helius webhook database integration", () => {
     });
     try {
       const response = await deliver([fixture(buy), fixture(sell), fixture(transfer), fixture(failed)]);
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ indexed: 2, skipped: 2 });
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ queued: 4 });
+      expect(queued).toHaveLength(4);
+      await processTrade({ data: queued.splice(0) });
       const [position] = await db.select().from(schema.positions).where(eq(schema.positions.userId, userId));
       expect(Number(position!.quantity)).toBe(6);
       expect(Number(position!.costBasisUsd)).toBe(60);
@@ -108,8 +138,9 @@ describe("Helius webhook database integration", () => {
         deliver([fixture(buy), fixture(sell)]),
       ]);
       for (const duplicate of duplicates) {
-        expect(await duplicate.json()).toEqual({ indexed: 0, skipped: 2 });
+        expect(await duplicate.json()).toEqual({ queued: 2 });
       }
+      await processTrade({ data: queued.splice(0) });
       expect(await db.select().from(schema.positions).where(eq(schema.positions.userId, userId))).toEqual([
         position!,
       ]);

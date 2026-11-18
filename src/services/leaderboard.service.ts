@@ -1,6 +1,6 @@
+import type { EventPublisher } from "../events/bus";
 import type { LeaderboardRepository } from "../repositories/leaderboard.repository";
 import type { LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
-import type { WsHub } from "../ws/hub";
 import type { MarketDataProvider } from "./market-data";
 import {
   LEADERBOARD_WINDOWS,
@@ -17,7 +17,7 @@ export class LeaderboardService {
     private readonly repository: LeaderboardRepository,
     private readonly store: LeaderboardStore,
     private readonly market: MarketDataProvider,
-    private readonly hub: Pick<WsHub, "publish">,
+    private readonly hub: EventPublisher,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -99,7 +99,7 @@ export class LeaderboardService {
       const snapshot = await this.compute(now, userId);
       for (const window of LEADERBOARD_WINDOWS) {
         await this.store.update(window, userId, snapshot[window][0] ?? null);
-        this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
+        await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
       }
     });
   }
@@ -109,7 +109,7 @@ export class LeaderboardService {
       const now = this.now();
       await this.store.replace(await this.compute(now));
       for (const window of LEADERBOARD_WINDOWS)
-        this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
+        await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
     });
   }
 

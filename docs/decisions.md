@@ -24,3 +24,21 @@ Short records; each says what we chose, why, and what would change it.
 - Token allowlist policy beyond the initial set (manual curation vs. liquidity/volume thresholds).
 - Public profiles: are all trades public by default, or opt-in?
 - Hosting (Vercel for web; Fly/Railway/AWS for API, Postgres, Redis).
+
+## 2026-11-18 — Four process entrypoints, one application
+
+Split REST API, WebSocket gateway, BullMQ worker and market-data feed. Their
+lifecycles differ: requests should not wait on indexing, websocket connections
+need independent replication, scheduled/retried work belongs in BullMQ, and
+upstream market polling should have one elected owner. A Redis pub/sub bus fans
+events to every gateway; active-topic heartbeats avoid polling unused markets.
+
+This is not microservices: services, repositories, types, release artifact and
+PostgreSQL schema remain shared. No internal HTTP/RPC layer or separate service
+databases are introduced. BullMQ schedulers deduplicate schedule registration
+across worker replicas; a Redis token lease protects feed ownership.
+
+Run migrations as a one-off `bun run db:migrate` job before deploy, not a fifth
+process. Only existing rebuild/snapshot logic is scheduled. Reconciliation,
+historical backfills and alerts need explicit correctness contracts before they
+can become scheduled jobs.

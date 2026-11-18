@@ -1004,23 +1004,19 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Transactions processed; skipped includes duplicates and non-trades",
+          "202": {
+            "description": "Transactions queued for asynchronous indexing",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "indexed": {
-                      "type": "integer"
-                    },
-                    "skipped": {
+                    "queued": {
                       "type": "integer"
                     }
                   },
                   "required": [
-                    "indexed",
-                    "skipped"
+                    "queued"
                   ]
                 }
               }
@@ -1047,7 +1043,7 @@
             }
           },
           "503": {
-            "description": "Webhook or SOL pricing unavailable",
+            "description": "Webhook unavailable",
             "content": {
               "application/json": {
                 "schema": {
