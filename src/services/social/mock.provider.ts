@@ -1,4 +1,5 @@
 import { getBase58Decoder } from "@solana/kit";
+import { badRequest } from "../../lib/errors";
 import { hash, mulberry32 } from "../../lib/prng";
 import type {
   CommentDto,
@@ -79,6 +80,7 @@ export class MockSocialProvider implements SocialProvider {
 
   async feed({ wallets, cursor, limit }: { wallets?: string[]; cursor?: FeedCursor; limit: number }) {
     const allowed = wallets === undefined ? undefined : new Set(wallets);
+    const nowSec = Math.floor(this.now() / 1000);
     const rows: FeedItemDto[] = Array.from({ length: HANDLES.length * 4 }, (_, i) => {
       const handle = HANDLES[i % HANDLES.length]!;
       const common = {
@@ -87,12 +89,22 @@ export class MockSocialProvider implements SocialProvider {
         wallet: walletFor(handle),
         mint: "So11111111111111111111111111111111111111112",
         position: (["long", "short", "none"] as const)[i % 3]!,
-        createdAt: 1767268800 - Math.floor(i / 2) * 60,
+        createdAt: nowSec - Math.floor(i / 2) * 60,
       };
       return i % 2 === 0
         ? { ...common, kind: "thesis", body: THESES[i % THESES.length]! }
         : { ...common, kind: "trade", side: i % 4 === 1 ? "buy" : "sell", amountUsd: 100 + i * 37 };
     });
+    const cursorItem = cursor && rows.find((row) => row.id === cursor.id);
+    if (cursor && cursorItem) {
+      // Keep the first page's timeline even if the clock advances before the next request.
+      const offset = cursor.createdAt - cursorItem.createdAt;
+      for (const row of rows) {
+        const createdAt = row.createdAt + offset;
+        if (!Number.isSafeInteger(createdAt) || createdAt < 0) throw badRequest("Invalid feed cursor");
+        row.createdAt = createdAt;
+      }
+    }
     const matching = rows
       .filter(
         (row) =>

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { unauthorized } from "../src/lib/errors";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import type { FeedPage, LeaderboardEntryDto } from "../src/schemas/social";
-import { encodeCursor } from "../src/services/social/cursor";
+import { decodeCursor, encodeCursor } from "../src/services/social/cursor";
 import { MockSocialProvider } from "../src/services/social/mock.provider";
 import type { UserService } from "../src/services/user.service";
 import { SOL, testApp } from "./helpers";
@@ -32,18 +32,33 @@ async function page(app: ReturnType<typeof testApp>, query = "", authenticated =
 }
 
 describe("feed", () => {
+  it("uses the current time for a fresh feed but keeps its timestamps across pages", async () => {
+    let now = Date.UTC(2026, 10, 18, 12, 0, 0);
+    const provider = new MockSocialProvider(() => now);
+    const snapshot = await provider.feed({ limit: 100 });
+    const first = await provider.feed({ limit: 1 });
+    const newest = first.items[0]!;
+    expect(newest.createdAt).toBe(now / 1000);
+    expect(snapshot.items[1]?.createdAt).toBe(newest.createdAt);
+    expect(snapshot.items[2]?.createdAt).toBe(newest.createdAt - 60);
+
+    now += 15 * 60 * 1000;
+    const next = await provider.feed({ limit: 100, cursor: decodeCursor(first.nextCursor!) });
+    expect(next.items).toEqual(snapshot.items.slice(1));
+    expect(next.nextCursor).toBeNull();
+
+    const fresh = await provider.feed({ limit: 1 });
+    expect(fresh.items[0]).toEqual({ ...newest, createdAt: now / 1000 });
+  });
+
   it("returns stable newest-first pages including timestamp ties without duplicates", async () => {
     const { app } = setup();
-    const first = await page(app, "?limit=1");
-    expect(first.items).toHaveLength(1);
-    expect(first.nextCursor).toBeString();
-    const again = await page(app, "?limit=1");
-    expect(again).toEqual(first);
+    let result = await page(app, "?limit=1");
+    expect(result.items).toHaveLength(1);
+    expect(result.nextCursor).toBeString();
     const ids: string[] = [];
-    let cursor: string | null = null;
-    let previous = first.items[0]!;
-    do {
-      const result = await page(app, `?limit=7${cursor ? `&cursor=${cursor}` : ""}`);
+    let previous = result.items[0]!;
+    for (;;) {
       for (const item of result.items) {
         expect(item.createdAt <= previous.createdAt).toBe(true);
         if (ids.length && item.createdAt === previous.createdAt) expect(item.id < previous.id).toBe(true);
@@ -61,8 +76,9 @@ describe("feed", () => {
         ids.push(item.id);
         previous = item;
       }
-      cursor = result.nextCursor;
-    } while (cursor);
+      if (!result.nextCursor) break;
+      result = await page(app, `?limit=7&cursor=${result.nextCursor}`);
+    }
     expect(ids).toHaveLength(96);
     expect(new Set(ids).size).toBe(ids.length);
     expect(await page(app, `?cursor=${encodeCursor({ createdAt: 0, id: "end" })}`)).toEqual({
@@ -77,6 +93,8 @@ describe("feed", () => {
       "cursor=",
       "cursor=garbage",
       `cursor=${Buffer.from('{"createdAt":1,"id":1}').toString("base64url")}`,
+      `cursor=${encodeCursor({ createdAt: 0, id: "demo-0000" })}`,
+      `cursor=${encodeCursor({ createdAt: Number.MAX_SAFE_INTEGER, id: "demo-0095" })}`,
       "scope=bad",
       "limit=0",
       "limit=101",
