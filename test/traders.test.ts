@@ -353,6 +353,10 @@ describe("public trader profiles", () => {
     expect(await (await app.request(`/v1/search?q=${wallets[4]}`)).json()).toMatchObject({
       traders: [{ wallet: wallets[0] }],
     });
+    const fallback = legacyWallet.slice(0, 8);
+    expect(
+      await (await app.request(`/v1/search?q=%40${fallback.slice(0, 7).toLowerCase()}`)).json(),
+    ).toMatchObject({ traders: [{ wallet: legacyWallet, handle: fallback }] });
   });
 
   it("returns at most five closed positions ranked by realized dollars", async () => {
