@@ -50,6 +50,27 @@
       "when": 1795806996896,
       "tag": "0006_pending_trade_fills",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795807723736,
+      "tag": "0007_persist_social",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795807723737,
+      "tag": "0008_position_theses",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795807723738,
+      "tag": "0009_trade_wallet_provenance",
+      "breakpoints": true
     }
   ]
 }

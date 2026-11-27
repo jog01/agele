@@ -74,8 +74,9 @@ the token so an old owner cannot delete a successor's lease.
 
 ## Operational semantics and limits
 
-HELIUS_WEBHOOK_SECRET selects indexed leaderboard data; without it rankings stay
-demo and scheduled rebuilds are no-ops. Market mode is independent. Trade-index
+HELIUS_WEBHOOK_SECRET enables the Redis leaderboard projection; without it,
+rankings read PostgreSQL directly and scheduled rebuilds are no-ops. See
+[social store](social.md) for source labels and seed behavior. Trade-index
 jobs keep completed signatures for 7 days and failed ones for 30 days for dedupe
 and diagnosis. Retries are at-least-once; PostgreSQL uniqueness prevents duplicate
 position mutations. Listener errors are logged by TradeIndexer; the next periodic

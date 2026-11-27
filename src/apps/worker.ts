@@ -11,7 +11,7 @@ import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 import { PgLeaderboardRepository } from "../repositories/leaderboard.repository";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { LeaderboardService } from "../services/leaderboard.service";
-import { createMarketDataProvider } from "../services/market-data";
+import { createMarketDataProvider, createTradeMarketDataProvider } from "../services/market-data";
 import { RedisLeaderboard } from "../services/social/leaderboard-store";
 import { TradeIndexer } from "../services/trade-indexer";
 
@@ -21,7 +21,7 @@ const market = createMarketDataProvider();
 const leaderboard = env.HELIUS_WEBHOOK_SECRET
   ? new LeaderboardService(new PgLeaderboardRepository(getDb()), new RedisLeaderboard(), market, events)
   : undefined;
-const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
+const indexer = new TradeIndexer(new PgTradeRepository(getDb()), createTradeMarketDataProvider());
 if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
 const connection = getRedis();
 const scheduledRetention = { removeOnComplete: 100, removeOnFail: 500 };

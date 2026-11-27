@@ -88,6 +88,7 @@ export class PgTradeRepository implements TradeRepository {
         .values({
           userId: trade.userId,
           mint: trade.mint,
+          walletAddress: trade.wallet,
           side: trade.side,
           tokenAmount: formatDecimal(trade.amount),
           quoteAmountUsd: formatDecimal(trade.usd),

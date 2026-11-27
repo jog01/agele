@@ -53,7 +53,7 @@ const EnvSchema = z
     SPONSOR_REFERRAL_ACCOUNT: z.string().optional(),
     SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
-    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("live"),
+    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("mock"),
     MARKET_TOKEN_ALLOWLIST: z
       .string()
       .default(MockMarketDataProvider.mints.join(","))
@@ -73,6 +73,10 @@ const EnvSchema = z
   .refine((v) => !v.FEE_PAYER_SECRET || v.NODE_ENV === "development", {
     message: "FEE_PAYER_SECRET is development-only",
     path: ["FEE_PAYER_SECRET"],
+  })
+  .refine((v) => !v.HELIUS_WEBHOOK_SECRET || v.MARKET_DATA_PROVIDER === "live", {
+    message: "Helius indexing requires MARKET_DATA_PROVIDER=live",
+    path: ["MARKET_DATA_PROVIDER"],
   });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -83,11 +83,24 @@ export class LeaderboardService {
     return result;
   }
 
-  async userStats(userId: string, includeRanks = true) {
-    const snapshot = await this.compute(this.now(), userId, true);
+  private sortRows(rows: LeaderboardSnapshot[LeaderboardWindowValue]) {
+    return rows.sort((a, b) => b.pnlUsd - a.pnlUsd || a.userId.localeCompare(b.userId));
+  }
+
+  async userStats(userId: string, includeRanks: boolean | "database" = true) {
+    const now = this.now();
+    const [snapshot, ranks] = await Promise.all([
+      this.compute(now, userId, true),
+      includeRanks === "database" ? this.compute(now) : undefined,
+    ]);
     const stats = async (window: LeaderboardWindowValue) => {
       const { userId: _, ...row } = snapshot[window][0]!;
-      return { ...row, rank: includeRanks && row.trades > 0 ? await this.store.rank(window, userId) : null };
+      const rank = ranks
+        ? this.sortRows(ranks[window]).findIndex((entry) => entry.userId === userId) + 1 || null
+        : includeRanks && row.trades > 0
+          ? await this.store.rank(window, userId)
+          : null;
+      return { ...row, rank };
     };
     const [day, week, month] = await Promise.all([stats("24h"), stats("7d"), stats("30d")]);
     return { "24h": day, "7d": week, "30d": month };
@@ -114,7 +127,15 @@ export class LeaderboardService {
   }
 
   async leaderboard(window: LeaderboardWindowValue, limit: number): Promise<LeaderboardEntryDto[]> {
-    const rows = await this.store.top(window, limit);
+    return this.entries(await this.store.top(window, limit));
+  }
+
+  async databaseLeaderboard(window: LeaderboardWindowValue, limit: number) {
+    const snapshot = await this.compute(this.now());
+    return this.entries(this.sortRows(snapshot[window]).slice(0, limit));
+  }
+
+  private async entries(rows: LeaderboardSnapshot[LeaderboardWindowValue]): Promise<LeaderboardEntryDto[]> {
     const users = new Map(
       (await this.repository.getUsers(rows.map((row) => row.userId))).map((user) => [user.id, user]),
     );
@@ -122,7 +143,13 @@ export class LeaderboardService {
       const user = users.get(row.userId);
       const wallet = user?.wallet ?? "";
       const { userId: _, ...stats } = row;
-      return { ...stats, rank: index + 1, wallet, handle: user?.handle ?? wallet.slice(0, 8) };
+      return {
+        ...stats,
+        rank: index + 1,
+        wallet,
+        handle: user?.handle ?? wallet.slice(0, 8),
+        ...(user?.demo ? { source: "demo" as const } : {}),
+      };
     });
   }
 }

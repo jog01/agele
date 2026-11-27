@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   index,
@@ -25,6 +26,7 @@ export const trades = pgTable(
     mint: text()
       .notNull()
       .references(() => tokens.mint),
+    walletAddress: text(),
     side: tradeSide().notNull(),
     tokenAmount: numeric({ precision: 38, scale: 18 }).notNull(),
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),
@@ -39,6 +41,7 @@ export const trades = pgTable(
     unique("trades_signature_user_id_unique").on(t.signature, t.userId),
     index("trades_user_executed_idx").on(t.userId, t.executedAt),
     index("trades_mint_executed_idx").on(t.mint, t.executedAt),
+    index("trades_feed_idx").on(sql`date_trunc('second', ${t.executedAt} AT TIME ZONE 'UTC')`, t.id),
   ],
 );
 

@@ -19,7 +19,6 @@ import { LeaderboardService } from "../src/services/leaderboard.service";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { PortfolioService } from "../src/services/portfolio.service";
 import { LEADERBOARD_WINDOWS } from "../src/services/social/leaderboard-store";
-import { MockSocialProvider } from "../src/services/social/mock.provider";
 import { TraderService } from "../src/services/trader.service";
 import type { UserService } from "../src/services/user.service";
 import { MemoryLeaderboard } from "./fixtures/leaderboard-store";
@@ -59,9 +58,8 @@ describe("public trader profiles", () => {
     { publish: () => {} },
     () => FIXED_NOW,
   );
-  const mock = new MockSocialProvider(() => FIXED_NOW);
   const repository = new PgTraderRepository(db);
-  const traders = new TraderService(repository, portfolio, leaderboard, mock, follows, true);
+  const traders = new TraderService(repository, portfolio, leaderboard, follows, true);
   const app = testApp({
     market,
     portfolio,
@@ -135,11 +133,16 @@ describe("public trader profiles", () => {
     await record(0, "sell", "4", "60", 0);
     await record(0, "buy", "2", "10", 2);
     await record(1, "buy", "1", "10", 0);
+    demoWallet = wallets[2]!;
+    await db
+      .update(schema.users)
+      .set({ demo: true, bio: "Trades for the sample journal." })
+      .where(inArray(schema.users.id, [ids[2]!]));
+    await record(2, "buy", "2", "30", 0);
     await follows.follow(ids[2]!, wallets[0]!);
     await follows.follow(ids[2]!, wallets[4]!);
     await follows.follow(ids[1]!, wallets[4]!);
     await follows.follow(ids[0]!, wallets[1]!);
-    demoWallet = (await mock.leaderboard("24h", 1))[0]!.wallet;
     await follows.follow(ids[0]!, demoWallet);
     await leaderboard.rebuild();
   });
@@ -279,22 +282,22 @@ describe("public trader profiles", () => {
     expect(second.trades[0]!.realizedPnlUsd).toBeNull();
   });
 
-  it("keeps demo leaderboard/feed wallet links working with labelled simulated stats and empty history", async () => {
-    const feed = await mock.feed({ limit: 1 });
-    const response = await request(feed.items[0]!.wallet);
+  it("keeps demo wallet links working with labelled stored stats, holdings and history", async () => {
+    const response = await request(demoWallet);
     expect(response.headers.get("X-Data-Source")).toBe("demo");
-    expect(TraderProfileSchema.parse(await response.json()).handle).toBe(feed.items[0]!.handle);
+    expect(TraderProfileSchema.parse(await response.json()).handle).toBe(demoWallet.slice(0, 8));
     const demo = await request(demoWallet, "", true);
     const profile = TraderProfileSchema.parse(await demo.json());
     expect(profile).toMatchObject({
       wallet: demoWallet,
       followers: 1,
-      following: 0,
+      following: 2,
       isFollowing: false,
-      positions: [],
+      bio: "Trades for the sample journal.",
+      positions: [{ mint, quantity: 2, avgCostUsd: 15 }],
     });
     for (const window of LEADERBOARD_WINDOWS) {
-      const row = (await mock.leaderboard(window, 100)).find((entry) => entry.wallet === demoWallet)!;
+      const row = (await leaderboard.leaderboard(window, 100)).find((entry) => entry.wallet === demoWallet)!;
       expect(profile.stats[window]).toMatchObject({
         pnlUsd: row.pnlUsd,
         winRatePct: row.winRatePct,
@@ -303,11 +306,11 @@ describe("public trader profiles", () => {
     }
     const trades = await request(demoWallet, "/trades");
     expect(trades.headers.get("X-Data-Source")).toBe("demo");
-    expect(await trades.json()).toEqual({ trades: [], nextCursor: null });
+    expect(UserTradesSchema.parse(await trades.json()).trades).toHaveLength(1);
   });
 
   it("reports null ranks if indexing is disabled or the Redis member is absent", async () => {
-    const unranked = new TraderService(repository, portfolio, leaderboard, mock, follows, false);
+    const unranked = new TraderService(repository, portfolio, leaderboard, follows, false);
     expect((await unranked.profile(wallets[0]!)).profile.stats["24h"].rank).toBeNull();
     await store.replace({ "24h": [], "7d": [], "30d": [] });
     try {

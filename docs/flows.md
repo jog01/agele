@@ -115,7 +115,7 @@ The demo frontend may still show fixture estimates; live submission remains disa
 
 ## Market data
 
-Live is the default; `MARKET_DATA_PROVIDER=mock` keeps offline/demo feeds.
+Demo is the default; `MARKET_DATA_PROVIDER=live` uses live market data.
 Caches deduplicate in-flight requests; failures/timeouts return 502, not fixtures.
 
 ```mermaid
@@ -233,7 +233,7 @@ sequenceDiagram
   participant A as API
   participant U as UserService
   participant R as FollowRepository
-  participant S as SocialProvider (demo)
+  participant S as PostgreSQL social store
   W->>A: PUT /v1/follows/{wallet} (Bearer token)
   A->>A: Verify token and validate Solana address
   A->>U: ensureUser(auth)
@@ -249,7 +249,7 @@ sequenceDiagram
   A->>R: listWallets(viewer.id)
   R-->>A: wallets (possibly empty)
   A->>S: feed(wallets, decoded cursor, limit)
-  Note over S: Anchor timestamps to now for a fresh feed,<br/>or to the cursor's timeline for later pages
+  Note over S: Page stored trades and thesis versions by timestamp and ID
   S-->>A: newest items + opaque nextCursor
   A-->>W: 200 items + nextCursor (null at end)
   W->>A: DELETE /v1/follows/{wallet} (Bearer token)
@@ -257,7 +257,7 @@ sequenceDiagram
   A-->>W: 204 (even when absent)
 ```
 
-Global feed is public and is the default scope; following scope without a bearer token returns 401. Optional authentication on feed and leaderboard means no header is anonymous, but a present invalid header returns 401. Invalid cursors, limits, scopes and wallet addresses return 400. Following nobody returns an empty page. Feed content remains demo data, independent of indexed leaderboard rankings. Trades include side/amountUsd, theses include body, and both use the comment position enum and Unix-second timestamps. Authenticated leaderboard entries include `isFollowing` for both indexed and demo rankings; anonymous entries omit it.
+Global feed is public and is the default scope; following scope without a bearer token returns 401. A present invalid bearer token returns 401. Invalid cursors, limits, scopes and wallet addresses return 400. Following nobody returns an empty page. Every stored feed item indicates its provenance; see the [social store](social.md).
 
 ## PnL
 
@@ -393,17 +393,14 @@ sequenceDiagram
     A->>D: Linked addresses; distinct follower users; following wallet count
     A->>P: Position summary (no cash balance RPC)
     A->>L: Reuse window stats with current market prices
-    L->>R: ZREVRANK per active window
-    A-->>C: Profile + open positions + stats; X-Data-Source: indexed
-  else Known demo leaderboard/feed wallet
-    A->>A: Same MockSocialProvider rankings for all windows
-    A-->>C: Simulated profile; X-Data-Source: demo
+    L->>R: ZREVRANK if the projection is enabled
+    A-->>C: Profile + open positions + stats; X-Data-Source labels seed provenance
   else Unknown wallet
     A-->>C: 404
   end
   C->>A: GET /v1/traders/{wallet}/trades?limit=25&cursor=opaque
   A->>P: Reuse UserTrade keyset page for stored trader
-  A-->>C: trades + nextCursor; demo history is empty
+  A-->>C: trades + nextCursor
 ```
 
 Profile shape: `{wallet, handle, avatarUrl: string | null, followers, following,
@@ -425,13 +422,10 @@ authentication configuration errors return 503. Malformed input/cursors return
 400, unknown wallets return 404. Only wallet lookup is supported because both
 leaderboard and feed expose wallet addresses directly for links.
 
-Stored traders resolve even if indexing is not currently configured; their data
-is labelled `indexed` and ranks are null if the indexed leaderboard is disabled.
-Demo wallets resolve even when indexing is enabled because the feed remains demo.
-Demo window stats match the mock leaderboard exactly; demo lifetime realized PnL
-uses its simulated 30d PnL, unrealized PnL is zero, holdings/history are empty and
-following is zero. Follower counts and viewer follow state still use real follows.
-Demo data is never substituted on database, market-provider or Redis failures.
+Stored traders resolve even if indexing is not currently configured. Both
+seeded and indexed traders use stored trade history, positions, and follows.
+Seeded trader responses are labelled `demo`; the API never substitutes demo
+results on database, market-provider, or Redis failures.
 
 Trade pages use exactly the `/v1/me/trades` `UserTrade` schema and `(executedAt,id)`
 descending keyset cursor, with limit 1–100 (default 25). History is user-wide across

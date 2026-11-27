@@ -4,6 +4,7 @@ import type { CandleDto, IntervalValue, TokenDto, TokenHoldersDto, TradeDto } fr
 import { INTERVAL_SECONDS, type MarketDataProvider } from "./provider";
 
 type Seed = Pick<TokenDto, "mint" | "symbol" | "name" | "decimals"> & {
+  icon: string;
   price: number;
   supply: number;
 };
@@ -12,6 +13,7 @@ const SEEDS: Seed[] = [
   {
     mint: "So11111111111111111111111111111111111111112",
     symbol: "SOL",
+    icon: "79a96c7b893fd899512411dd07a8adf6f9e26dd135989f51d46ddb50f0b8bb6c",
     name: "Wrapped SOL",
     decimals: 9,
     price: 182.4,
@@ -20,6 +22,7 @@ const SEEDS: Seed[] = [
   {
     mint: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
     symbol: "JUP",
+    icon: "12254fdd34fa9a0ad62075bd3872df61e28584f9519fe00c744b71b514d4c3d7",
     name: "Jupiter",
     decimals: 6,
     price: 0.94,
@@ -28,6 +31,7 @@ const SEEDS: Seed[] = [
   {
     mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
     symbol: "BONK",
+    icon: "7461f749f396872bdba0559323970190e22056d87f08792ce597c00f3c23a6d0",
     name: "Bonk",
     decimals: 5,
     price: 0.0000231,
@@ -36,6 +40,7 @@ const SEEDS: Seed[] = [
   {
     mint: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm",
     symbol: "WIF",
+    icon: "485a5bf35f136e6a00400c38e1f9a40dd1289c98bbe52eed6da47378f065c4bc",
     name: "dogwifhat",
     decimals: 6,
     price: 1.87,
@@ -44,6 +49,7 @@ const SEEDS: Seed[] = [
   {
     mint: "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
     symbol: "TRUMP",
+    icon: "e142362a7cf11f8765782343c1de0087c7c046c5a0b0a3ad2c301719858ff769",
     name: "OFFICIAL TRUMP",
     decimals: 6,
     price: 9.12,
@@ -52,6 +58,7 @@ const SEEDS: Seed[] = [
   {
     mint: "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
     symbol: "PENGU",
+    icon: "108a00de537962c1ee525997222af5639243507d92d4a7a116deb77226f7bf87",
     name: "Pudgy Penguins",
     decimals: 6,
     price: 0.0312,
@@ -60,6 +67,7 @@ const SEEDS: Seed[] = [
   {
     mint: "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3",
     symbol: "PYTH",
+    icon: "2e7287e5e03af0bdcbc4e442da5f687d3b5d28836b958a926302a5aff7d6accd",
     name: "Pyth Network",
     decimals: 6,
     price: 0.152,
@@ -68,6 +76,7 @@ const SEEDS: Seed[] = [
   {
     mint: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
     symbol: "PUMP",
+    icon: "e426066c7221bda4e28418128a96a2bf9075656abcc82c2955326acda605feec",
     name: "Pump",
     decimals: 6,
     price: 0.0058,
@@ -211,7 +220,7 @@ export class MockMarketDataProvider implements MarketDataProvider {
       symbol: s.symbol,
       name: s.name,
       decimals: s.decimals,
-      imageUrl: null,
+      imageUrl: `https://static.datapi.jup.ag/token-icons/${s.icon}.webp`,
       priceUsd: price,
       priceChange24hPct: ((price - dayAgo) / dayAgo) * 100,
       marketCapUsd,

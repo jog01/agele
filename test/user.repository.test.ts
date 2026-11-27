@@ -15,6 +15,8 @@ function setup(conflicts: string[], insertError?: Error) {
     handle: null,
     displayName: null,
     avatarUrl: null,
+    bio: null,
+    demo: false,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

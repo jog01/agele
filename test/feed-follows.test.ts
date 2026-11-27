@@ -1,14 +1,19 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { getDb } from "../src/db/client";
+import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import type { FeedPage, LeaderboardEntryDto } from "../src/schemas/social";
-import { decodeCursor, encodeCursor } from "../src/services/social/cursor";
-import { MockSocialProvider } from "../src/services/social/mock.provider";
+import { encodeCursor } from "../src/services/social/cursor";
 import type { UserService } from "../src/services/user.service";
-import { SOL, testApp } from "./helpers";
+import { SOL, socialDemoFixture, testApp } from "./helpers";
 
 const headers = { authorization: "Bearer good" };
 const secondary = "11111111111111111111111111111111";
+const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
+const fixture = socialDemoFixture();
+beforeAll(fixture.setUp);
+afterAll(fixture.tearDown);
 function setup() {
   const follows = new InMemoryFollowRepository();
   const app = testApp({
@@ -20,7 +25,7 @@ function setup() {
       },
     },
     users: {
-      ensureUser: async () => ({ id: "viewer", walletAddress: SOL, wallets: [{ address: secondary }] }),
+      ensureUser: async () => ({ id: viewerId, walletAddress: SOL, wallets: [{ address: secondary }] }),
     } as unknown as UserService,
   });
   return { app, follows };
@@ -32,23 +37,17 @@ async function page(app: ReturnType<typeof testApp>, query = "", authenticated =
 }
 
 describe("feed", () => {
-  it("uses the current time for a fresh feed but keeps its timestamps across pages", async () => {
-    let now = Date.UTC(2026, 10, 18, 12, 0, 0);
-    const provider = new MockSocialProvider(() => now);
-    const snapshot = await provider.feed({ limit: 100 });
-    const first = await provider.feed({ limit: 1 });
-    const newest = first.items[0]!;
-    expect(newest.createdAt).toBe(now / 1000);
-    expect(snapshot.items[1]?.createdAt).toBe(newest.createdAt);
-    expect(snapshot.items[2]?.createdAt).toBe(newest.createdAt - 60);
-
-    now += 15 * 60 * 1000;
-    const next = await provider.feed({ limit: 100, cursor: decodeCursor(first.nextCursor!) });
+  it("keeps persisted feed identities and dates unchanged when the seed is rerun", async () => {
+    const { app } = setup();
+    const snapshot = await page(app, "?limit=100");
+    const first = await page(app, "?limit=1");
+    await seedSocialDemo(getDb(), Date.now() + 15 * 60 * 1000);
+    const next = await page(app, `?limit=100&cursor=${first.nextCursor}`);
     expect(next.items).toEqual(snapshot.items.slice(1));
     expect(next.nextCursor).toBeNull();
 
-    const fresh = await provider.feed({ limit: 1 });
-    expect(fresh.items[0]).toEqual({ ...newest, createdAt: now / 1000 });
+    const fresh = await page(setup().app, "?limit=1");
+    expect(fresh).toEqual(first);
   });
 
   it("returns stable newest-first pages including timestamp ties without duplicates", async () => {
@@ -81,7 +80,7 @@ describe("feed", () => {
     }
     expect(ids).toHaveLength(96);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(await page(app, `?cursor=${encodeCursor({ createdAt: 0, id: "end" })}`)).toEqual({
+    expect(await page(app, `?cursor=${encodeCursor({ createdAt: 0, id: viewerId })}`)).toEqual({
       items: [],
       nextCursor: null,
     });
@@ -115,7 +114,7 @@ describe("feed", () => {
     const result = await page(app, "?scope=following&limit=2", true);
     expect(result.items).toHaveLength(2);
     expect(result.items.every((item) => item.wallet === wallet)).toBe(true);
-    expect((await page(app, `?scope=following&cursor=${result.nextCursor}`, true)).items).toHaveLength(2);
+    expect((await page(app, `?scope=following&cursor=${result.nextCursor}`, true)).items).toHaveLength(6);
   });
 });
 
@@ -136,11 +135,11 @@ describe("follows and optional auth", () => {
       expect(res.status).toBe(204);
       expect(await res.text()).toBe("");
     }
-    expect(await follows.listWallets("viewer")).toEqual([wallet]);
+    expect(await follows.listWallets(viewerId)).toEqual([wallet]);
     expect((await leaderboard(true)).find((row) => row.wallet === wallet)?.isFollowing).toBe(true);
     for (let i = 0; i < 2; i++)
       expect((await app.request(`/v1/follows/${wallet}`, { method: "DELETE", headers })).status).toBe(204);
-    expect(await follows.listWallets("viewer")).toEqual([]);
+    expect(await follows.listWallets(viewerId)).toEqual([]);
     expect((await leaderboard(true)).every((row) => row.isFollowing === false)).toBe(true);
   });
 
@@ -169,10 +168,11 @@ describe("follows and optional auth", () => {
   });
 
   it("uses the same valid wallets and handles in feed and every leaderboard window", async () => {
-    const provider = new MockSocialProvider();
-    const feed = await provider.feed({ limit: 100 });
+    const { app } = setup();
+    const feed = await page(app, "?limit=100");
     for (const window of ["24h", "7d", "30d"] as const) {
-      const rows = await provider.leaderboard(window, 100);
+      const response = await app.request(`/v1/leaderboard?window=${window}&limit=100`);
+      const { entries: rows } = (await response.json()) as { entries: LeaderboardEntryDto[] };
       expect(
         feed.items.every((item) =>
           rows.some((row) => row.wallet === item.wallet && row.handle === item.handle),

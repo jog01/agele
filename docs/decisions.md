@@ -6,7 +6,7 @@ Short records; each says what we chose, why, and what would change it.
 2. **Two repos, each a plain single package: jog01/agele (backend) and jog01/agele-web (frontend).** Matches the "normal package manager, not a monorepo" ask and lets each deploy on its own. The contract is `openapi.json`, committed here and regenerated with `bun run openapi`; agele-web commits the generated `src/lib/api/schema.d.ts` and refreshes it with `bun run api:types` (reads `OPENAPI_URL`, default the local API).
 3. **Hono + zod-openapi.** One schema per route gives validation, types and docs. Error envelope `{ error: { code, message } }`.
 4. **Drizzle + Postgres, SQL migrations committed.** Typed queries, readable migrations, no runtime codegen.
-5. **Providers behind interfaces, chosen in `container.ts`.** Market data, social, swaps and fee sponsorship are interfaces with mock implementations, so the UI is usable without keys and onchain/security owners can land real ones independently.
+5. **Providers behind interfaces, chosen in `container.ts`.** Market data, swaps and fee sponsorship use provider boundaries. The social API uses PostgreSQL in all environments; demo mode seeds the same store.
 6. **Privy embedded wallets; non-custodial.** The server never holds user keys. Access tokens verified with `@privy-io/node` `verifyAccessToken`.
 7. **Sponsored network fees via our own fee payer with Jupiter Swap V2.** Users need only USDC. The fee payer is isolated in `FeeSponsor` with strict validation before co-signing.
 8. **Solana spot, USDC quote, curated allowlist for v0.1.** Perps, multi-chain, copy trading, limit/TP/SL, sniping, fiat on-ramp are deferred and are not shown as inert controls.

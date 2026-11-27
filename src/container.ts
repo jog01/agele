@@ -6,6 +6,7 @@ import { getRedis } from "./lib/redis";
 import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
 import { PgPortfolioRepository } from "./repositories/portfolio.repository";
+import { PgSocialRepository } from "./repositories/social.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
 import { PgTokenActivityRepository } from "./repositories/token-activity.repository";
 import { PgTradeRepository } from "./repositories/trade.repository";
@@ -17,7 +18,6 @@ import { createMarketDataProvider, type MarketDataProvider } from "./services/ma
 import { PortfolioService } from "./services/portfolio.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
 import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
-import { MockSocialProvider } from "./services/social/mock.provider";
 import { SocialService } from "./services/social.service";
 import { DisabledFeeSponsor } from "./services/sponsor/disabled-fee-sponsor";
 import type { FeeSponsor } from "./services/sponsor/fee-sponsor";
@@ -88,7 +88,12 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
       : undefined);
   const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
-  const mockSocial = new MockSocialProvider();
+  const databaseRanks = new LeaderboardService(
+    new PgLeaderboardRepository(getDb()),
+    leaderboardStore,
+    market,
+    events,
+  );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
     overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances);
@@ -119,11 +124,9 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
       new TraderService(
         new PgTraderRepository(getDb()),
         portfolio,
-        leaderboard ??
-          new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, events),
-        mockSocial,
+        leaderboard ?? databaseRanks,
         follows,
-        !!leaderboard,
+        leaderboard ? true : "database",
       ),
     tradeIndexer,
     privyUsers,
@@ -135,7 +138,11 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     follows,
     social:
       overrides.social ??
-      new SocialService(mockSocial, tokens, follows, leaderboard ?? mockSocial, !leaderboard),
+      new SocialService(new PgSocialRepository(getDb()), tokens, follows, (window, limit) =>
+        leaderboard
+          ? leaderboard.leaderboard(window, limit)
+          : databaseRanks.databaseLeaderboard(window, limit),
+      ),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };
 }

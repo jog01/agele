@@ -53,10 +53,10 @@ bun run db:migrate
 bun run dev                   # all four processes; REST :4000, WebSocket :4001/ws
 ```
 
-Keyless Jupiter market data works by default; candles/trades need a Birdeye key.
-Set `MARKET_DATA_PROVIDER=mock` for demo market fixtures. Leaderboard responses
-label fixture rankings with `X-Data-Source: demo` (indexed rankings: `indexed`). Set `PRIVY_APP_ID` /
-`PRIVY_VERIFICATION_KEY` to enable authenticated routes.
+Demo market data is the default; the API seeds fictional traders and their
+history in PostgreSQL. For live market data set `MARKET_DATA_PROVIDER=live`;
+live candles/trades require a Birdeye key. Set `PRIVY_APP_ID` /
+`PRIVY_VERIFICATION_KEY` to enable authenticated routes. See [social store](docs/social.md).
 
 ### Swap environment
 
@@ -118,8 +118,8 @@ the market allowlist for held tokens. RPC failures log and omit only the affecte
 wallet/asset; successful balances are retained.
 Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
 sells without indexed holdings record zero realized PnL. Transactions are not reordered.
-Comments remain mock. Mock leaderboard responses stay explicitly demo-labelled;
-indexed rankings never fall back to synthetic entries on Redis failure.
+Social posts and trades are stored in PostgreSQL. Seeded entries are labelled
+demo; indexed rankings never fall back to synthetic entries on Redis failure.
 
 ## Checks
 
@@ -133,7 +133,7 @@ bun run check   # biome, tsc, bun test
 
 ## Market data
 
-Market data defaults to `MARKET_DATA_PROVIDER=live`: Jupiter Tokens V2 metadata
+With `MARKET_DATA_PROVIDER=live`, market data uses Jupiter Tokens V2 metadata
 and Price V3 prices. Without `JUPITER_API_KEY`, requests use lite-api.jup.ag;
 a key selects api.jup.ag. Metadata caches for 15 seconds, prices for 5 seconds,
 with shared in-flight requests, metadata batches of 100 and price batches of 50.

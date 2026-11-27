@@ -3,14 +3,18 @@ import { isAddress } from "@solana/kit";
 import { optionalAuth, requireAuth } from "../middlewares/auth";
 import { errorResponse, MintParam } from "../schemas/common";
 import {
+  CommentBody,
+  CommentPage,
+  CommentQuery,
   CommentSchema,
   FeedQuery,
   FeedSchema,
   LeaderboardEntrySchema,
   LeaderboardQuery,
   LeaderboardWindow,
+  SocialPostBody,
+  ThesisThreadSchema,
 } from "../schemas/social";
-import { ListQuery } from "../schemas/token";
 import type { AppEnv } from "../types";
 
 const optionalSecurity: RouteConfig["security"] = [{}, { bearerAuth: [] }];
@@ -30,7 +34,7 @@ const getLeaderboard = createRoute({
         },
       },
       description:
-        "Top traders by realized + unrealized PnL. X-Data-Source is demo for mock rankings, indexed otherwise.",
+        "Top traders by realized + unrealized PnL. Seeded entries have source=demo. X-Data-Source is demo for an entirely seeded page, indexed otherwise.",
     },
     401: errorResponse("Invalid bearer token"),
     503: errorResponse("Authentication is not configured"),
@@ -42,7 +46,7 @@ const getFeed = createRoute({
   path: "/feed",
   tags: ["social"],
   description:
-    "Newest first with stable keyset pagination. Feed content remains demo data, independent of indexed leaderboard rankings. Following scope requires a bearer token.",
+    "Stored trades and theses, newest first with stable keyset pagination. Each item identifies demo or indexed provenance. Following scope requires a bearer token.",
   security: optionalSecurity,
   middleware: [optionalAuth] as const,
   request: { query: FeedQuery },
@@ -74,6 +78,8 @@ const followRoute = (method: "put" | "delete") =>
       },
       400: errorResponse("Invalid wallet or cannot follow own wallet"),
       401: errorResponse("Missing or invalid bearer token"),
+      409: errorResponse("Follow cap reached"),
+      429: errorResponse("Follow rate limit reached"),
       503: errorResponse("Authentication is not configured"),
     },
   });
@@ -82,23 +88,122 @@ const getComments = createRoute({
   method: "get",
   path: "/tokens/{mint}/comments",
   tags: ["social"],
-  request: { params: MintParam, query: ListQuery },
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  request: { params: MintParam, query: CommentQuery },
   responses: {
     200: {
-      content: { "application/json": { schema: z.object({ comments: z.array(CommentSchema) }) } },
+      content: { "application/json": { schema: CommentPage } },
       description: "Theses and comments on a token, newest first",
     },
+    400: errorResponse("Invalid query or cursor"),
+    401: errorResponse("Invalid bearer token"),
     404: errorResponse("Unknown token"),
+    503: errorResponse("Authentication is not configured"),
   },
 });
+
+const writeResponses = {
+  400: errorResponse("Invalid request"),
+  401: errorResponse("Missing or invalid bearer token"),
+  404: errorResponse("Unknown token, thesis or post"),
+  503: errorResponse("Authentication is not configured"),
+};
+const postResponses = {
+  ...writeResponses,
+  409: errorResponse("Thesis update window expired"),
+  422: errorResponse("Text rejected by moderation"),
+  429: errorResponse("Post rate limit reached"),
+};
+const getThesis = createRoute({
+  method: "get",
+  path: "/tokens/{mint}/theses/{thesisId}",
+  tags: ["social"],
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  request: {
+    params: MintParam.extend({ thesisId: z.uuid().openapi({ param: { name: "thesisId", in: "path" } }) }),
+    query: CommentQuery,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ThesisThreadSchema } },
+      description: "Thesis versions and replies, newest first, with the pinned version returned separately",
+    },
+    ...writeResponses,
+  },
+});
+const postThesis = createRoute({
+  method: "post",
+  path: "/tokens/{mint}/theses",
+  tags: ["social"],
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth] as const,
+  description:
+    "Publish a thesis version for an open position or one closed at most three hours ago. Omit positionId to use the most recent position.",
+  request: {
+    params: MintParam,
+    body: { required: true, content: { "application/json": { schema: SocialPostBody } } },
+  },
+  responses: {
+    201: { content: { "application/json": { schema: CommentSchema } }, description: "Published thesis" },
+    ...postResponses,
+  },
+});
+const postComment = createRoute({
+  method: "post",
+  path: "/tokens/{mint}/comments",
+  tags: ["social"],
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth] as const,
+  description: "Publish a token comment or reply to a thesis on the same token.",
+  request: {
+    params: MintParam,
+    body: { required: true, content: { "application/json": { schema: CommentBody } } },
+  },
+  responses: {
+    201: { content: { "application/json": { schema: CommentSchema } }, description: "Published comment" },
+    ...postResponses,
+  },
+});
+const reactionRoute = (method: "put" | "delete") =>
+  createRoute({
+    method,
+    path: "/posts/{id}/reaction",
+    tags: ["social"],
+    security: [{ bearerAuth: [] }],
+    middleware: [requireAuth] as const,
+    request: { params: z.object({ id: z.uuid().openapi({ param: { name: "id", in: "path" } }) }) },
+    responses: {
+      204: { description: method === "put" ? "Post liked (idempotent)" : "Post unliked (idempotent)" },
+      ...writeResponses,
+    },
+  });
+const pinRoute = (method: "put" | "delete") =>
+  createRoute({
+    method,
+    path: "/posts/{id}/pin",
+    tags: ["social"],
+    security: [{ bearerAuth: [] }],
+    middleware: [requireAuth] as const,
+    request: { params: z.object({ id: z.uuid().openapi({ param: { name: "id", in: "path" } }) }) },
+    responses: {
+      204: { description: "Thesis version pin updated (author only)" },
+      ...writeResponses,
+    },
+  });
 
 export const socialController = new OpenAPIHono<AppEnv>()
   .openapi(getLeaderboard, async (c) => {
     const { window, limit } = c.req.valid("query");
     const container = c.get("container");
-    c.header("X-Data-Source", container.social.leaderboardDemo ? "demo" : "indexed");
     const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
-    return c.json({ window, entries: await container.social.leaderboard(window, limit, viewer?.id) }, 200);
+    const entries = await container.social.leaderboard(window, limit, viewer?.id);
+    c.header(
+      "X-Data-Source",
+      entries.length && entries.every((entry) => entry.source === "demo") ? "demo" : "indexed",
+    );
+    return c.json({ window, entries }, 200);
   })
   .openapi(getFeed, async (c) => {
     const container = c.get("container");
@@ -118,7 +223,56 @@ export const socialController = new OpenAPIHono<AppEnv>()
     return c.body(null, 204);
   })
   .openapi(getComments, async (c) => {
+    const container = c.get("container");
     const { mint } = c.req.valid("param");
-    const { limit } = c.req.valid("query");
-    return c.json({ comments: await c.get("container").social.comments(mint, limit) }, 200);
+    const { limit, cursor } = c.req.valid("query");
+    const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
+    return c.json(await container.social.comments(mint, limit, cursor, viewer?.id), 200);
+  })
+  .openapi(postThesis, async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    return c.json(
+      await container.social.post(viewer, c.req.valid("param").mint, "thesis", c.req.valid("json")),
+      201,
+    );
+  })
+  .openapi(getThesis, async (c) => {
+    const container = c.get("container");
+    const { mint, thesisId } = c.req.valid("param");
+    const { limit, cursor } = c.req.valid("query");
+    const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
+    return c.json(await container.social.thesisThread(mint, thesisId, limit, cursor, viewer?.id), 200);
+  })
+  .openapi(postComment, async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    return c.json(
+      await container.social.post(viewer, c.req.valid("param").mint, "comment", c.req.valid("json")),
+      201,
+    );
+  })
+  .openapi(reactionRoute("put"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.react(c.req.valid("param").id, viewer.id, true);
+    return c.body(null, 204);
+  })
+  .openapi(reactionRoute("delete"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.react(c.req.valid("param").id, viewer.id, false);
+    return c.body(null, 204);
+  })
+  .openapi(pinRoute("put"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.pin(c.req.valid("param").id, viewer.id, true);
+    return c.body(null, 204);
+  })
+  .openapi(pinRoute("delete"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.pin(c.req.valid("param").id, viewer.id, false);
+    return c.body(null, 204);
   });

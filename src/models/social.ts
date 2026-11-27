@@ -1,5 +1,20 @@
-import { index, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  type AnyPgColumn,
+  boolean,
+  check,
+  index,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { tokens } from "./tokens";
+import { trades } from "./trades";
 import { users } from "./users";
 
 export const follows = pgTable(
@@ -17,7 +32,27 @@ export const follows = pgTable(
   ],
 );
 
-/** A user's thesis/comment on a token. */
+export const postKind = pgEnum("social_post_kind", ["thesis", "comment"]);
+export const postPosition = pgEnum("social_post_position", ["long", "short", "none"]);
+
+export const theses = pgTable(
+  "theses",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    wallet: text().notNull(),
+    mint: text()
+      .notNull()
+      .references(() => tokens.mint),
+    positionId: uuid()
+      .notNull()
+      .references(() => trades.id),
+  },
+  (t) => [unique().on(t.wallet, t.mint, t.positionId)],
+);
+
 export const comments = pgTable(
   "comments",
   {
@@ -29,7 +64,51 @@ export const comments = pgTable(
       .notNull()
       .references(() => tokens.mint),
     body: text().notNull(),
+    kind: postKind().notNull().default("comment"),
+    position: postPosition().notNull().default("none"),
+    thesisId: uuid().references(() => theses.id, { onDelete: "cascade" }),
+    parentId: uuid().references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
+    pinned: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("comments_mint_created_idx").on(t.mint, t.createdAt)],
+  (t) => [
+    index("comments_mint_created_idx").on(t.mint, t.createdAt),
+    index("comments_thesis_idx").on(t.thesisId),
+    index("comments_parent_idx").on(t.parentId),
+    uniqueIndex("comments_pinned_thesis_idx").on(t.thesisId).where(sql`${t.pinned}`),
+    index("comments_user_created_idx").on(t.userId, t.createdAt),
+    index("comments_feed_idx")
+      .on(sql`date_trunc('second', ${t.createdAt} AT TIME ZONE 'UTC')`, t.id)
+      .where(sql`${t.kind} = 'thesis'`),
+    check(
+      "comments_thesis_shape",
+      sql`${t.kind} <> 'thesis' OR (${t.parentId} IS NULL AND ${t.thesisId} IS NOT NULL)`,
+    ),
+    check("comments_pin_shape", sql`not ${t.pinned} OR ${t.kind} = 'thesis'`),
+  ],
+);
+
+export const followActions = pgTable(
+  "social_follow_actions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("social_follow_actions_user_time_idx").on(t.userId, t.createdAt)],
+);
+
+export const reactions = pgTable(
+  "social_reactions",
+  {
+    postId: uuid()
+      .notNull()
+      .references(() => comments.id, { onDelete: "cascade" }),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.userId] })],
 );
