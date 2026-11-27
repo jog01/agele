@@ -2559,7 +2559,8 @@
                       }
                     },
                     "tokensUnavailable": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Token provider unavailable; indexed token matches may still be returned."
                     },
                     "traders": {
                       "type": "array",

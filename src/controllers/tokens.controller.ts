@@ -52,7 +52,9 @@ const search = createRoute({
     200: json(
       z.object({
         tokens: z.array(TokenSchema),
-        tokensUnavailable: z.boolean(),
+        tokensUnavailable: z
+          .boolean()
+          .describe("Token provider unavailable; indexed token matches may still be returned."),
         traders: z.array(
           z.object({
             wallet: z.string(),
@@ -138,14 +140,11 @@ export const tokensController = new OpenAPIHono<AppEnv>()
     const { q } = c.req.valid("query");
     const container = c.get("container");
     const [tokenResult, traders] = await Promise.all([
-      Promise.resolve()
-        .then(() => container.tokens.searchTokens(q))
-        .then((tokens) => ({ tokens, tokensUnavailable: false }))
-        .catch((error: unknown) => {
-          if (error instanceof AppError && (error.status === 502 || error.status === 503))
-            return { tokens: [], tokensUnavailable: true };
-          throw error;
-        }),
+      container.tokens.searchTokensWithStatus(q).catch((error: unknown) => {
+        if (error instanceof AppError && (error.status === 502 || error.status === 503))
+          return { tokens: [], tokensUnavailable: true };
+        throw error;
+      }),
       container.traders.search(q),
     ]);
     return c.json({ ...tokenResult, traders }, 200);

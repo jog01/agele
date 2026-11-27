@@ -7,6 +7,8 @@ import type {
   TradeDto,
 } from "../../schemas/token";
 
+export type TokenSearchResult = { tokens: TokenDto[]; tokensUnavailable: boolean };
+
 /**
  * Source of token stats, candles, trades and holders.
  */
@@ -19,6 +21,7 @@ export interface MarketDataProvider {
   getRecentTrades(mint: string, limit: number): Promise<TradeDto[]>;
   getHolders(mint: string, limit: number): Promise<TokenHoldersDto>;
   searchTokens?(query: string): Promise<TokenDto[]>;
+  searchTokensWithStatus?(query: string): Promise<TokenSearchResult>;
   listPulse?(limit: number): Promise<PulseDto>;
 }
 

@@ -139,4 +139,5 @@ sequenceDiagram
 - `GET /v1/search?q=...` returns `tokens` and public `traders` in one
   response. Trader matches include exact Solana wallet aliases and
   case-insensitive handle or display-name prefixes. If the token provider
-  is unavailable, trader results still return and `tokensUnavailable` is true.
+  is unavailable, trader results and any indexed token matches still return
+  and `tokensUnavailable` is true.
