@@ -3,7 +3,7 @@
   "info": {
     "title": "fomo API",
     "version": "0.1.0",
-    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"token:<mint>:price\"}. Events contain {type:\"event\",topic,data:PriceTick}; time is Unix seconds. Live price ticks poll every 5 seconds only for subscribed allowlisted mints. token:<mint>:trades is synthetic in mock mode only; live trades are available via REST with a Birdeye key."
+    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"pulse\"}. Events use {type:\"event\",topic,data}. Topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds."
   },
   "components": {
     "securitySchemes": {
@@ -38,6 +38,239 @@
           "time"
         ]
       },
+      "PulseEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "upsert"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "finalStretch",
+                  "migrated"
+                ]
+              },
+              "token": {
+                "$ref": "#/components/schemas/PulseToken"
+              }
+            },
+            "required": [
+              "type",
+              "stage",
+              "token"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "migrated"
+                ]
+              },
+              "mint": {
+                "type": "string"
+              },
+              "migratedVenue": {
+                "type": "string",
+                "enum": [
+                  "pump.fun",
+                  "pumpswap",
+                  "raydium-v4",
+                  "raydium-cpmm",
+                  "raydium-clmm",
+                  "meteora-dlmm",
+                  "meteora-damm"
+                ]
+              },
+              "migratedAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              }
+            },
+            "required": [
+              "type",
+              "mint",
+              "migratedVenue",
+              "migratedAt"
+            ]
+          }
+        ]
+      },
+      "PulseToken": {
+        "type": "object",
+        "properties": {
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "marketCapUsd": {
+            "type": "number"
+          },
+          "liquidityUsd": {
+            "type": "number"
+          },
+          "volume24hUsd": {
+            "type": "number"
+          },
+          "holders": {
+            "type": "integer"
+          },
+          "creator": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string",
+            "enum": [
+              "pump.fun",
+              "pumpswap",
+              "raydium-v4",
+              "raydium-cpmm",
+              "raydium-clmm",
+              "meteora-dlmm",
+              "meteora-damm"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "new",
+              "finalStretch",
+              "migrated"
+            ]
+          },
+          "launchedAt": {
+            "type": "integer",
+            "description": "Unix seconds"
+          },
+          "curveProgressBps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "migratedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix seconds"
+          },
+          "migratedVenue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pump.fun",
+              "pumpswap",
+              "raydium-v4",
+              "raydium-cpmm",
+              "raydium-clmm",
+              "meteora-dlmm",
+              "meteora-damm",
+              null
+            ]
+          },
+          "txCount24h": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "buys24h": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sells24h": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "mint",
+          "symbol",
+          "name",
+          "imageUrl",
+          "priceUsd",
+          "marketCapUsd",
+          "liquidityUsd",
+          "volume24hUsd",
+          "holders",
+          "creator",
+          "venue",
+          "stage",
+          "launchedAt",
+          "curveProgressBps",
+          "migratedAt",
+          "migratedVenue",
+          "txCount24h",
+          "buys24h",
+          "sells24h"
+        ]
+      },
+      "Trade": {
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "buy",
+              "sell"
+            ]
+          },
+          "trader": {
+            "type": "string"
+          },
+          "tokenAmount": {
+            "type": "number"
+          },
+          "amountUsd": {
+            "type": "number"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "time": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "signature",
+          "mint",
+          "side",
+          "trader",
+          "tokenAmount",
+          "amountUsd",
+          "priceUsd",
+          "time"
+        ]
+      },
       "Health": {
         "type": "object",
         "properties": {
@@ -54,7 +287,8 @@
             "type": "string",
             "enum": [
               "mock",
-              "live"
+              "live",
+              "indexed"
             ]
           }
         },
@@ -204,6 +438,42 @@
           "holders"
         ]
       },
+      "Pulse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "indexed"
+            ]
+          },
+          "new": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PulseToken"
+            }
+          },
+          "finalStretch": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PulseToken"
+            }
+          },
+          "migrated": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PulseToken"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "new",
+          "finalStretch",
+          "migrated"
+        ]
+      },
       "Candle": {
         "type": "object",
         "properties": {
@@ -234,49 +504,6 @@
           "low",
           "close",
           "volume"
-        ]
-      },
-      "Trade": {
-        "type": "object",
-        "properties": {
-          "signature": {
-            "type": "string"
-          },
-          "mint": {
-            "type": "string"
-          },
-          "side": {
-            "type": "string",
-            "enum": [
-              "buy",
-              "sell"
-            ]
-          },
-          "trader": {
-            "type": "string"
-          },
-          "tokenAmount": {
-            "type": "number"
-          },
-          "amountUsd": {
-            "type": "number"
-          },
-          "priceUsd": {
-            "type": "number"
-          },
-          "time": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "signature",
-          "mint",
-          "side",
-          "trader",
-          "tokenAmount",
-          "amountUsd",
-          "priceUsd",
-          "time"
         ]
       },
       "TokenPosition": {
@@ -1934,6 +2161,111 @@
                   "required": [
                     "tokens"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/search": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact mint or case-insensitive symbol/name prefix matches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Token"
+                      }
+                    }
+                  },
+                  "required": [
+                    "tokens"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Market data upstream unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pulse": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "description": "Limit per lane. New is below 7,000 bps; Final stretch starts at 7,000 bps; Migrated requires a migration event. Timestamps are Unix seconds.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pulse lanes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pulse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

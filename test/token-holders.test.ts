@@ -21,7 +21,6 @@ function setup(overrides: Partial<Options> = {}, rpcResult?: (method: string) =>
   let now = FIXED_NOW;
   const calls: { url: string; init?: RequestInit; method?: string; params?: unknown[] }[] = [];
   const market = new LiveMarketDataProvider({
-    allowlist: [mint],
     solanaRpcUrl: "https://rpc.example.test",
     now: () => now,
     fetch: async (url, init) => {
@@ -49,7 +48,7 @@ function setup(overrides: Partial<Options> = {}, rpcResult?: (method: string) =>
 
 describe("token holders", () => {
   it("uses native SOL total supply and 9 decimals for wrapped SOL concentration", async () => {
-    const { market, calls } = setup({ allowlist: [SOL] }, (method) =>
+    const { market, calls } = setup({}, (method) =>
       Response.json(
         method === "getSupply"
           ? nativeSupply
@@ -70,7 +69,7 @@ describe("token holders", () => {
   });
 
   it("maps a native SOL supply RPC error to 502", async () => {
-    const { market } = setup({ allowlist: [SOL] }, (method) =>
+    const { market } = setup({}, (method) =>
       Response.json(
         method === "getSupply" ? { error: { code: -32005, message: "unhealthy" } } : wrappedSolLargest,
       ),
@@ -163,15 +162,15 @@ describe("token holders", () => {
     expect(result.holders.every((h) => h.pctSupply === 0)).toBe(true);
   });
 
-  it("rejects unknown/non-allowlisted mints with 404 without RPC calls", async () => {
+  it("rejects unresolved mints with 404 without RPC calls", async () => {
     const { market, calls } = setup();
     const app = testApp({ market, tokens: new TokenService(market) });
-    const response = await app.request(`/v1/tokens/${SOL}/holders`);
+    const unknownMint = "11111111111111111111111111111111";
+    const response = await app.request(`/v1/tokens/${unknownMint}/holders`);
     expect(response.status).toBe(404);
-    await expect(market.getHolders(SOL, 5)).rejects.toMatchObject({ status: 404 });
-    expect(calls).toHaveLength(0);
+    await expect(market.getHolders(unknownMint, 5)).rejects.toMatchObject({ status: 404 });
+    expect(calls.map((call) => call.method)).toEqual([undefined]);
     const unresolved = setup({
-      allowlist: [SOL],
       fetch: async (url) => Response.json(url.includes("search") ? [] : {}),
     });
     await expect(unresolved.market.getHolders(SOL, 5)).rejects.toMatchObject({ status: 404 });

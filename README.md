@@ -53,9 +53,10 @@ bun run db:migrate
 bun run dev                   # all four processes; REST :4000, WebSocket :4001/ws
 ```
 
-Demo market data is the default; the API seeds fictional traders and their
-history in PostgreSQL. For live market data set `MARKET_DATA_PROVIDER=live`;
-live candles/trades require a Birdeye key. Set `PRIVY_APP_ID` /
+By default the chain simulator runs without live keys. Set both Yellowstone
+credentials to switch the same feed to finalized Solana events. In demo mode,
+the feed backfills Pulse, swaps and candles on boot, and the API seeds fictional
+traders and their history in PostgreSQL. Set `PRIVY_APP_ID` /
 `PRIVY_VERIFICATION_KEY` to enable authenticated routes. See [social store](docs/social.md).
 
 ### Swap environment
@@ -110,16 +111,14 @@ sends `{window,updatedAt}` invalidations; refetch `GET /v1/leaderboard`.
 Limitations: only one non-quote token against USDC/USDT/SOL is indexed; transfers
 and failed transactions are skipped. Native SOL fees are added back, wSOL is
 merged with SOL, and SOL legs use the opening SOL/USD price of the trade's UTC
-minute, persisted with the fill. Live historical pricing requires Birdeye;
-demo uses deterministic time-series prices. Missing history is retried, never
-replaced with the spot price.
-Unknown market prices fall back to average cost (zero unrealized PnL); configure
-the market allowlist for held tokens. RPC failures log and omit only the affected
-wallet/asset; successful balances are retained.
+minute, persisted with the fill. Historical pricing for linked wallets requires
+Birdeye. Missing history is retried, never replaced with the spot price.
+Unknown market prices fall back to average cost (zero unrealized PnL).
+RPC failures log and omit only the affected wallet/asset; successful balances are retained.
 Tokens acquired before indexing or delivered out of order have unknown (zero) basis;
 sells without indexed holdings record zero realized PnL. Transactions are not reordered.
-Social posts and trades are stored in PostgreSQL. Seeded entries are labelled
-demo; indexed rankings never fall back to synthetic entries on Redis failure.
+Seeded leaderboard pages stay explicitly demo-labelled; indexed rankings never
+fall back to synthetic entries on Redis failure.
 
 ## Checks
 
@@ -133,23 +132,21 @@ bun run check   # biome, tsc, bun test
 
 ## Market data
 
-With `MARKET_DATA_PROVIDER=live`, market data uses Jupiter Tokens V2 metadata
-and Price V3 prices. Without `JUPITER_API_KEY`, requests use lite-api.jup.ag;
-a key selects api.jup.ag. Metadata caches for 15 seconds, prices for 5 seconds,
-with shared in-flight requests, metadata batches of 100 and price batches of 50.
-Missing numeric metrics default to zero. See [market-data flows](docs/flows.md#market-data).
+Market data defaults to `MARKET_DATA_PROVIDER=indexed`: Pulse, 24-hour volume-ranked
+trending, trades, holders and candles read from the shared chain ingest store.
+`GET /v1/pulse?limit=30` gives the New, Final stretch and Migrated lanes;
+`GET /v1/tokens/search?q=` finds a mint or symbol/name prefix.
 
-v0.1 uses `MARKET_TOKEN_ALLOWLIST` (comma-separated mints), defaulting to the eight
-mock seed tokens. Unknown mints return 404; trending sorts these tokens by 24h
-volume. Candles (30s cache) and swap trades (5s cache) require `BIRDEYE_API_KEY`;
-without it they return 503, never synthetic data. Upstream errors/timeouts return
-502. Set `MARKET_DATA_PROVIDER=mock` for offline fixtures and synthetic WS feeds
-(`ENABLE_MOCK_FEED=true`).
+Unindexed mints use Jupiter Tokens V2 and Price V3, Solana RPC for holders, and
+Birdeye for candles/trades. Jupiter uses `lite-api.jup.ag` without a key and
+`api.jup.ag` with one; Birdeye history needs `BIRDEYE_API_KEY`. Setting
+`MARKET_DATA_PROVIDER=live` uses Jupiter's trending list; indexed mint detail,
+Pulse and candles still come from Postgres.
 
-`GET /health` reports the active `marketData` provider. WS `token:<mint>:price`
-events contain `{mint,priceUsd,marketCapUsd,time}` (Unix seconds), polled every
-5 seconds for subscribed allowlisted tokens only. Live trade data uses REST;
-the `token:<mint>:trades` WS feed remains mock-only.
+`GET /health` reports the market-data provider. Subscribe on `/ws` to `pulse`,
+`token:<mint>:trades` or `token:<mint>:price` for indexed events. Unindexed price
+subscriptions are polled in bounded batches. See the [chain ingest and simulator
+docs](docs/ingest.md) for the event flow, retention behavior and API details.
 
 ## Process deployment
 

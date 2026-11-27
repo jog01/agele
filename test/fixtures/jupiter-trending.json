@@ -1,0 +1,18 @@
+[
+  {
+    "id": "So11111111111111111111111111111111111111112",
+    "name": "Wrapped SOL",
+    "symbol": "SOL",
+    "decimals": 9,
+    "usdPrice": 180.42,
+    "stats24h": { "buyVolume": 143628907.62, "sellVolume": 149100541.8 }
+  },
+  {
+    "id": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "name": "Jupiter",
+    "symbol": "JUP",
+    "decimals": 6,
+    "usdPrice": 0.2524,
+    "stats24h": { "buyVolume": 2628543.5, "sellVolume": 2965201.3 }
+  }
+]

@@ -13,12 +13,12 @@ flowchart LR
   Worker --> PG[(PostgreSQL)]
   API --> PG
   Worker -->|leaderboard events| Bus[(Redis pub/sub)]
-  Feed[apps/feed.ts elected singleton] -->|price and mock events| Bus
+  Feed[apps/feed.ts elected singleton] -->|price, trade and Pulse events| Bus
   Bus --> WS
   WS -->|topic heartbeats| Registry[(Redis active topic ZSET)]
   Registry --> Feed
   Feed -->|SET NX PX and token renewal| Lock[(Redis lease)]
-  Feed --> Market[Jupiter / mock provider]
+  Feed --> Market[Indexed market data / Jupiter]
 ```
 
 ## Webhook to client
@@ -57,8 +57,9 @@ sequenceDiagram
 - `apps/worker.ts`: builds only indexing/ranking dependencies. BullMQ
   upsertJobScheduler registers one leaderboard rebuild every 60 seconds and one
   daily portfolio snapshot (00:05 UTC) across replicas. Trade listeners stay wired.
-- `apps/feed.ts`: builds only market-data dependencies. Polls active allowlisted
-  price topics (or mock trades/prices) and publishes through Redis.
+- `apps/feed.ts`: runs the configured chain source under the feed lease and polls
+  unindexed price topics. See [chain ingest and simulator](ingest.md) for the shared
+  event contract, indexed reads and realtime flow.
 - `services/`, `repositories/`, `schemas/` remain shared. PostgreSQL is the source
   of truth; Redis holds leaderboard projections, jobs and realtime routing.
 
@@ -68,8 +69,8 @@ the feed prunes expired members when reading. Multiple gateways subscribing to
 the same topic retain it until the last live heartbeat expires.
 
 The feed holds a token-owned 15-second Redis lease, renewed every 3 seconds.
-Other replicas remain idle and retry acquisition. Each topic read/publication also
-checks ownership; renewal failure stops the local feed. Lease release compares
+Other replicas remain idle and retry acquisition. Each ingest batch checks
+ownership; renewal failure stops the local feed. Lease release compares
 the token so an old owner cannot delete a successor's lease.
 
 ## Operational semantics and limits

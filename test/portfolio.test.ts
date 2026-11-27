@@ -1,10 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import type { Job } from "bullmq";
 import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../src/config/env";
-import { createPortfolioSnapshotProcessor } from "../src/jobs/processors/portfolio-snapshot";
+import { createContainer } from "../src/container";
+import {
+  createPortfolioSnapshotProcessor,
+  portfolioSnapshotProcessor,
+} from "../src/jobs/processors/portfolio-snapshot";
 import * as schema from "../src/models";
 import { PgPortfolioRepository } from "../src/repositories/portfolio.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
@@ -15,6 +19,8 @@ import { PortfolioService } from "../src/services/portfolio.service";
 import { TradeIndexer } from "../src/services/trade-indexer";
 import type { UserService } from "../src/services/user.service";
 import { buy, MINT, WALLET } from "./fixtures/helius";
+import prices from "./fixtures/jupiter-prices.json";
+import tokens from "./fixtures/jupiter-tokens.json";
 import { FIXED_NOW, testApp } from "./helpers";
 
 describe("portfolio database integration", () => {
@@ -110,6 +116,26 @@ describe("portfolio database integration", () => {
     }
     await db.delete(schema.tokens).where(inArray(schema.tokens.mint, [mint, closedMint]));
     await sql.end();
+  });
+
+  it("values a real SOL balance using Jupiter even with indexed market data", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof globalThis.fetch>[0]) =>
+          Response.json(new URL(String(input)).pathname === "/price/v3" ? prices : tokens),
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    try {
+      const container = createContainer({
+        balances: { getBalances: async () => ({ solBalance: 2, usdcBalance: 0, usdtBalance: 0 }) },
+      });
+      expect((await container.portfolio.getPortfolio(userIds[0]!)).equityUsd).toBe(
+        2 * prices[SOL_MINT].usdPrice,
+      );
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it("indexes both linked users in one transaction and deduplicates per user", async () => {
@@ -313,5 +339,86 @@ describe("portfolio database integration", () => {
     expect(await repository.history(user!.id)).toMatchObject([
       { day: "2026-01-01", valueUsd: "50.000000000000000000" },
     ]);
+  });
+
+  it("continues the snapshot sweep when one wallet's price lookup throws", async () => {
+    const lookup = spyOn(portfolio, "getPortfolio").mockImplementationOnce(async () => {
+      throw new Error("Quote unavailable");
+    });
+    try {
+      const processor = createPortfolioSnapshotProcessor(repository, portfolio, () => FIXED_NOW + 86_400_000);
+      await processor({} as Job);
+      const [failed, recovered] = lookup.mock.calls;
+      expect(failed).toBeDefined();
+      expect(recovered).toBeDefined();
+      expect((await repository.history(failed![0])).some(({ day }) => day === "2026-01-02")).toBe(false);
+      expect((await repository.history(recovered![0])).some(({ day }) => day === "2026-01-02")).toBe(true);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+
+  it("snapshots seeded and simulated positions at demo prices without repricing real assets", async () => {
+    const sharedMint = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    const demoMint = `demo-${suffix}`;
+    const simulated = (await new MockMarketDataProvider().getToken(sharedMint))!;
+    const [seeded, real] = await db
+      .insert(schema.users)
+      .values([{ privyDid: `seed-${suffix}`, demo: true }, { privyDid: `real-${suffix}` }])
+      .returning();
+    const ids = [seeded!.id, real!.id];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+          const path = new URL(String(input)).pathname;
+          if (path === "/price/v3") return Response.json(prices);
+          if (path === "/tokens/v2/search") return Response.json(tokens);
+          const method = JSON.parse(String(init?.body)).method;
+          return Response.json({ result: { value: method === "getBalance" ? 0 : [] } });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    try {
+      await db
+        .insert(schema.tokens)
+        .values([
+          { mint: sharedMint, symbol: simulated.symbol, name: simulated.name, decimals: simulated.decimals },
+          { mint: demoMint, symbol: "TEST", name: "Test", decimals: 6 },
+        ])
+        .onConflictDoNothing();
+      await db.insert(schema.chainTokens).values({
+        source: "demo",
+        mint: demoMint,
+        venue: "pump.fun",
+        pool: demoMint,
+        creator: WALLET,
+        name: "Test",
+        symbol: "TEST",
+        decimals: 6,
+        totalSupplyRaw: "1000000000",
+        launchedAt: 1,
+        priceUsd: 7,
+      });
+      await db.insert(schema.positions).values(
+        [
+          { userId: seeded!.id, mint: sharedMint },
+          { userId: real!.id, mint: sharedMint },
+          { userId: real!.id, mint: demoMint },
+        ].map((position) => ({ ...position, quantity: "1", costBasisUsd: "3", realizedPnlUsd: "0" })),
+      );
+      await portfolioSnapshotProcessor({} as Job);
+      const [seedRow] = await repository.history(seeded!.id);
+      const [realRow] = await repository.history(real!.id);
+      expect(Number(seedRow?.positionsValueUsd)).toBeCloseTo(simulated.priceUsd, 2);
+      expect(Number(realRow?.positionsValueUsd)).toBeCloseTo(7 + prices[sharedMint].usdPrice, 8);
+    } finally {
+      fetch.mockRestore();
+      await db.delete(schema.portfolioSnapshots).where(inArray(schema.portfolioSnapshots.userId, ids));
+      await db.delete(schema.positions).where(inArray(schema.positions.userId, ids));
+      await db.delete(schema.users).where(inArray(schema.users.id, ids));
+      await db.delete(schema.chainTokens).where(eq(schema.chainTokens.mint, demoMint));
+      await db.delete(schema.tokens).where(eq(schema.tokens.mint, demoMint));
+    }
   });
 });

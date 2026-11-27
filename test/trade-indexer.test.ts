@@ -4,17 +4,15 @@ import { createTradeIndexProcessor } from "../src/jobs/processors/trade-index";
 import { decimal } from "../src/lib/decimal";
 import type { IndexedTrade, TradeRepository } from "../src/repositories/trade.repository";
 import { SOL_MINT } from "../src/services/helius-parser";
-import { createMarketDataProvider, createTradeMarketDataProvider } from "../src/services/market-data";
+import { createUpstreamMarketDataProvider } from "../src/services/market-data";
 import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { TradeIndexer } from "../src/services/trade-indexer";
 import { buy, MINT, sell, usdtBuy, WALLET } from "./fixtures/helius";
 
 describe("TradeIndexer failure handling", () => {
-  it("prices live SOL legs even when SOL is not curated", async () => {
-    const allowlist = env.MARKET_TOKEN_ALLOWLIST;
+  it("prices live SOL legs with the upstream provider in indexed market mode", async () => {
     const birdeyeApiKey = env.BIRDEYE_API_KEY;
-    env.MARKET_TOKEN_ALLOWLIST = [];
     env.BIRDEYE_API_KEY = "fixture";
     const stubFetch = async (input: Parameters<typeof fetch>[0]) => {
       const url = new URL(String(input));
@@ -46,7 +44,7 @@ describe("TradeIndexer failure handling", () => {
           return null;
         },
       };
-      const market = createTradeMarketDataProvider();
+      const market = createUpstreamMarketDataProvider();
       const indexer = new TradeIndexer(repository, market);
       await indexer.index([sell, buy]);
       expect(writes.map(({ usd, solPriceUsd }) => [usd, solPriceUsd])).toEqual([
@@ -54,9 +52,7 @@ describe("TradeIndexer failure handling", () => {
         [decimal("100"), undefined],
       ]);
       expect(await market.getToken(SOL_MINT)).toMatchObject({ symbol: "SOL", priceUsd: 200 });
-      expect(await createMarketDataProvider("live").getToken(SOL_MINT)).toBeNull();
     } finally {
-      env.MARKET_TOKEN_ALLOWLIST = allowlist;
       env.BIRDEYE_API_KEY = birdeyeApiKey;
       fetchSpy.mockRestore();
     }
@@ -95,7 +91,7 @@ describe("TradeIndexer failure handling", () => {
         return null;
       },
     };
-    const market = new LiveMarketDataProvider({ allowlist: [] });
+    const market = new LiveMarketDataProvider({ fetch: async () => Response.json([]) });
     const process = createTradeIndexProcessor(new TradeIndexer(repository, market));
     const stable = (tx: typeof buy, mint: string, offset: number) => ({
       ...tx,
@@ -165,7 +161,6 @@ describe("TradeIndexer failure handling", () => {
     const minute = sell.timestamp;
     const fill = (unix_time: number, o: number) => ({ unix_time, o, h: 240, l: 80, c: 200, v_usd: 1000 });
     const market = new LiveMarketDataProvider({
-      allowlist: [],
       birdeyeApiKey: "fixture",
       fetch: async (input) => {
         const url = new URL(input);
