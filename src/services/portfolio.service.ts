@@ -102,10 +102,10 @@ export class PortfolioService {
     };
   }
 
-  async getStoredHistory(userId: string, range: HistoryRange | "24h") {
+  async getPublicPositionsHistory(userId: string, range: HistoryRange | "24h") {
     const days = { "24h": 1, "7d": 7, "30d": 30, all: 0 }[range];
     const start = days ? new Date(this.now() - days * 86_400_000).toISOString().slice(0, 10) : undefined;
-    const snapshots = await this.repository.history(userId, start);
+    const snapshots = await this.repository.positionsHistory(userId, start);
     return {
       points: snapshots.map((row) => ({
         time: Date.parse(`${row.day}T00:00:00Z`) / 1000,

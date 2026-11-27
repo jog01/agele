@@ -181,7 +181,7 @@ export class TraderService {
     const user = await this.resolve(wallet);
     return {
       source: user.demo ? "demo" : "indexed",
-      history: await this.portfolio.getStoredHistory(user.id, range),
+      history: await this.portfolio.getPublicPositionsHistory(user.id, range),
     };
   }
 }

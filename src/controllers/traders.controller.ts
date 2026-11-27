@@ -106,7 +106,8 @@ const portfolioHistory = createRoute({
   },
   responses: {
     200: {
-      description: "Stored daily portfolio value snapshots, oldest first",
+      description:
+        "Stored daily value of public positions, oldest first. Excludes cash and linked-wallet balances.",
       content: { "application/json": { schema: PortfolioHistorySchema } },
     },
     ...traderReadErrors,

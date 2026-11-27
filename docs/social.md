@@ -85,5 +85,5 @@ sequenceDiagram
   average hold across closed positions and, for signed-in viewers, mutual
   followers (people the viewer follows who follow this trader). The
   `followers` and `following` routes are individually paginated. The public
-  `portfolio/history` route reads stored daily snapshots without querying
-  private wallet balances; the demo seed includes daily history.
+  `portfolio/history` route reads stored position-value snapshots, excluding
+  cash and linked-wallet balances. Legacy equity-only snapshots are omitted.

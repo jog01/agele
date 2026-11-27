@@ -144,9 +144,10 @@ describe("public trader profiles", () => {
     await follows.follow(ids[1]!, wallets[4]!);
     await follows.follow(ids[0]!, wallets[1]!);
     await follows.follow(ids[0]!, demoWallet);
-    await db
-      .insert(schema.portfolioSnapshots)
-      .values({ userId: ids[0]!, day: "2026-01-01", valueUsd: "120" });
+    await db.insert(schema.portfolioSnapshots).values([
+      { userId: ids[0]!, day: "2025-12-31", valueUsd: "999" },
+      { userId: ids[0]!, day: "2026-01-01", valueUsd: "999", positionsValueUsd: "120" },
+    ]);
     await leaderboard.rebuild();
   });
   afterAll(async () => {

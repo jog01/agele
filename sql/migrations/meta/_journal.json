@@ -57,6 +57,13 @@
       "when": 1795806840569,
       "tag": "0007_trade_wallet_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795806996885,
+      "tag": "0008_public_position_history",
+      "breakpoints": true
     }
   ]
 }

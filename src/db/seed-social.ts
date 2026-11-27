@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { decimal } from "../lib/decimal";
 import { comments, follows, portfolioSnapshots, reactions, theses, tokens, trades, users } from "../models";
 import { PgTradeRepository } from "../repositories/trade.repository";
@@ -186,13 +186,22 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         0,
       );
       const past = await new MockMarketDataProvider(() => time * 1000).getToken(mint);
+      const valueUsd = (held * past!.priceUsd).toFixed(2);
       snapshots.push({
         userId: profile.id,
         day: new Date(time * 1000).toISOString().slice(0, 10),
-        valueUsd: (held * past!.priceUsd).toFixed(2),
+        valueUsd,
+        positionsValueUsd: valueUsd,
       });
     }
-    await db.insert(portfolioSnapshots).values(snapshots).onConflictDoNothing();
+    await db
+      .insert(portfolioSnapshots)
+      .values(snapshots)
+      .onConflictDoUpdate({
+        target: [portfolioSnapshots.userId, portfolioSnapshots.day],
+        set: { positionsValueUsd: sql`excluded.positions_value_usd` },
+        setWhere: isNull(portfolioSnapshots.positionsValueUsd),
+      });
     const thesisId = seedId(1, index);
     const versionId = seedId(4, index);
     const [entry] = await db

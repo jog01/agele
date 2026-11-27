@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { portfolioSnapshots, positions, tokens, trades, wallets } from "../models";
 
@@ -36,6 +36,20 @@ export class PgPortfolioRepository {
       .orderBy(portfolioSnapshots.day);
   }
 
+  positionsHistory(userId: string, start?: string) {
+    return this.db
+      .select({ day: portfolioSnapshots.day, valueUsd: sql<string>`${portfolioSnapshots.positionsValueUsd}` })
+      .from(portfolioSnapshots)
+      .where(
+        and(
+          eq(portfolioSnapshots.userId, userId),
+          isNotNull(portfolioSnapshots.positionsValueUsd),
+          start ? gte(portfolioSnapshots.day, start) : undefined,
+        ),
+      )
+      .orderBy(portfolioSnapshots.day);
+  }
+
   getTrades(userId: string, limit: number, cursor?: TradeCursor) {
     return this.db
       .select({ trade: trades, symbol: tokens.symbol, imageUrl: tokens.imageUrl })
@@ -63,10 +77,13 @@ export class PgPortfolioRepository {
       .union(this.db.select({ userId: wallets.userId }).from(wallets).where(eq(wallets.chainType, "solana")));
   }
 
-  async upsertSnapshot(userId: string, day: string, valueUsd: string) {
+  async upsertSnapshot(userId: string, day: string, valueUsd: string, positionsValueUsd?: string) {
     await this.db
       .insert(portfolioSnapshots)
-      .values({ userId, day, valueUsd })
-      .onConflictDoUpdate({ target: [portfolioSnapshots.userId, portfolioSnapshots.day], set: { valueUsd } });
+      .values({ userId, day, valueUsd, positionsValueUsd })
+      .onConflictDoUpdate({
+        target: [portfolioSnapshots.userId, portfolioSnapshots.day],
+        set: { valueUsd, positionsValueUsd },
+      });
   }
 }
