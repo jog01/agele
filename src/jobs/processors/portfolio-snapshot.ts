@@ -2,7 +2,7 @@ import type { Job } from "bullmq";
 import { getDb } from "../../db/client";
 import { logger } from "../../lib/logger";
 import { PgPortfolioRepository } from "../../repositories/portfolio.repository";
-import { createMarketDataProvider } from "../../services/market-data";
+import { createUpstreamMarketDataProvider } from "../../services/market-data";
 import { PortfolioService } from "../../services/portfolio.service";
 import { RpcWalletBalanceProvider } from "../../services/wallet-balance.provider";
 
@@ -28,7 +28,7 @@ export async function portfolioSnapshotProcessor(job: Job) {
   const repository = new PgPortfolioRepository(getDb());
   const portfolio = new PortfolioService(
     repository,
-    createMarketDataProvider(),
+    createUpstreamMarketDataProvider(),
     new RpcWalletBalanceProvider(),
   );
   return createPortfolioSnapshotProcessor(repository, portfolio)(job);

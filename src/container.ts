@@ -63,6 +63,7 @@ export interface Container {
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
   const market = overrides.market ?? createMarketDataProvider();
+  const walletMarket = overrides.market ?? createUpstreamMarketDataProvider();
   const tokens = overrides.tokens ?? new TokenService(market);
   const privyUsers = overrides.privyUsers ?? createPrivyUserDirectory();
   const feeSponsor = env.SPONSOR_ENABLED
@@ -90,19 +91,20 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const leaderboard =
     overrides.leaderboard ??
     (env.HELIUS_WEBHOOK_SECRET
-      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, events)
+      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, walletMarket, events)
       : undefined);
-  const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
+  const tradeIndexer =
+    overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), walletMarket);
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
   const databaseRanks = new LeaderboardService(
     new PgLeaderboardRepository(getDb()),
     leaderboardStore,
-    market,
+    walletMarket,
     events,
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
-    overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances);
+    overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances);
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),

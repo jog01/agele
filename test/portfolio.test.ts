@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import type { Job } from "bullmq";
 import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../src/config/env";
+import { createContainer } from "../src/container";
 import { createPortfolioSnapshotProcessor } from "../src/jobs/processors/portfolio-snapshot";
 import * as schema from "../src/models";
 import { PgPortfolioRepository } from "../src/repositories/portfolio.repository";
@@ -15,6 +16,8 @@ import { PortfolioService } from "../src/services/portfolio.service";
 import { TradeIndexer } from "../src/services/trade-indexer";
 import type { UserService } from "../src/services/user.service";
 import { buy, MINT, WALLET } from "./fixtures/helius";
+import prices from "./fixtures/jupiter-prices.json";
+import tokens from "./fixtures/jupiter-tokens.json";
 import { FIXED_NOW, testApp } from "./helpers";
 
 describe("portfolio database integration", () => {
@@ -110,6 +113,22 @@ describe("portfolio database integration", () => {
     }
     await db.delete(schema.tokens).where(inArray(schema.tokens.mint, [mint, closedMint]));
     await sql.end();
+  });
+
+  it("values a real SOL balance using Jupiter even with indexed market data", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+      Response.json(new URL(String(input)).pathname === "/price/v3" ? prices : tokens),
+    );
+    try {
+      const container = createContainer({
+        balances: { getBalances: async () => ({ solBalance: 2, usdcBalance: 0, usdtBalance: 0 }) },
+      });
+      expect((await container.portfolio.getPortfolio(userIds[0]!)).equityUsd).toBe(
+        2 * prices[SOL_MINT].usdPrice,
+      );
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it("indexes both linked users in one transaction and deduplicates per user", async () => {
