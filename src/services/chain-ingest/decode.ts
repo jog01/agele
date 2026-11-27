@@ -19,13 +19,15 @@ const pumpCreates = calls("create", "create_v2");
 const pumpMigrates = calls("migrate", "migrate_v2");
 const pumpLegacySwaps = calls("buy", "sell", "buy_exact_sol_in");
 const pumpSwapsV2 = calls("buy_v2", "sell_v2", "buy_exact_quote_in_v2");
-const pumpSwapsV3 = calls("buy_v3", "sell_v3", "buy_exact_quote_in_v3");
+const pumpBuysV3 = calls("buy_v3", "buy_exact_quote_in_v3");
+const pumpSellV3 = discriminator("global", "sell_v3");
 const pumpSwapBuys = calls("buy", "buy_exact_quote_in", "buy_v2", "buy_exact_quote_in_v2");
 const pumpSwapSells = calls("sell", "sell_v2");
 const createPool = discriminator("global", "create_pool");
 const emitCpi = "e445a52e51cb9a1d";
 const createEvent = discriminator("event", "CreateEvent");
 const tradeEvent = discriminator("event", "TradeEvent");
+const postCompleteBuyEvent = discriminator("event", "PostCompleteBuyEvent");
 
 function key(tx: Transaction, ix: Instruction, index: number) {
   return tx.keys[ix.accounts[index] ?? -1];
@@ -197,10 +199,21 @@ function launchReserves(ix: Instruction, mint: string, curve: string): bigint | 
   return data.readBigUInt64LE(realReservesOffset);
 }
 
+function curveTokenQuote(data: Buffer, mint: string): bigint | undefined {
+  const ixNameOffset = 266;
+  if (data.length < ixNameOffset + 4) return;
+  const shareholders = ixNameOffset + 4 + data.readUInt32LE(ixNameOffset) + 1 + 4 * 8;
+  if (data.length < shareholders + 4) return;
+  const quote = shareholders + 4 + data.readUInt32LE(shareholders) * (32 + 2);
+  if (data.length < quote + 40 || address(data.subarray(quote, quote + 32)) !== mint) return;
+  return data.readBigUInt64LE(quote + 32);
+}
+
 function pumpTrade(tx: Transaction, ix: Instruction, id: string): DecodedEvent | undefined {
   const legacy = pumpLegacySwaps.has(id);
   const v2 = pumpSwapsV2.has(id);
-  if (!legacy && !v2 && !pumpSwapsV3.has(id)) return;
+  const v3Buy = pumpBuysV3.has(id);
+  if (!legacy && !v2 && !v3Buy && id !== pumpSellV3) return;
   const mint = key(tx, ix, legacy ? 2 : 1);
   const curve = key(tx, ix, legacy ? 3 : v2 ? 10 : 5);
   const trader = key(tx, ix, legacy ? 6 : v2 ? 13 : 8);
@@ -208,26 +221,41 @@ function pumpTrade(tx: Transaction, ix: Instruction, id: string): DecodedEvent |
   const baseAccount = ix.accounts[legacy ? 4 : v2 ? 11 : 6];
   if (!mint || !curve || !trader || !quoteMint || baseAccount === undefined) return;
 
-  const data = pumpEvent(ix, tradeEvent);
+  const isNative = quoteMint === SOL || quoteMint === SYSTEM;
+  const curveData = pumpEvent(ix, tradeEvent);
   if (
-    !data ||
-    data.length < 97 ||
-    address(data.subarray(16, 48)) !== mint ||
-    address(data.subarray(65, 97)) !== trader ||
-    (data[64] !== 0 && data[64] !== 1)
+    curveData &&
+    (curveData.length < 97 ||
+      address(curveData.subarray(16, 48)) !== mint ||
+      address(curveData.subarray(65, 97)) !== trader ||
+      (curveData[64] !== 0 && curveData[64] !== 1))
   )
     return;
-
-  const isBuy = data[64] === 1;
-  const baseRaw = data.readBigUInt64LE(56);
+  const postData = v3Buy ? pumpEvent(ix, postCompleteBuyEvent) : undefined;
+  if (postData) {
+    if (
+      postData.length < 168 ||
+      address(postData.subarray(16, 48)) !== trader ||
+      address(postData.subarray(48, 80)) !== mint ||
+      address(postData.subarray(80, 112)) !== curve
+    )
+      return;
+    const postQuote = address(postData.subarray(112, 144));
+    if (postQuote !== quoteMint && !(isNative && (postQuote === SOL || postQuote === SYSTEM))) return;
+    if (curveData && curveData[64] !== 1) return;
+  }
+  if (!curveData && !postData) return;
+  const isBuy = postData !== undefined || curveData?.[64] === 1;
+  const baseRaw = (curveData?.readBigUInt64LE(56) ?? 0n) + (postData?.readBigUInt64LE(152) ?? 0n);
   const baseDecimals =
     tx.tokens.get(baseAccount)?.decimals ??
     ix.children.map((c) => leg(tx, c)).find((l) => l?.amount.mint === mint)?.amount.decimals;
   if (!baseRaw || baseDecimals === undefined) return;
   const base = { mint, raw: baseRaw.toString(), decimals: baseDecimals };
   let quote: Amount;
-  if (quoteMint === SOL || quoteMint === SYSTEM) {
-    const raw = data.readBigUInt64LE(48);
+  const postQuoteRaw = postData?.readBigUInt64LE(160) ?? 0n;
+  if (isNative) {
+    const raw = (curveData?.readBigUInt64LE(48) ?? 0n) + postQuoteRaw;
     if (!raw) return;
     quote = { mint: SOL, raw: raw.toString(), decimals: 9 };
   } else {
@@ -243,8 +271,17 @@ function pumpTrade(tx: Transaction, ix: Instruction, id: string): DecodedEvent |
           l.from === (isBuy ? user : vault) &&
           l.to === (isBuy ? vault : user),
       );
-    if (!match) return;
-    quote = match.amount;
+    if (postData) {
+      // V3 vault transfers can include multiple fill portions and retained fees.
+      const curveQuote = curveData ? curveTokenQuote(curveData, quoteMint) : 0n;
+      const decimals =
+        match?.amount.decimals ?? tx.tokens.get(vault ?? -1)?.decimals ?? tx.tokens.get(user ?? -1)?.decimals;
+      if (curveQuote === undefined || decimals === undefined || curveQuote + postQuoteRaw === 0n) return;
+      quote = { mint: quoteMint, raw: (curveQuote + postQuoteRaw).toString(), decimals };
+    } else {
+      if (!match) return;
+      quote = match.amount;
+    }
   }
   const event = fill(
     tx,
@@ -255,7 +292,10 @@ function pumpTrade(tx: Transaction, ix: Instruction, id: string): DecodedEvent |
     base,
     quote,
   );
-  return { event, realTokenReserves: data.length >= 137 ? data.readBigUInt64LE(129) : undefined };
+  return {
+    event,
+    realTokenReserves: curveData && curveData.length >= 137 ? curveData.readBigUInt64LE(129) : undefined,
+  };
 }
 
 function pump(tx: Transaction, ix: Instruction): DecodedEvent | undefined {

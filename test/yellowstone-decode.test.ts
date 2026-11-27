@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { getBase58Encoder } from "@solana/kit";
 import { curveProgress } from "../src/services/chain-ingest/curve-progress";
 import { decodeTransaction } from "../src/services/chain-ingest/decode";
 import { PROGRAMS, SOL } from "../src/services/chain-ingest/programs";
-import { normalizeTransaction } from "../src/services/chain-ingest/transaction";
+import { normalizeTransaction, walk } from "../src/services/chain-ingest/transaction";
 import dammV1 from "./fixtures/yellowstone/meteora-damm-v1.json";
 import dammV2 from "./fixtures/yellowstone/meteora-damm-v2.json";
 import dlmm from "./fixtures/yellowstone/meteora-dlmm.json";
@@ -28,6 +29,33 @@ function decodeObservations(recording: Recording) {
 
 function decode(recording: Recording) {
   return decodeObservations(recording).map(({ event }) => event);
+}
+
+function graduationBuy(recording: Recording, eventIndex: number, quote: string) {
+  const tx = normalizeTransaction(
+    recordedTransaction(recording),
+    recording.rpc.slot,
+    recording.rpc.blockTime,
+  )!;
+  const ix = [...walk(tx.instructions)].find((instruction) => instruction.index === eventIndex)!;
+  ix.data = Buffer.from("07051dc4f5176550", "hex"); // buy_v3
+  const trade = ix.children.find((child) => child.data.toString("hex", 8, 16) === "bddb7fd34ee661ee")!;
+  trade.data[64] = 1;
+  const post = Buffer.alloc(248);
+  post.set(Buffer.from("e445a52e51cb9a1d6fb06d8b316cd5fb", "hex"));
+  const encoder = getBase58Encoder();
+  for (const [offset, key] of [
+    [16, 8],
+    [48, 1],
+    [80, 5],
+  ] as const) {
+    post.set(encoder.encode(tx.keys[ix.accounts[key]!]!), offset);
+  }
+  post.set(encoder.encode(quote), 112);
+  post.writeBigUInt64LE(17n, 152);
+  post.writeBigUInt64LE(19n, 160);
+  ix.children.push({ ...trade, data: post, index: 999 });
+  return { tx, ix, trade };
 }
 
 describe("recorded finalized Solana transactions", () => {
@@ -149,5 +177,41 @@ describe("recorded finalized Solana transactions", () => {
       for (const ix of group.instructions) ix.stackHeight = undefined;
     }
     expect(decodeTransaction(normalizeTransaction(ambiguous, clmm.rpc.slot, null)!)).toEqual([]);
+  });
+});
+
+describe("synthetic Pump V3 graduation event variants", () => {
+  it("combines native curve and post-completion legs under the original instruction identity", () => {
+    const { tx, ix, trade } = graduationBuy(launch, 21, SOL);
+    expect(
+      decodeTransaction(tx)
+        .map(({ event }) => event)
+        .filter((event) => event.kind === "Trade"),
+    ).toEqual([
+      expect.objectContaining({
+        eventIndex: 21,
+        side: "buy",
+        base: expect.objectContaining({ raw: "112104477611957" }),
+        quote: { mint: SOL, decimals: 9, raw: "3500000019" },
+      }),
+    ]);
+    ix.children = ix.children.filter((child) => child !== trade);
+    expect(decodeTransaction(tx).find(({ event }) => event.kind === "Trade")?.event).toMatchObject({
+      eventIndex: 21,
+      side: "buy",
+      base: { raw: "17" },
+      quote: { raw: "19" },
+    });
+  });
+
+  it("uses the curve event quote amount for a split token-quoted fill", () => {
+    const quote = "XsqE9cRRpzxcGKDXj1BJ7Xmg4GRhZoyY1KpmGSxAWT2";
+    const { tx } = graduationBuy(clmm, 15, quote);
+    expect(decodeTransaction(tx)[0]?.event).toMatchObject({
+      eventIndex: 15,
+      side: "buy",
+      base: { raw: "344762575021" },
+      quote: { mint: quote, decimals: 8, raw: "1396068" },
+    });
   });
 });

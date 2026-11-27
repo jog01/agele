@@ -64,7 +64,9 @@ but idempotent Pump migrations with no pool creation. Historical Pump
 withdrawals and generic pool creations are not migrations.
 
 Pump fills use the program's trade event for the base leg and native quote;
-token-quoted curves use their actual scoped quote transfer. Other fills
+token-quoted curves use their actual scoped quote transfer. V3 graduation
+buys combine the curve and post-completion event amounts under one
+instruction identity. Other fills
 use the executed SPL vault transfers, not requested amounts or aggregate
 transaction deltas. Amounts are integer strings in mint base units; they do
 not include network fees or attempt USD conversion. SPL transfer amounts
