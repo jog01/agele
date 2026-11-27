@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import { decimal } from "../lib/decimal";
-import { comments, follows, portfolioSnapshots, reactions, theses, tokens, trades, users } from "../models";
+import { decimal, divide, formatDecimal } from "../lib/decimal";
+import {
+  comments,
+  follows,
+  portfolioSnapshots,
+  positions,
+  reactions,
+  theses,
+  tokens,
+  trades,
+  users,
+} from "../models";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { USDC_MINT } from "../services/helius-parser";
 import { MockMarketDataProvider } from "../services/market-data/mock.provider";
@@ -108,6 +118,53 @@ const seedId = (group: number, index: number) =>
 const demoWallet = (handle: string) =>
   getBase58Decoder().decode(createHash("sha256").update(`agele demo wallet:${handle}`).digest());
 
+async function upgradeDemoFill(
+  db: Db,
+  fill: { userId: string; signature: string; mint: string; timestamp: number },
+  legacyTimestamp: number,
+  milestoneProceeds?: bigint,
+) {
+  await db.transaction(async (tx) => {
+    const [profile] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, fill.userId), eq(users.demo, true)))
+      .for("update");
+    if (!profile) return;
+    const [legacy] = await tx
+      .select()
+      .from(trades)
+      .where(
+        and(
+          eq(trades.userId, fill.userId),
+          eq(trades.signature, fill.signature),
+          eq(trades.mint, fill.mint),
+          eq(trades.executedAt, new Date(legacyTimestamp * 1000)),
+        ),
+      );
+    if (!legacy) return;
+    const executedAt = new Date(fill.timestamp * 1000);
+    if (milestoneProceeds === undefined || legacy.realizedPnlUsd === null) {
+      await tx.update(trades).set({ executedAt }).where(eq(trades.id, legacy.id));
+      return;
+    }
+    const delta = milestoneProceeds - decimal(legacy.quoteAmountUsd);
+    await tx
+      .update(trades)
+      .set({
+        executedAt,
+        quoteAmountUsd: formatDecimal(milestoneProceeds),
+        priceUsd: formatDecimal(divide(milestoneProceeds, decimal(legacy.tokenAmount))),
+        realizedPnlUsd: formatDecimal(decimal(legacy.realizedPnlUsd) + delta),
+      })
+      .where(eq(trades.id, legacy.id));
+    await tx
+      .update(positions)
+      .set({ realizedPnlUsd: sql`${positions.realizedPnlUsd} + ${formatDecimal(delta)}::numeric` })
+      .where(and(eq(positions.userId, fill.userId), eq(positions.mint, fill.mint)));
+  });
+}
+
 export async function seedSocialDemo(db: Db, now = Date.now()) {
   const profiles = traders.map(([handle, displayName, bio], index) => ({
     id: seedId(0, index),
@@ -149,7 +206,7 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     ] as const;
     for (const [leg, [age, side, amount, percent]] of legs.entries()) {
       const usd = decimal(((priceUsd * amount * percent) / 100).toFixed(2));
-      await repository.record({
+      const fill = {
         userId: profile.id,
         wallet: profile.walletAddress,
         mint,
@@ -164,7 +221,12 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         side,
         signature: `demo:${profile.handle}:${leg}`,
         timestamp: anchor - age - (index % mints.length) * 60,
-      });
+      };
+      const stored = await repository.record(fill);
+      const legacyTimestamp = anchor - age - index * 60;
+      if (!stored && legacyTimestamp !== fill.timestamp) {
+        await upgradeDemoFill(db, fill, legacyTimestamp, index === 11 && leg === 1 ? usd : undefined);
+      }
     }
     const joinedAt = new Date((anchor - 35 * day) * 1000);
     if (first!.createdAt > joinedAt)

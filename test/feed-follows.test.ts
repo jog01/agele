@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { and, eq, like, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
+import { positions, trades, users } from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import { FeedEventType, type FeedPage, FeedSchema, type LeaderboardEntryDto } from "../src/schemas/social";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
@@ -172,6 +174,53 @@ describe("feed", () => {
     for (const filter of ["maxMarketCapUsd=100", "minPriceSinceFirstBuyPct=-100", "minPortfolioUsd=0"]) {
       expect((await page(app, `${query}&${filter}`)).items).toEqual([]);
     }
+  });
+
+  it("upgrades existing demo activity without replacing fill identities or double-counting gains", async () => {
+    const db = getDb();
+    const [trader] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.demo, true), eq(users.handle, "candlejournal")));
+    const sale = and(eq(trades.userId, trader!.id), eq(trades.signature, "demo:candlejournal:1"));
+    const [expected] = await db.select().from(trades).where(sale);
+    const position = and(eq(positions.userId, trader!.id), eq(positions.mint, expected!.mint));
+    const [accounting] = await db.select().from(positions).where(position);
+    const route = `?types=milestone,multi-user&mint=${expected!.mint}`;
+    await db
+      .update(trades)
+      .set({
+        executedAt: sql`${trades.executedAt} - interval '8 minutes'`,
+        quoteAmountUsd: sql`${trades.quoteAmountUsd} - 2000`,
+        realizedPnlUsd: sql`${trades.realizedPnlUsd} - 2000`,
+      })
+      .where(sale);
+    await db
+      .update(positions)
+      .set({ realizedPnlUsd: sql`${positions.realizedPnlUsd} - 2000` })
+      .where(position);
+    await db
+      .update(trades)
+      .set({ executedAt: sql`${trades.executedAt} - interval '8 minutes'` })
+      .where(
+        and(
+          eq(trades.userId, trader!.id),
+          like(trades.signature, "demo:candlejournal:%"),
+          sql`${trades.id} <> ${expected!.id}`,
+        ),
+      );
+    const { app } = setup();
+    expect((await page(app, route)).items).toEqual([]);
+    await seedSocialDemo(db);
+    await seedSocialDemo(db);
+    const [restored] = await db.select().from(trades).where(sale);
+    const [restoredAccounting] = await db.select().from(positions).where(position);
+    expect(restored).toEqual(expected);
+    expect(restoredAccounting!.realizedPnlUsd).toBe(accounting!.realizedPnlUsd);
+    expect([...new Set((await page(app, route)).items.map((item) => item.eventType))].sort()).toEqual([
+      "milestone",
+      "multi-user",
+    ]);
   });
 
   it("requires auth for following scope and filters by the viewer's followed wallets", async () => {
