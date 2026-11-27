@@ -99,9 +99,11 @@ describe("persistent discussions and follows", () => {
     ).toBe(201);
     expect((await write("comments", { body: "x".repeat(201) })).status).toBe(400);
     expect((await write("comments", { body: "Join discord.gg/rooms" })).status).toBe(422);
+    viewer.walletAddress = getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
     const first = await write("theses", { body: "x".repeat(3000), positionId: openPosition });
     expect(first.status).toBe(201);
     const version = CommentSchema.parse(await first.json());
+    viewer.walletAddress = getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
     const update = CommentSchema.parse(
       await (await write("theses", { body: "Scaled down after the bounce." })).json(),
     );
@@ -126,6 +128,7 @@ describe("persistent discussions and follows", () => {
     );
     expect(thread).toMatchObject({
       positionId: openPosition,
+      wallet,
       pinned: { id: version.id, likes: 1, likedByMe: true },
     });
     expect(thread.comments).toHaveLength(4);

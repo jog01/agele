@@ -50,6 +50,13 @@
       "when": 1795806017511,
       "tag": "0006_position_theses",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795806840569,
+      "tag": "0007_trade_wallet_provenance",
+      "breakpoints": true
     }
   ]
 }

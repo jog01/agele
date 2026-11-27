@@ -77,15 +77,16 @@ export class SocialService {
     await this.moderate(input.body);
     const post = { userId: viewer.id, mint, kind, body: input.body, position: input.position };
     if (kind === "thesis") {
+      const episodes = positionEpisodes(await this.repository.tradeHistory(viewer.id, mint));
+      const episode = input.positionId ? episodes.find(({ id }) => id === input.positionId) : episodes.at(-1);
+      if (!episode) throw notFound("Position");
       const wallet =
+        episode.fills[0]?.walletAddress ??
         viewer.walletAddress ??
         viewer.wallets
           .filter((item) => item.chainType === "solana")
           .sort((a, b) => a.address.localeCompare(b.address))[0]?.address;
       if (!wallet) throw badRequest("Link a Solana wallet before posting a thesis");
-      const episodes = positionEpisodes(await this.repository.tradeHistory(viewer.id, mint));
-      const episode = input.positionId ? episodes.find(({ id }) => id === input.positionId) : episodes.at(-1);
-      if (!episode) throw notFound("Position");
       if (episode.closedAt && Date.now() - episode.closedAt.getTime() > 3 * 60 * 60 * 1_000) {
         throw new AppError(
           409,
