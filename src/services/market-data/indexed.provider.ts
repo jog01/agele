@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../db/client";
+import { AppError } from "../../lib/errors";
 import { chainCandles, chainTokens, chainTrades } from "../../models/chain";
 import type { CandleDto, IntervalValue, PulseDto, TokenDto, TokenHoldersDto } from "../../schemas/token";
 import type { SolUsdPrice } from "../chain-ingest/chain-facts";
@@ -234,11 +235,16 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getHolders(mint: string, limit: number): Promise<TokenHoldersDto> {
     const token = await this.indexedToken(mint);
+    const knownMint = token !== undefined;
     if (!hasIndexedMarketData(token)) {
-      if (mint === SOL_MINT && this.options.source === "demo") {
-        return { mint, totalHolders: 0, top10Pct: 0, holders: [], updatedAt: this.seconds() };
+      if (mint !== SOL_MINT || this.options.source !== "demo") {
+        try {
+          return await this.options.upstream.getHolders(mint, limit);
+        } catch (err) {
+          if (!knownMint || !(err instanceof AppError) || err.status !== 404) throw err;
+        }
       }
-      return this.options.upstream.getHolders(mint, limit);
+      return { mint, totalHolders: 0, top10Pct: 0, holders: [], updatedAt: this.seconds() };
     }
     const rows = await this.db.execute<{ wallet: string; raw: string; total: number }>(sql`
       SELECT wallet, raw, count(*) over ()::int AS total FROM (${holderPositions(token.source, mint)}) positions

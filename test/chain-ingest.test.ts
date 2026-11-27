@@ -2,11 +2,13 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
 import { inArray, like } from "drizzle-orm";
 import { getDb } from "../src/db/client";
+import { AppError } from "../src/lib/errors";
 import { chainCandles, chainEvents, chainTokens, chainTrades } from "../src/models/chain";
 import { PulseEventSchema, PulseSchema } from "../src/schemas/token";
 import type { ChainEvent, EventRef } from "../src/services/chain-ingest/events";
 import { IngestService } from "../src/services/chain-ingest/service";
 import { IndexedMarketDataProvider } from "../src/services/market-data/indexed.provider";
+import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { TokenService } from "../src/services/token.service";
 import { SOL, testApp } from "./helpers";
@@ -310,6 +312,41 @@ describe("chain ingestion and indexed market data", () => {
     expect((await indexed.getCandles(token.mint, "1m", 1))[0]?.close).toBe(100);
     expect((await indexed.getRecentTrades(token.mint, 1))[0]?.signature).toBe(first.signature);
     expect((await indexed.getHolders(token.mint, 1)).holders[0]?.wallet).toBe(creator);
+  });
+
+  it("serves empty holders for an unlisted live launch but returns 404 for unknown mints", async () => {
+    const { sink } = setup();
+    const token = launch(newMint(), "solana");
+    await sink.ingest([token]);
+    const upstream = new LiveMarketDataProvider({
+      fetch: async (url) => {
+        expect(new URL(url).pathname).toBe("/tokens/v2/search");
+        return Response.json([]);
+      },
+    });
+    const indexed = new IndexedMarketDataProvider(db, {
+      source: "solana",
+      upstream,
+      solUsd,
+      now: () => time * 1000,
+    });
+    const app = testApp({ market: indexed, tokens: new TokenService(indexed) });
+    expect((await app.request(`/v1/tokens/${token.mint}`)).status).toBe(200);
+    const response = await app.request(`/v1/tokens/${token.mint}/holders`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      mint: token.mint,
+      totalHolders: 0,
+      top10Pct: 0,
+      holders: [],
+      updatedAt: time,
+    });
+    expect((await app.request(`/v1/tokens/${newMint()}/holders`)).status).toBe(404);
+    const unavailable = new AppError(502, "upstream_error", "Upstream unavailable");
+    upstream.getHolders = async () => {
+      throw unavailable;
+    };
+    await expect(indexed.getHolders(token.mint, 20)).rejects.toBe(unavailable);
   });
 
   it("serves the Pulse board and token search routes and validates queries", async () => {
