@@ -118,13 +118,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
     overrides.portfolio ??
-    new PortfolioService(
-      new PgPortfolioRepository(getDb()),
-      walletMarket,
-      balances,
-      Date.now,
-      overrides.market ?? demoMarket,
-    );
+    new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances, Date.now, positionQuote);
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),

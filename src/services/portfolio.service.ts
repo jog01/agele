@@ -3,6 +3,7 @@ import { badRequest } from "../lib/errors";
 import type { PgPortfolioRepository, TradeCursor } from "../repositories/portfolio.repository";
 import { SOL_MINT } from "./helius-parser";
 import type { MarketDataProvider } from "./market-data";
+import type { PositionQuote } from "./market-data/position-quotes";
 import type { WalletBalanceProvider } from "./wallet-balance.provider";
 
 const cursorSchema = z.object({ executedAt: z.iso.datetime(), id: z.uuid() });
@@ -26,7 +27,7 @@ export class PortfolioService {
     private readonly market: MarketDataProvider,
     private readonly balances: WalletBalanceProvider,
     private readonly now: () => number = Date.now,
-    private readonly demoMarket?: Pick<MarketDataProvider, "getToken">,
+    private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
   ) {}
 
   async getPortfolio(userId: string) {
@@ -55,12 +56,11 @@ export class PortfolioService {
     const positions = await Promise.all(
       rows
         .filter(({ position }) => Number(position.quantity) > 0)
-        .map(async ({ position, symbol, imageUrl, seeded, demoMint }) => {
+        .map(async ({ position, symbol, imageUrl, seeded }) => {
           const quantity = Number(position.quantity);
           const cost = Number(position.costBasisUsd);
           const avgCostUsd = cost / quantity;
-          const market = seeded || demoMint !== null ? (this.demoMarket ?? this.market) : this.market;
-          const token = await market.getToken(position.mint);
+          const token = await this.positionQuote(position.mint, seeded);
           const hasPrice = token && Number.isFinite(token.priceUsd) && token.priceUsd > 0;
           const priceUsd = hasPrice ? token.priceUsd : avgCostUsd;
           const valueUsd = hasPrice ? quantity * priceUsd : cost;

@@ -48,9 +48,9 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     return this.db.select().from(chainTokens);
   }
 
-  private async indexedToken(mint: string) {
+  private async indexedToken(mint: string, source = this.options.source) {
     const [token] = await this.tokens().where(
-      and(eq(chainTokens.source, this.options.source), eq(chainTokens.mint, mint)),
+      and(eq(chainTokens.source, source), eq(chainTokens.mint, mint)),
     );
     return token;
   }
@@ -88,8 +88,9 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     return tokenDto(row, await tokenStats(this.db, row, this.seconds()));
   }
 
-  async getIndexedToken(mint: string) {
-    const row = await this.indexedToken(mint);
+  async getIndexedToken(mint: string, source: EventRef["source"]) {
+    const row = await this.indexedToken(mint, source);
+    if (source === "solana" && (!row || !Number.isFinite(row.priceUsd) || row.priceUsd <= 0)) return null;
     return hasIndexedMarketData(row) ? tokenDto(row, await tokenStats(this.db, row, this.seconds())) : null;
   }
 

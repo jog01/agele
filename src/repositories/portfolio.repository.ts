@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { chainTokens, portfolioSnapshots, positions, tokens, trades, users, wallets } from "../models";
+import { portfolioSnapshots, positions, tokens, trades, users, wallets } from "../models";
 
 export interface TradeCursor {
   executedAt: Date;
@@ -17,12 +17,10 @@ export class PgPortfolioRepository {
         symbol: tokens.symbol,
         imageUrl: tokens.imageUrl,
         seeded: users.demo,
-        demoMint: chainTokens.mint,
       })
       .from(positions)
       .innerJoin(tokens, eq(tokens.mint, positions.mint))
       .innerJoin(users, eq(users.id, positions.userId))
-      .leftJoin(chainTokens, and(eq(chainTokens.mint, positions.mint), eq(chainTokens.source, "demo")))
       .where(eq(positions.userId, userId))
       .orderBy(positions.mint);
   }

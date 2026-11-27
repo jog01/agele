@@ -19,7 +19,11 @@ export function createPositionQuote(
   demo: IndexedMarketDataProvider,
 ): PositionQuote {
   return async (mint, seeded) =>
-    seeded ? demo.getToken(mint) : ((await demo.getIndexedToken(mint)) ?? live.getToken(mint));
+    seeded
+      ? demo.getToken(mint)
+      : ((await demo.getIndexedToken(mint, "demo")) ??
+        (await demo.getIndexedToken(mint, "solana")) ??
+        live.getToken(mint));
 }
 
 export function cachePositionQuotes(quote: PositionQuote): PositionQuote {
