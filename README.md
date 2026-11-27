@@ -109,7 +109,10 @@ sends `{window,updatedAt}` invalidations; refetch `GET /v1/leaderboard`.
 
 Limitations: only one non-quote token against USDC/USDT/SOL is indexed; transfers
 and failed transactions are skipped. Native SOL fees are added back, wSOL is
-merged with SOL, and SOL legs use **current**, not historical, USD pricing.
+merged with SOL, and SOL legs use the opening SOL/USD price of the trade's UTC
+minute, persisted with the fill. Live historical pricing requires Birdeye;
+demo uses deterministic time-series prices. Missing history is retried, never
+replaced with the spot price.
 Unknown market prices fall back to average cost (zero unrealized PnL); configure
 the market allowlist for held tokens. RPC failures log and omit only the affected
 wallet/asset; successful balances are retained.

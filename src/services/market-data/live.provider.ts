@@ -339,6 +339,23 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     });
   }
 
+  async getHistoricalPriceUsd(mint: string, minute: number) {
+    const result = await this.birdeye(
+      "Historical prices",
+      "/defi/v3/ohlcv",
+      {
+        address: mint,
+        type: "1m",
+        currency: "usd",
+        mode: "range",
+        time_from: String(minute),
+        time_to: String(minute + INTERVAL_SECONDS["1m"]),
+      },
+      candles,
+    );
+    return result.data.items.find((candle) => candle.unix_time === minute)?.o ?? null;
+  }
+
   async getRecentTrades(mint: string, limit: number) {
     return this.cached(`trades:${mint}:${limit}`, 5000, async () => {
       const result = await this.birdeye(
