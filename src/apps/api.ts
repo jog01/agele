@@ -2,6 +2,7 @@ import { createApp } from "../app";
 import { env } from "../config/env";
 import { createContainer } from "../container";
 import { closeDb, getDb } from "../db/client";
+import { guardLiveStartup } from "../db/live-data-guard";
 import { seedSocialDemo } from "../db/seed-social";
 import { RedisEventPublisher } from "../events/bus";
 import { closeQueues } from "../jobs/queues";
@@ -9,6 +10,7 @@ import { logger } from "../lib/logger";
 import { closeRedis } from "../lib/redis";
 import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 
+await guardLiveStartup();
 initTelemetry();
 const container = createContainer();
 await container.feeSponsor.ready?.();

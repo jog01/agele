@@ -7,6 +7,7 @@ import {
   CommentPage,
   CommentQuery,
   CommentSchema,
+  FeedDiscussionParam,
   FeedQuery,
   FeedSchema,
   LeaderboardEntrySchema,
@@ -115,6 +116,60 @@ const postResponses = {
   422: errorResponse("Text rejected by moderation"),
   429: errorResponse("Post rate limit reached"),
 };
+const discussionResponses = {
+  ...writeResponses,
+  404: errorResponse("Unknown feed activity or parent post"),
+};
+const getFeedReplies = createRoute({
+  method: "get",
+  path: "/feed/{key}/comments",
+  tags: ["social"],
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  request: { params: FeedDiscussionParam, query: CommentQuery },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CommentPage } },
+      description: "Feed activity replies, newest first",
+    },
+    ...discussionResponses,
+  },
+});
+const postFeedReply = createRoute({
+  method: "post",
+  path: "/feed/{key}/comments",
+  tags: ["social"],
+  security: [{ bearerAuth: [] }],
+  middleware: [requireAuth] as const,
+  request: {
+    params: FeedDiscussionParam,
+    body: { required: true, content: { "application/json": { schema: CommentBody } } },
+  },
+  responses: {
+    201: {
+      content: { "application/json": { schema: CommentSchema } },
+      description: "Published activity reply",
+    },
+    ...discussionResponses,
+    422: postResponses[422],
+    429: postResponses[429],
+  },
+});
+const feedReactionRoute = (method: "put" | "delete") =>
+  createRoute({
+    method,
+    path: "/feed/{key}/reaction",
+    tags: ["social"],
+    security: [{ bearerAuth: [] }],
+    middleware: [requireAuth] as const,
+    request: { params: FeedDiscussionParam },
+    responses: {
+      204: {
+        description: method === "put" ? "Activity liked (idempotent)" : "Activity unliked (idempotent)",
+      },
+      ...discussionResponses,
+    },
+  });
 const getThesis = createRoute({
   method: "get",
   path: "/tokens/{mint}/theses/{thesisId}",
@@ -209,6 +264,35 @@ export const socialController = new OpenAPIHono<AppEnv>()
     const container = c.get("container");
     const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
     return c.json(await container.social.feed(c.req.valid("query"), viewer?.id), 200);
+  })
+  .openapi(getFeedReplies, async (c) => {
+    const container = c.get("container");
+    const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
+    const { limit, cursor } = c.req.valid("query");
+    return c.json(
+      await container.social.feedReplies(c.req.valid("param").key, limit, cursor, viewer?.id),
+      200,
+    );
+  })
+  .openapi(postFeedReply, async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    return c.json(
+      await container.social.replyToFeed(c.req.valid("param").key, viewer.id, c.req.valid("json")),
+      201,
+    );
+  })
+  .openapi(feedReactionRoute("put"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.reactToFeed(c.req.valid("param").key, viewer.id, true);
+    return c.body(null, 204);
+  })
+  .openapi(feedReactionRoute("delete"), async (c) => {
+    const container = c.get("container");
+    const viewer = await container.users.ensureUser(c.get("auth"));
+    await container.social.reactToFeed(c.req.valid("param").key, viewer.id, false);
+    return c.body(null, 204);
   })
   .openapi(followRoute("put"), async (c) => {
     const container = c.get("container");

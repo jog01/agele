@@ -6,9 +6,12 @@ step before listening. Run `bun run db:migrate` first. The seed adds 12 fictiona
 traders, follows, versioned theses, replies and reactions, and records dated
 buys and sells via `PgTradeRepository.record`, including both open and closed
 positions. Its timestamps are anchored to the first seed, not shifted on every
-read or restart. Set `MARKET_DATA_PROVIDER=live` and use a separate unseeded
-database for a live-only deployment; existing seed rows are not erased. Writes
-always use verified Privy identity; the seeded accounts are not login identities.
+read or restart. Use a separate unseeded database with the Yellowstone chain
+source or `MARKET_DATA_PROVIDER=live`. In either mode the API, worker, and feed
+refuse startup if PostgreSQL contains demo users or seeded social trade
+signatures. No rows are erased, and the simulator's source-scoped tables are not
+part of this check.
+Writes always use verified Privy identity; the seeded accounts are not login identities.
 
 ```mermaid
 erDiagram
@@ -23,6 +26,10 @@ erDiagram
     COMMENTS o|--o{ COMMENTS : parent_post
     COMMENTS ||--o{ SOCIAL_REACTIONS : receives
     USERS ||--o{ SOCIAL_REACTIONS : likes
+    TOKENS ||--o{ FEED_DISCUSSIONS : anchors
+    FEED_DISCUSSIONS o|--o{ COMMENTS : replies
+    FEED_DISCUSSIONS ||--o{ FEED_REACTIONS : receives
+    USERS ||--o{ FEED_REACTIONS : likes
 ```
 
 ```mermaid
@@ -44,6 +51,10 @@ sequenceDiagram
     S->>S: Text moderation; validate position window or same-token parent
     S->>DB: Lock writer, check rate, save discussion
     A-->>W: Stored post with provenance and engagement
+    W->>A: GET or POST /v1/feed/{key}/comments; PUT or DELETE /v1/feed/{key}/reaction
+    A->>S: Card key and optional viewer for reads; verified viewer for writes
+    S->>DB: Resolve card from its indexed activity
+    S->>DB: Read replies, or lazily anchor and write engagement
 ```
 
 - Follow targets are wallet addresses, including not-yet-registered wallets.
@@ -65,6 +76,17 @@ sequenceDiagram
   database rejects repeated text in a one-minute window and allows up to five
   posts per minute per author. The hook is injectable for additional moderation;
   no third-party or AI moderation service is configured by default.
+- All feed cards expose `likeCount`, `replyCount` (including nested replies),
+  and `viewerLiked` (false for anonymous viewers). Thesis cards retain their
+  existing thread and reaction routes and their `likes`/`likedByMe` fields.
+  For other cards use the opaque `discussionKey`: read or post replies at
+  `/v1/feed/{key}/comments`, and like or unlike with
+  `PUT/DELETE /v1/feed/{key}/reaction`. Parents must be in the same thread.
+  Bought, sold, and closed cards attach to the underlying fill; a milestone
+  for that fill has its own thread. A multi-user card shares a thread across
+  global and following views for the same token, side, and UTC bucket.
+  A new-trader thread is tied to the trader, so its replies and likes survive
+  discovery of an earlier first fill. Existing threads keep their original token.
 - Feed and discussion rows carry `source`; profile and history responses use
   `X-Data-Source`. Seeded leaderboard entries carry `source: demo`. In the
   absence of the webhook/Redis projection, ranking reads derive results from

@@ -1289,6 +1289,13 @@
               },
               "likedByMe": {
                 "type": "boolean"
+              },
+              "likeCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "viewerLiked": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -1310,7 +1317,9 @@
               "eventType",
               "marketCapUsd",
               "likes",
-              "replyCount"
+              "replyCount",
+              "likeCount",
+              "viewerLiked"
             ]
           },
           {
@@ -1359,6 +1368,21 @@
               "createdAt": {
                 "type": "integer",
                 "description": "Unix seconds"
+              },
+              "likeCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "viewerLiked": {
+                "type": "boolean"
+              },
+              "discussionKey": {
+                "type": "string",
+                "description": "Opaque key for this card's comments and reaction routes"
               },
               "kind": {
                 "type": "string",
@@ -1426,6 +1450,10 @@
               "imageUrl",
               "position",
               "createdAt",
+              "likeCount",
+              "replyCount",
+              "viewerLiked",
+              "discussionKey",
               "kind",
               "wallet",
               "side",
@@ -1485,6 +1513,21 @@
                 "type": "integer",
                 "description": "Unix seconds"
               },
+              "likeCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "viewerLiked": {
+                "type": "boolean"
+              },
+              "discussionKey": {
+                "type": "string",
+                "description": "Opaque key for this card's comments and reaction routes"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -1530,6 +1573,10 @@
               "imageUrl",
               "position",
               "createdAt",
+              "likeCount",
+              "replyCount",
+              "viewerLiked",
+              "discussionKey",
               "kind",
               "eventType",
               "wallet",
@@ -1586,6 +1633,21 @@
                 "type": "integer",
                 "description": "Unix seconds"
               },
+              "likeCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "viewerLiked": {
+                "type": "boolean"
+              },
+              "discussionKey": {
+                "type": "string",
+                "description": "Opaque key for this card's comments and reaction routes"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -1624,6 +1686,10 @@
               "imageUrl",
               "position",
               "createdAt",
+              "likeCount",
+              "replyCount",
+              "viewerLiked",
+              "discussionKey",
               "kind",
               "eventType",
               "wallet",
@@ -1679,6 +1745,21 @@
                 "type": "integer",
                 "description": "Unix seconds"
               },
+              "likeCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "viewerLiked": {
+                "type": "boolean"
+              },
+              "discussionKey": {
+                "type": "string",
+                "description": "Opaque key for this card's comments and reaction routes"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -1711,6 +1792,10 @@
               "imageUrl",
               "position",
               "createdAt",
+              "likeCount",
+              "replyCount",
+              "viewerLiked",
+              "discussionKey",
               "kind",
               "eventType",
               "wallet",
@@ -1786,6 +1871,12 @@
             ],
             "format": "uuid"
           },
+          "discussionKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "parentId": {
             "type": [
               "string",
@@ -1824,6 +1915,7 @@
           "kind",
           "wallet",
           "thesisId",
+          "discussionKey",
           "parentId",
           "pinned",
           "body",
@@ -4532,6 +4624,387 @@
           },
           "401": {
             "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feed/{key}/comments": {
+      "get": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "The card's discussionKey"
+            },
+            "required": true,
+            "description": "The card's discussionKey",
+            "name": "key",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feed activity replies, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "comments": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Comment"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "comments",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown feed activity or parent post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "The card's discussionKey"
+            },
+            "required": true,
+            "description": "The card's discussionKey",
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "position": {
+                    "type": "string",
+                    "enum": [
+                      "long",
+                      "short",
+                      "none"
+                    ],
+                    "default": "none"
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Published activity reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown feed activity or parent post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Text rejected by moderation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Post rate limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/feed/{key}/reaction": {
+      "put": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "The card's discussionKey"
+            },
+            "required": true,
+            "description": "The card's discussionKey",
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Activity liked (idempotent)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown feed activity or parent post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "The card's discussionKey"
+            },
+            "required": true,
+            "description": "The card's discussionKey",
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Activity unliked (idempotent)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown feed activity or parent post",
             "content": {
               "application/json": {
                 "schema": {

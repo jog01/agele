@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { closeDb, getDb } from "../db/client";
+import { guardLiveStartup } from "../db/live-data-guard";
 import { ActiveTopicRegistry } from "../events/active-topics";
 import { RedisEventPublisher } from "../events/bus";
 import { FeedLock } from "../events/feed-lock";
@@ -11,6 +12,7 @@ import { IngestService } from "../services/chain-ingest/service";
 import { createMarketDataProvider } from "../services/market-data";
 import { startPriceFeed } from "../ws/price-feed";
 
+await guardLiveStartup();
 const redis = getRedis();
 const lock = new FeedLock(redis);
 const registry = new ActiveTopicRegistry(redis);

@@ -4,7 +4,14 @@ import { AppError, badRequest, notFound, unauthorized } from "../lib/errors";
 import type { FollowRepository } from "../repositories/follow.repository";
 import type { PgSocialRepository } from "../repositories/social.repository";
 import type { UserWithWallets } from "../repositories/user.repository";
-import type { FeedItemDto, FeedQuery, LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
+import type {
+  CommentBody,
+  FeedDiscussionParam,
+  FeedItemDto,
+  FeedQuery,
+  LeaderboardEntryDto,
+  LeaderboardWindowValue,
+} from "../schemas/social";
 import type { TokenDto } from "../schemas/token";
 import { positionEpisodes } from "./position-episodes";
 import { decodeCursor, encodeCursor } from "./social/cursor";
@@ -20,6 +27,7 @@ function decodeSocialCursor(value: string) {
 }
 
 export type TextModeration = (text: string) => void | Promise<void>;
+type Discussion = z.infer<typeof FeedDiscussionParam>["key"];
 const moderateText: TextModeration = (text) => {
   const normalized = text
     .normalize("NFKC")
@@ -213,7 +221,7 @@ export class SocialService {
     }
     if (input.parentId) {
       const parent = await this.repository.getPost(input.parentId);
-      if (!parent || parent.mint !== mint) throw notFound("Parent post");
+      if (!parent || parent.mint !== mint || parent.discussionKey) throw notFound("Parent post");
       return this.repository.createPost({ ...post, parentId: parent.id, thesisId: parent.thesisId });
     }
     if (!(await this.repository.hasToken(mint)))
@@ -242,5 +250,31 @@ export class SocialService {
   async react(postId: string, viewerId: string, liked: boolean) {
     if (!(await this.repository.getPost(postId))) throw notFound("Post");
     await this.repository.setReaction(postId, viewerId, liked);
+  }
+
+  private async feedDiscussion({ key, target }: Discussion) {
+    const mint = await this.repository.discussionMint(target);
+    if (!mint) throw notFound("Feed activity");
+    return { key, mint };
+  }
+
+  async feedReplies(discussion: Discussion, limit: number, cursor?: string, viewerId?: string) {
+    const boundary = cursor === undefined ? undefined : decodeSocialCursor(cursor);
+    const { key } = await this.feedDiscussion(discussion);
+    return this.repository.discussionReplies(key, limit, boundary, viewerId);
+  }
+
+  async replyToFeed(discussion: Discussion, userId: string, input: z.infer<typeof CommentBody>) {
+    await this.moderate(input.body);
+    const { key, mint } = await this.feedDiscussion(discussion);
+    if (input.parentId) {
+      const parent = await this.repository.getPost(input.parentId);
+      if (parent?.discussionKey !== key) throw notFound("Parent post");
+    }
+    return this.repository.createPost({ ...input, userId, mint, discussionKey: key, kind: "comment" });
+  }
+
+  async reactToFeed(discussion: Discussion, userId: string, liked: boolean) {
+    await this.repository.setFeedReaction(await this.feedDiscussion(discussion), userId, liked);
   }
 }

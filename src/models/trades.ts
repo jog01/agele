@@ -42,6 +42,7 @@ export const trades = pgTable(
     index("trades_user_executed_idx").on(t.userId, t.executedAt),
     index("trades_mint_executed_idx").on(t.mint, t.executedAt),
     index("trades_feed_idx").on(sql`date_trunc('second', ${t.executedAt} AT TIME ZONE 'UTC')`, t.id),
+    index("trades_demo_seed_idx").on(t.id).where(sql`${t.signature} like 'demo:%'`),
   ],
 );
 
