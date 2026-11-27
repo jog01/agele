@@ -42,6 +42,7 @@ function setup() {
       id: crypto.randomUUID(),
       userId,
       mint: SOL,
+      walletAddress: null,
       side,
       tokenAmount: "1",
       priceUsd: volume,

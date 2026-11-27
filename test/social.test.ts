@@ -35,8 +35,16 @@ describe("social controller", () => {
 
   it("documents that a thesis thread can have no pinned version", async () => {
     const document = await (await app.request("/openapi.json")).json();
-    expect(document.components.schemas.ThesisThread.properties.pinned).toMatchObject({
-      anyOf: [{ $ref: "#/components/schemas/Comment" }, { type: "null" }],
+    expect(document).toMatchObject({
+      components: {
+        schemas: {
+          ThesisThread: {
+            properties: {
+              pinned: { anyOf: [{ $ref: "#/components/schemas/Comment" }, { type: "null" }] },
+            },
+          },
+        },
+      },
     });
   });
 });
