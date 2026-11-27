@@ -42,6 +42,33 @@ export class PgTraderRepository {
     return user;
   }
 
+  search(query: string, limit: number) {
+    const prefix = query.replace(/^@/, "").toLowerCase();
+    const exact = sql`(u.wallet_address = ${query} or exists (
+      select 1 from wallets w where w.user_id = u.id and w.chain_type = 'solana' and w.address = ${query}
+    ))`;
+    return this.db.execute<{
+      wallet: string;
+      handle: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+    }>(sql`
+      select result.wallet, coalesce(result.handle, left(result.wallet, 8)) as handle,
+        result.display_name as "displayName", result.avatar_url as "avatarUrl"
+      from (
+        select ${canonical} as wallet, u.handle, u.display_name, u.avatar_url, ${exact} as exact,
+          lower(u.handle) = ${prefix} as "exactHandle"
+        from users u
+        where ${exact} or (${prefix} <> '' and (
+          starts_with(lower(u.handle), ${prefix}) or starts_with(lower(u.display_name), ${prefix})
+        ))
+      ) result
+      where result.wallet is not null
+      order by result.exact desc nulls last, result."exactHandle" desc nulls last, result.handle, result.wallet
+      limit ${limit}
+    `);
+  }
+
   async linkedAddresses(userId: string) {
     const rows = await this.db
       .select({ address: wallets.address })
@@ -77,6 +104,10 @@ export class PgTraderRepository {
   async token(mint: string) {
     const [token] = await this.db.select().from(tokens).where(eq(tokens.mint, mint));
     return token;
+  }
+
+  tokens(mints: string[]) {
+    return this.db.select().from(tokens).where(inArray(tokens.mint, mints));
   }
 
   async mutualFollowers(addresses: string[], followed: string[]) {

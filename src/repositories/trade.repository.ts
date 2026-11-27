@@ -9,6 +9,7 @@ export interface IndexedTrade extends ParsedTrade {
   userId: string;
   usd: bigint;
   solPriceUsd?: bigint;
+  marketCapUsd?: number;
   symbol: string;
   name: string;
   imageUrl: string | null;
@@ -94,6 +95,7 @@ export class PgTradeRepository implements TradeRepository {
           quoteAmountUsd: formatDecimal(trade.usd),
           solPriceUsd: trade.solPriceUsd === undefined ? null : formatDecimal(trade.solPriceUsd),
           priceUsd: formatDecimal(divide(trade.usd, trade.amount)),
+          marketCapUsd: trade.marketCapUsd?.toFixed(2),
           signature: trade.signature,
           executedAt: new Date(trade.timestamp * 1000),
         })

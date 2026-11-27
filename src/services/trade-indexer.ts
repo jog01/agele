@@ -1,4 +1,4 @@
-import { decimal, multiply } from "../lib/decimal";
+import { decimal, formatDecimal, multiply } from "../lib/decimal";
 import { AppError } from "../lib/errors";
 import { logger } from "../lib/logger";
 import type { Trade } from "../models";
@@ -77,11 +77,17 @@ export class TradeIndexer {
         }
         const usd = solPriceUsd === undefined ? trade.quoteAmount : multiply(trade.quoteAmount, solPriceUsd);
         const metadata = await this.market.getToken(trade.mint);
+        const supply = metadata && metadata.priceUsd > 0 ? metadata.marketCapUsd / metadata.priceUsd : 0;
+        const marketCapUsd = supply * (Number(formatDecimal(usd)) / Number(formatDecimal(trade.amount)));
         const stored = await this.repository
           .record({
             ...trade,
             usd,
             solPriceUsd,
+            marketCapUsd:
+              Number.isFinite(marketCapUsd) && marketCapUsd > 0 && marketCapUsd < 1e20
+                ? marketCapUsd
+                : undefined,
             userId,
             symbol: metadata?.symbol ?? trade.mint.slice(0, 8),
             name: metadata?.name ?? trade.mint.slice(0, 8),

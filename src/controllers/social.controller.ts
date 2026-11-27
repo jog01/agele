@@ -15,6 +15,7 @@ import {
   LeaderboardWindow,
   SocialPostBody,
   ThesisThreadSchema,
+  ThesisViewSchema,
 } from "../schemas/social";
 import type { AppEnv } from "../types";
 
@@ -188,6 +189,18 @@ const getThesis = createRoute({
     ...writeResponses,
   },
 });
+const viewThesis = createRoute({
+  method: "post",
+  path: "/tokens/{mint}/theses/{thesisId}/views",
+  tags: ["social"],
+  description: "Record a thesis thread open. GET requests do not increment this counter.",
+  request: { params: getThesis.request.params },
+  responses: {
+    200: { content: { "application/json": { schema: ThesisViewSchema } }, description: "Updated view count" },
+    400: errorResponse("Invalid mint or thesis ID"),
+    404: errorResponse("Unknown thesis"),
+  },
+});
 const postThesis = createRoute({
   method: "post",
   path: "/tokens/{mint}/theses",
@@ -327,6 +340,10 @@ export const socialController = new OpenAPIHono<AppEnv>()
     const { limit, cursor } = c.req.valid("query");
     const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
     return c.json(await container.social.thesisThread(mint, thesisId, limit, cursor, viewer?.id), 200);
+  })
+  .openapi(viewThesis, async (c) => {
+    const { mint, thesisId } = c.req.valid("param");
+    return c.json(await c.get("container").social.recordThesisView(mint, thesisId), 200);
   })
   .openapi(postComment, async (c) => {
     const container = c.get("container");

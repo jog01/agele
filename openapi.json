@@ -728,6 +728,73 @@
                 }
               ]
             }
+          },
+          "topTrades": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "positionId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "mint": {
+                  "type": "string"
+                },
+                "symbol": {
+                  "type": "string"
+                },
+                "imageUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "closedAt": {
+                  "type": "integer"
+                },
+                "realizedPnlUsd": {
+                  "type": "number"
+                },
+                "realizedPnlPct": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "positionId",
+                "mint",
+                "symbol",
+                "imageUrl",
+                "closedAt",
+                "realizedPnlUsd",
+                "realizedPnlPct"
+              ]
+            },
+            "maxItems": 5
+          },
+          "mostLikedThesis": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "positionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "newerVersionCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "post": {
+                "$ref": "#/components/schemas/Comment"
+              }
+            },
+            "required": [
+              "positionId",
+              "newerVersionCount",
+              "post"
+            ]
           }
         },
         "required": [
@@ -744,7 +811,9 @@
           "realizedPnlUsd",
           "unrealizedPnlUsd",
           "stats",
-          "positions"
+          "positions",
+          "topTrades",
+          "mostLikedThesis"
         ]
       },
       "TraderWindowStats": {
@@ -780,6 +849,133 @@
           "trades",
           "winRatePct",
           "rank"
+        ]
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "indexed"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": "string",
+            "enum": [
+              "long",
+              "short",
+              "none"
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix seconds"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "thesis",
+              "comment"
+            ]
+          },
+          "wallet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "viewCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "discussionKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "body": {
+            "type": "string"
+          },
+          "likes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "likedByMe": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handle",
+          "avatarUrl",
+          "source",
+          "id",
+          "mint",
+          "symbol",
+          "imageUrl",
+          "position",
+          "createdAt",
+          "kind",
+          "wallet",
+          "thesisId",
+          "viewCount",
+          "discussionKey",
+          "parentId",
+          "pinned",
+          "body",
+          "likes",
+          "replyCount"
         ]
       },
       "UserTrade": {
@@ -880,6 +1076,24 @@
           "avgEntryUsd": {
             "type": "number"
           },
+          "avgEntryMarketCapUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "avgExitMarketCapUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "totalInvestedUsd": {
+            "type": "number"
+          },
+          "pnlPct": {
+            "type": "number"
+          },
           "avgCostUsd": {
             "type": "number"
           },
@@ -904,7 +1118,25 @@
           "fills": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/UserTrade"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/UserTrade"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "marketCapUsd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "marketCapUsd"
+                  ]
+                }
+              ]
             }
           }
         },
@@ -918,6 +1150,10 @@
           "closedAt",
           "quantity",
           "avgEntryUsd",
+          "avgEntryMarketCapUsd",
+          "avgExitMarketCapUsd",
+          "totalInvestedUsd",
+          "pnlPct",
           "avgCostUsd",
           "priceUsd",
           "priceSinceFirstBuyPct",
@@ -925,6 +1161,59 @@
           "realizedPnlUsd",
           "unrealizedPnlUsd",
           "fills"
+        ]
+      },
+      "PositionTransactions": {
+        "type": "object",
+        "properties": {
+          "positionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalInvestedUsd": {
+            "type": "number"
+          },
+          "nextPage": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/UserTrade"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "marketCapUsd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "marketCapUsd"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "positionId",
+          "total",
+          "totalInvestedUsd",
+          "nextPage",
+          "transactions"
         ]
       },
       "TraderConnections": {
@@ -978,6 +1267,30 @@
         "required": [
           "users",
           "nextCursor"
+        ]
+      },
+      "PublicPortfolioHistory": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PortfolioHistory"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "changeUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "changePct": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
         ]
       },
       "PortfolioHistory": {
@@ -1260,6 +1573,10 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "viewCount": {
+                "type": "integer",
+                "minimum": 0
+              },
               "positionId": {
                 "type": "string",
                 "format": "uuid"
@@ -1312,6 +1629,7 @@
               "wallet",
               "body",
               "thesisId",
+              "viewCount",
               "positionId",
               "pinned",
               "eventType",
@@ -1804,125 +2122,6 @@
           }
         ]
       },
-      "Comment": {
-        "type": "object",
-        "properties": {
-          "handle": {
-            "type": "string"
-          },
-          "avatarUrl": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "demo",
-              "indexed"
-            ]
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "mint": {
-            "type": "string"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "imageUrl": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "position": {
-            "type": "string",
-            "enum": [
-              "long",
-              "short",
-              "none"
-            ]
-          },
-          "createdAt": {
-            "type": "integer",
-            "description": "Unix seconds"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "thesis",
-              "comment"
-            ]
-          },
-          "wallet": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "thesisId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "discussionKey": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "parentId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "pinned": {
-            "type": "boolean"
-          },
-          "body": {
-            "type": "string"
-          },
-          "likes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "replyCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "likedByMe": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "handle",
-          "avatarUrl",
-          "source",
-          "id",
-          "mint",
-          "symbol",
-          "imageUrl",
-          "position",
-          "createdAt",
-          "kind",
-          "wallet",
-          "thesisId",
-          "discussionKey",
-          "parentId",
-          "pinned",
-          "body",
-          "likes",
-          "replyCount"
-        ]
-      },
       "ThesisThread": {
         "type": "object",
         "properties": {
@@ -1952,6 +2151,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "viewCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "pinned": {
             "anyOf": [
               {
@@ -1970,6 +2173,7 @@
           "wallet",
           "mint",
           "positionId",
+          "viewCount",
           "pinned"
         ]
       }
@@ -2311,6 +2515,96 @@
           },
           "502": {
             "description": "Market data upstream unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "tags": [
+          "tokens",
+          "traders"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token and public trader matches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Token"
+                      }
+                    },
+                    "tokensUnavailable": {
+                      "type": "boolean"
+                    },
+                    "traders": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "wallet": {
+                            "type": "string"
+                          },
+                          "handle": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "avatarUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "wallet",
+                          "handle",
+                          "displayName",
+                          "avatarUrl"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "tokens",
+                    "tokensUnavailable",
+                    "traders"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
             "content": {
               "application/json": {
                 "schema": {
@@ -3020,6 +3314,132 @@
         }
       }
     },
+    "/v1/traders/{wallet}/positions/{mint}/transactions": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "description": "Newest fills first, optionally filtered by minimum USD size (inclusive). Total invested is for the whole position.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "positionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "minSizeUsd",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of position transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionTransactions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader or position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/traders/{wallet}/followers": {
       "get": {
         "tags": [
@@ -3252,11 +3672,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Stored daily value of public positions, oldest first. Excludes cash and linked-wallet balances.",
+            "description": "Stored public position value, hourly for 24h and daily otherwise, oldest first. Excludes cash and linked-wallet balances.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PortfolioHistory"
+                  "$ref": "#/components/schemas/PublicPortfolioHistory"
                 }
               }
             }
@@ -5668,6 +6088,77 @@
           },
           "503": {
             "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/theses/{thesisId}/views": {
+      "post": {
+        "tags": [
+          "social"
+        ],
+        "description": "Record a thesis thread open. GET requests do not increment this counter.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "thesisId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated view count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "viewCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "viewCount"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid mint or thesis ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown thesis",
             "content": {
               "application/json": {
                 "schema": {

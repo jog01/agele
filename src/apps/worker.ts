@@ -46,6 +46,11 @@ await getQueue(QUEUE.portfolioSnapshot).upsertJobScheduler(
   },
   { opts: scheduledRetention },
 );
+await getQueue(QUEUE.portfolioSnapshot).upsertJobScheduler(
+  "hourly-public-portfolio-snapshot",
+  { pattern: "10 * * * *", tz: "UTC" },
+  { name: "hourly-public-portfolio-snapshot", opts: scheduledRetention },
+);
 await getQueue(QUEUE.leaderboardRebuild).upsertJobScheduler(
   "leaderboard-rebuild",
   { every: 60000 },

@@ -7,6 +7,7 @@ import {
   follows,
   portfolioSnapshots,
   positions,
+  publicPortfolioHourly,
   reactions,
   theses,
   tokens,
@@ -194,7 +195,8 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
   const metadata = await Promise.all(mints.map((mint) => market.getToken(mint)));
   const repository = new PgTradeRepository(db);
   for (const [index, profile] of profiles.entries()) {
-    const { mint, symbol, name, imageUrl, decimals, priceUsd } = metadata[index % mints.length]!;
+    const { mint, symbol, name, imageUrl, decimals, priceUsd, marketCapUsd } =
+      metadata[index % mints.length]!;
     const quantity = 2 * Math.max(2, Math.round((500 + index * 145) / priceUsd));
     const legs = [
       [21 * day, "buy", quantity, 86],
@@ -216,6 +218,7 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         decimals,
         amount: decimal(String(amount)),
         usd,
+        marketCapUsd: (marketCapUsd * Number(formatDecimal(usd))) / (priceUsd * amount),
         quoteAmount: usd,
         quoteMint: USDC_MINT,
         side,
@@ -227,6 +230,18 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
       if (!stored && legacyTimestamp !== fill.timestamp) {
         await upgradeDemoFill(db, fill, legacyTimestamp, index === 11 && leg === 1 ? usd : undefined);
       }
+      if (!stored) {
+        await db
+          .update(trades)
+          .set({ marketCapUsd: sql`${trades.priceUsd} * ${marketCapUsd / priceUsd}::numeric` })
+          .where(
+            and(
+              eq(trades.userId, profile.id),
+              eq(trades.signature, fill.signature),
+              isNull(trades.marketCapUsd),
+            ),
+          );
+      }
     }
     const joinedAt = new Date((anchor - 35 * day) * 1000);
     if (first!.createdAt > joinedAt)
@@ -236,19 +251,21 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
       .from(trades)
       .where(eq(trades.userId, profile.id))
       .orderBy(asc(trades.executedAt));
-    const midnight = Math.floor(anchor / day) * day;
+    const valueAt = async (time: number) => {
+      let held = 0;
+      for (const fill of fills) {
+        if (fill.executedAt.getTime() > time * 1000) break;
+        held += Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1);
+      }
+      const historical = new MockMarketDataProvider(() => time * 1000);
+      return (Math.max(0, held) * (await historical.getToken(mint))!.priceUsd).toFixed(2);
+    };
+    const nowSeconds = Math.floor(now / 1000);
+    const midnight = Math.floor(nowSeconds / day) * day;
     const snapshots = [];
-    for (let i = 20; i >= 0; i--) {
+    for (let i = 30; i >= 0; i--) {
       const time = midnight - i * day;
-      const held = fills.reduce(
-        (sum, fill) =>
-          fill.executedAt.getTime() <= time * 1000
-            ? sum + Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1)
-            : sum,
-        0,
-      );
-      const past = await new MockMarketDataProvider(() => time * 1000).getToken(mint);
-      const valueUsd = (held * past!.priceUsd).toFixed(2);
+      const valueUsd = await valueAt(time);
       snapshots.push({
         userId: profile.id,
         day: new Date(time * 1000).toISOString().slice(0, 10),
@@ -256,6 +273,18 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         positionsValueUsd: valueUsd,
       });
     }
+    const hour = Math.floor(nowSeconds / 3600) * 3600;
+    await db
+      .insert(publicPortfolioHourly)
+      .values(
+        await Promise.all(
+          Array.from({ length: 25 }, async (_, index) => {
+            const time = hour - index * 3600;
+            return { userId: profile.id, hour: new Date(time * 1000), valueUsd: await valueAt(time) };
+          }),
+        ),
+      )
+      .onConflictDoNothing();
     await db
       .insert(portfolioSnapshots)
       .values(snapshots)
@@ -278,8 +307,13 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         mint,
         wallet: profile.walletAddress,
         positionId: entry!.id,
+        viewCount: 84 + index * 23,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: theses.id,
+        set: { viewCount: sql`excluded.view_count` },
+        setWhere: eq(theses.viewCount, 0),
+      });
     if (imageUrl)
       await db
         .update(tokens)

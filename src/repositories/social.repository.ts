@@ -157,6 +157,7 @@ export class PgSocialRepository {
         case when coalesce(page.demo, u.demo) then 'demo' else 'indexed' end as source,
         u.avatar_url as "avatarUrl", token.symbol, token.image_url as "imageUrl",
         th.position_id as "positionId",
+        th.view_count::float8 as "viewCount",
         case when page.kind = 'thesis' then (select count(*)::int from social_reactions r where r.post_id = page.id)
           else (select count(*)::int from feed_reactions r where r.discussion_key = page."discussionKey")
         end as "likeCount",
@@ -205,6 +206,7 @@ export class PgSocialRepository {
             likes: row.likeCount,
             likedByMe: viewerId ? row.viewerLiked : undefined,
             thesisId: row.thesisId!,
+            viewCount: row.viewCount!,
             positionId: row.positionId!,
             pinned: row.pinned,
             eventType: kind,
@@ -263,7 +265,7 @@ export class PgSocialRepository {
     const { mint, id, thesisId, discussionKey, tokenOnly, viewerId, cursor, limit } = input;
     return this.db.execute<CommentDto>(sql`
       select p.id, p.mint, p.body, p.position, p.kind, p.thesis_id as "thesisId", p.parent_id as "parentId", p.pinned,
-        p.discussion_key as "discussionKey",
+        p.discussion_key as "discussionKey", th.view_count::float8 as "viewCount",
         extract(epoch from ${postTime})::float8 as "createdAt",
         ${wallet} as wallet, ${handle} as handle, ${source} as source, u.avatar_url as "avatarUrl",
         token.symbol, token.image_url as "imageUrl",
@@ -272,6 +274,7 @@ export class PgSocialRepository {
         ${viewerId ? sql`, exists(select 1 from social_reactions r where r.post_id = p.id and r.user_id = ${viewerId}) as "likedByMe"` : sql.empty()}
       from comments p join users u on u.id = p.user_id
       join tokens token on token.mint = p.mint
+      left join theses th on th.id = p.thesis_id and p.kind = 'thesis'
       where true
       ${mint ? sql`and p.mint = ${mint}` : sql.empty()}
       ${id ? sql`and p.id = ${id}` : sql.empty()}
@@ -384,6 +387,37 @@ export class PgSocialRepository {
       pinned: pinned ?? null,
       ...{ comments: rows.slice(0, limit), nextCursor: pageCursor(rows, limit) },
     };
+  }
+
+  async recordThesisView(mint: string, thesisId: string) {
+    const [row] = await this.db
+      .update(theses)
+      .set({ viewCount: sql`${theses.viewCount} + 1` })
+      .where(and(eq(theses.id, thesisId), eq(theses.mint, mint)))
+      .returning({ viewCount: theses.viewCount });
+    return row;
+  }
+
+  async mostLikedThesis(userId: string, viewerId?: string) {
+    const [version] = await this.db.execute<{
+      id: string;
+      positionId: string;
+      newerVersionCount: number;
+    }>(sql`
+      select p.id, th.position_id as "positionId",
+        (select count(*)::int from comments newer
+         where newer.thesis_id = th.id and newer.kind = 'thesis'
+           and (newer.created_at, newer.id) > (p.created_at, p.id)) as "newerVersionCount"
+      from theses th join comments p on p.thesis_id = th.id and p.kind = 'thesis'
+      where th.user_id = ${userId}
+      order by (select count(*) from social_reactions r where r.post_id = p.id) desc,
+        p.created_at desc, p.id desc
+      limit 1
+    `);
+    if (!version) return null;
+    const { id, ...details } = version;
+    const post = await this.getPost(id, viewerId);
+    return post ? { ...details, post } : null;
   }
 
   async setPinned(thesisId: string, postId: string, pinned: boolean) {

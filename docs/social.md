@@ -11,7 +11,8 @@ source or `MARKET_DATA_PROVIDER=live`. In either mode the API, worker, and feed
 refuse startup if PostgreSQL contains demo users or seeded social trade
 signatures. No rows are erased, and the simulator's source-scoped tables are not
 part of this check.
-Writes always use verified Privy identity; the seeded accounts are not login identities.
+Social content and reactions require verified Privy identity; anonymous readers can
+record thesis opens. Seeded accounts are not login identities.
 
 ```mermaid
 erDiagram
@@ -30,6 +31,7 @@ erDiagram
     FEED_DISCUSSIONS o|--o{ COMMENTS : replies
     FEED_DISCUSSIONS ||--o{ FEED_REACTIONS : receives
     USERS ||--o{ FEED_REACTIONS : likes
+    USERS ||--o{ PUBLIC_PORTFOLIO_HOURLY : position_value
 ```
 
 ```mermaid
@@ -55,6 +57,10 @@ sequenceDiagram
     A->>S: Card key and optional viewer for reads; verified viewer for writes
     S->>DB: Resolve card from its indexed activity
     S->>DB: Read replies, or lazily anchor and write engagement
+    W->>A: POST /v1/tokens/{mint}/theses/{thesisId}/views
+    A->>DB: Atomically increment thesis thread viewCount
+    W->>A: GET trader profile, position replay, transactions or history
+    A->>DB: Read stored episodes, thesis ranking and position snapshots
 ```
 
 - Follow targets are wallet addresses, including not-yet-registered wallets.
@@ -103,9 +109,30 @@ sequenceDiagram
   data. Missing prices are excluded when a matching price filter is requested.
 - `GET /v1/traders/{wallet}/positions/{mint}` returns chronological fills,
   average entry, and realized/unrealized PnL for the most recent position or
-  a specified `positionId`. The profile includes joined date, trade count,
+  a specified `positionId`. `totalInvestedUsd` sums buys and `pnlPct` divides
+  realized plus unrealized PnL by that investment. Entry and exit market
+  caps are token-weighted estimates using fill price and the implied supply
+  available at indexing. They are null when a corresponding fill lacks cap
+  data. The `/transactions` subroute returns newest-first fills with
+  `page`, `limit`, and inclusive `minSizeUsd`; the total investment is
+  independent of the filter.
+- The profile includes joined date, trade count,
   average hold across closed positions and, for signed-in viewers, mutual
   followers (people the viewer follows who follow this trader). The
-  `followers` and `following` routes are individually paginated. The public
-  `portfolio/history` route reads stored position-value snapshots, excluding
-  cash and linked-wallet balances. Legacy equity-only snapshots are omitted.
+  `followers` and `following` routes are individually paginated. `topTrades`
+  lists up to five closed episodes ranked by realized USD PnL, with an
+  opening-fill ID for replay. `mostLikedThesis` selects the trader's most liked
+  version (newest wins ties) without changing the author's thread pin and
+  includes the number of newer versions in that thread. View counts are
+  shared by versions in a thread; record an explicit open with
+  `POST /v1/tokens/{mint}/theses/{thesisId}/views`. GETs do not count.
+- The public `portfolio/history` route excludes cash and linked-wallet
+  balances. In `24h` it reads hourly UTC public-position snapshots; `7d`
+  and `30d` read daily snapshots. Absolute and percentage change are null
+  when a window endpoint is missing; percent is also null from a zero
+  baseline. `all` keeps the points-only response. Legacy equity-only snapshots
+  are omitted.
+- `GET /v1/search?q=...` returns `tokens` and public `traders` in one
+  response. Trader matches include exact Solana wallet aliases and
+  case-insensitive handle or display-name prefixes. If the token provider
+  is unavailable, trader results still return and `tokensUnavailable` is true.

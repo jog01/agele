@@ -6,7 +6,7 @@ import { decimal } from "../src/lib/decimal";
 import { comments, positions, theses, trades, users } from "../src/models";
 import { PgFollowRepository } from "../src/repositories/follow.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
-import { CommentSchema, FeedSchema, ThesisThreadSchema } from "../src/schemas/social";
+import { CommentSchema, FeedSchema, ThesisThreadSchema, ThesisViewSchema } from "../src/schemas/social";
 import { USDC_MINT } from "../src/services/helius-parser";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
@@ -138,15 +138,37 @@ describe("persistent discussions and follows", () => {
       expect((await app.request(`/v1/posts/${version.id}/pin`, { method: "PUT", headers })).status).toBe(204);
     }
     const restoredApp = makeApp();
+    const threadPath = `${token}/theses/${version.thesisId}`;
+    const views = await Promise.all(
+      Array.from({ length: 2 }, () => app.request(`${threadPath}/views`, { method: "POST" })),
+    );
+    expect(
+      (
+        await Promise.all(
+          views.map(async (response) => ThesisViewSchema.parse(await response.json()).viewCount),
+        )
+      ).sort(),
+    ).toEqual([1, 2]);
+    expect(
+      (await app.request(`${token}/theses/${crypto.randomUUID()}/views`, { method: "POST" })).status,
+    ).toBe(404);
     const thread = ThesisThreadSchema.parse(
       await (await restoredApp.request(`${token}/theses/${version.thesisId}`, { headers })).json(),
     );
     expect(thread).toMatchObject({
       positionId: openPosition,
       wallet,
+      viewCount: 2,
       pinned: { id: version.id, likes: 1, likedByMe: true },
     });
     expect(thread.comments).toHaveLength(4);
+    expect(await (await restoredApp.request(`/v1/traders/${wallet}`)).json()).toMatchObject({
+      mostLikedThesis: {
+        positionId: openPosition,
+        newerVersionCount: 1,
+        post: { id: version.id, likes: 1, viewCount: 2 },
+      },
+    });
     const feed = FeedSchema.parse(await (await restoredApp.request("/v1/feed")).json());
     expect(feed.items.find((item) => item.id === version.id)).toMatchObject({
       source: "indexed",

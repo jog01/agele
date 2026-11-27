@@ -1,6 +1,15 @@
 import { and, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { chainTokens, portfolioSnapshots, positions, tokens, trades, users, wallets } from "../models";
+import {
+  chainTokens,
+  portfolioSnapshots,
+  positions,
+  publicPortfolioHourly,
+  tokens,
+  trades,
+  users,
+  wallets,
+} from "../models";
 
 export interface TradeCursor {
   executedAt: Date;
@@ -56,6 +65,28 @@ export class PgPortfolioRepository {
         ),
       )
       .orderBy(portfolioSnapshots.day);
+  }
+
+  hourlyPositionsHistory(userId: string, start: Date) {
+    return this.db
+      .select()
+      .from(publicPortfolioHourly)
+      .where(and(eq(publicPortfolioHourly.userId, userId), gte(publicPortfolioHourly.hour, start)))
+      .orderBy(publicPortfolioHourly.hour);
+  }
+
+  async upsertHourlyPositions(userId: string, hour: Date, valueUsd: string) {
+    await this.db
+      .insert(publicPortfolioHourly)
+      .values({ userId, hour, valueUsd })
+      .onConflictDoUpdate({
+        target: [publicPortfolioHourly.userId, publicPortfolioHourly.hour],
+        set: { valueUsd },
+      });
+  }
+
+  async pruneHourlyPositions(before: Date) {
+    await this.db.delete(publicPortfolioHourly).where(lt(publicPortfolioHourly.hour, before));
   }
 
   getTrades(userId: string, limit: number, cursor?: TradeCursor) {

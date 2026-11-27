@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { AppError } from "../lib/errors";
 import { errorResponse, MintParam } from "../schemas/common";
 import {
   CandleSchema,
@@ -39,6 +40,31 @@ const searchTokens = createRoute({
     ),
     400: errorResponse("Invalid query"),
     502: errorResponse("Market data upstream unavailable"),
+  },
+});
+
+const search = createRoute({
+  method: "get",
+  path: "/search",
+  tags: ["tokens", "traders"],
+  request: { query: TokenSearchQuery },
+  responses: {
+    200: json(
+      z.object({
+        tokens: z.array(TokenSchema),
+        tokensUnavailable: z.boolean(),
+        traders: z.array(
+          z.object({
+            wallet: z.string(),
+            handle: z.string(),
+            displayName: z.string().nullable(),
+            avatarUrl: z.string().nullable(),
+          }),
+        ),
+      }),
+      "Token and public trader matches",
+    ),
+    400: errorResponse("Invalid query"),
   },
 });
 
@@ -107,6 +133,22 @@ export const tokensController = new OpenAPIHono<AppEnv>()
   .openapi(searchTokens, async (c) => {
     const { q } = c.req.valid("query");
     return c.json({ tokens: await c.get("container").tokens.searchTokens(q) }, 200);
+  })
+  .openapi(search, async (c) => {
+    const { q } = c.req.valid("query");
+    const container = c.get("container");
+    const [tokenResult, traders] = await Promise.all([
+      Promise.resolve()
+        .then(() => container.tokens.searchTokens(q))
+        .then((tokens) => ({ tokens, tokensUnavailable: false }))
+        .catch((error: unknown) => {
+          if (error instanceof AppError && (error.status === 502 || error.status === 503))
+            return { tokens: [], tokensUnavailable: true };
+          throw error;
+        }),
+      container.traders.search(q),
+    ]);
+    return c.json({ ...tokenResult, traders }, 200);
   })
   .openapi(listPulse, async (c) => {
     const { limit } = c.req.valid("query");

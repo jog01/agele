@@ -105,14 +105,35 @@ export class PortfolioService {
   }
 
   async getPublicPositionsHistory(userId: string, range: HistoryRange | "24h") {
+    const hourly = range === "24h";
+    const step = hourly ? 3_600_000 : 86_400_000;
+    const end = Math.floor(this.now() / step) * step;
     const days = { "24h": 1, "7d": 7, "30d": 30, all: 0 }[range];
-    const start = days ? new Date(this.now() - days * 86_400_000).toISOString().slice(0, 10) : undefined;
-    const snapshots = await this.repository.positionsHistory(userId, start);
+    const start = end - days * 86_400_000;
+    const points = hourly
+      ? (await this.repository.hourlyPositionsHistory(userId, new Date(start))).map((row) => ({
+          time: row.hour.getTime() / 1000,
+          valueUsd: Number(row.valueUsd),
+        }))
+      : (
+          await this.repository.positionsHistory(
+            userId,
+            days ? new Date(start).toISOString().slice(0, 10) : undefined,
+          )
+        ).map((row) => ({
+          time: Date.parse(`${row.day}T00:00:00Z`) / 1000,
+          valueUsd: Number(row.valueUsd),
+        }));
+    if (!days) return { points };
+    const first = points[0];
+    const last = points.at(-1);
+    const changeUsd =
+      first?.time === start / 1000 && last?.time === end / 1000 ? last.valueUsd - first.valueUsd : null;
     return {
-      points: snapshots.map((row) => ({
-        time: Date.parse(`${row.day}T00:00:00Z`) / 1000,
-        valueUsd: Number(row.valueUsd),
-      })),
+      points,
+      changeUsd,
+      changePct:
+        changeUsd !== null && first && first.valueUsd > 0 ? (changeUsd / first.valueUsd) * 100 : null,
     };
   }
 

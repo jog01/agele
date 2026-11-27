@@ -1,8 +1,11 @@
 import { createRoute, OpenAPIHono, type RouteConfig, z } from "@hono/zod-openapi";
 import { optionalAuth } from "../middlewares/auth";
 import { errorResponse, MintParam } from "../schemas/common";
-import { PortfolioHistorySchema, UserTradesQuery, UserTradesSchema } from "../schemas/portfolio";
+import { UserTradesQuery, UserTradesSchema } from "../schemas/portfolio";
 import {
+  PositionTransactionsQuery,
+  PositionTransactionsSchema,
+  PublicPortfolioHistorySchema,
   TraderConnectionsSchema,
   TraderParam,
   TraderPositionSchema,
@@ -78,6 +81,21 @@ const position = createRoute({
     ...traderReadErrors,
   },
 });
+const positionTransactions = createRoute({
+  method: "get",
+  path: "/traders/{wallet}/positions/{mint}/transactions",
+  tags: ["traders"],
+  description:
+    "Newest fills first, optionally filtered by minimum USD size (inclusive). Total invested is for the whole position.",
+  request: { params: TraderParam.extend(MintParam.shape), query: PositionTransactionsQuery },
+  responses: {
+    200: {
+      description: "Page of position transactions",
+      content: { "application/json": { schema: PositionTransactionsSchema } },
+    },
+    ...traderReadErrors,
+  },
+});
 const connections = (kind: "followers" | "following") =>
   createRoute({
     method: "get",
@@ -107,8 +125,8 @@ const portfolioHistory = createRoute({
   responses: {
     200: {
       description:
-        "Stored daily value of public positions, oldest first. Excludes cash and linked-wallet balances.",
-      content: { "application/json": { schema: PortfolioHistorySchema } },
+        "Stored public position value, hourly for 24h and daily otherwise, oldest first. Excludes cash and linked-wallet balances.",
+      content: { "application/json": { schema: PublicPortfolioHistorySchema } },
     },
     ...traderReadErrors,
   },
@@ -132,6 +150,12 @@ export const tradersController = new OpenAPIHono<AppEnv>()
     const result = await c.get("container").traders.position(wallet, mint, c.req.valid("query").positionId);
     c.header("X-Data-Source", result.source);
     return c.json(result.position, 200);
+  })
+  .openapi(positionTransactions, async (c) => {
+    const { wallet, mint } = c.req.valid("param");
+    const result = await c.get("container").traders.positionTransactions(wallet, mint, c.req.valid("query"));
+    c.header("X-Data-Source", result.source);
+    return c.json(result.transactions, 200);
   })
   .openapi(connections("followers"), async (c) => {
     const container = c.get("container");
