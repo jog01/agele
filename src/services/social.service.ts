@@ -1,14 +1,18 @@
 import { z } from "zod";
+import { formatDecimal } from "../lib/decimal";
 import { AppError, badRequest, notFound, unauthorized } from "../lib/errors";
 import type { FollowRepository } from "../repositories/follow.repository";
 import type { PgSocialRepository } from "../repositories/social.repository";
 import type { UserWithWallets } from "../repositories/user.repository";
-import type { LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
+import type { FeedItemDto, FeedQuery, LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
+import type { TokenDto } from "../schemas/token";
 import { positionEpisodes } from "./position-episodes";
-import { decodeCursor } from "./social/cursor";
+import { decodeCursor, encodeCursor } from "./social/cursor";
 import type { TokenService } from "./token.service";
 
 const cursorSchema = z.object({ createdAt: z.number().int().min(0).max(253402300799), id: z.uuid() });
+const usableQuote = (value?: number) =>
+  value !== undefined && Number.isFinite(value) && value > 0 ? value : null;
 function decodeSocialCursor(value: string) {
   const result = cursorSchema.safeParse(decodeCursor(value));
   if (!result.success) throw badRequest("Invalid social cursor");
@@ -44,11 +48,122 @@ export class SocialService {
     return rows.map((row) => ({ ...row, isFollowing: wallets.has(row.wallet) }));
   }
 
-  async feed(input: { scope: "global" | "following"; cursor?: string; limit: number }, viewerId?: string) {
+  async feed(input: z.infer<typeof FeedQuery>, viewerId?: string) {
     if (input.scope === "following" && !viewerId) throw unauthorized("Missing bearer token");
-    const cursor = input.cursor === undefined ? undefined : decodeSocialCursor(input.cursor);
+    if (
+      input.minMarketCapUsd !== undefined &&
+      input.maxMarketCapUsd !== undefined &&
+      input.minMarketCapUsd > input.maxMarketCapUsd
+    )
+      throw badRequest("Invalid market cap range");
+    let cursor = input.cursor === undefined ? undefined : decodeSocialCursor(input.cursor);
     const wallets = input.scope === "following" ? await this.follows.listWallets(viewerId!) : undefined;
-    return this.repository.feed({ wallets, cursor, limit: input.limit, viewerId });
+    const types = input.types?.split(",");
+    const market = new Map<string, Promise<TokenDto | null>>();
+    const quote = (mint: string) => {
+      const cached = market.get(mint);
+      if (cached) return cached;
+      const result = this.tokens.getToken(mint).catch((error: unknown) => {
+        if (error instanceof AppError && error.status === 404) return null;
+        throw error;
+      });
+      market.set(mint, result);
+      return result;
+    };
+    const portfolios = new Map<string, Promise<number | null>>();
+    const portfolioValue = (userId: string) => {
+      const cached = portfolios.get(userId);
+      if (cached) return cached;
+      const result = this.repository.holdings(userId).then(async (holdings) => {
+        const values = await Promise.all(
+          holdings
+            .filter((holding) => Number(holding.quantity) > 0)
+            .map(async (holding) => {
+              const token = await quote(holding.mint);
+              const price = usableQuote(token?.priceUsd);
+              return price === null ? null : Number(holding.quantity) * price;
+            }),
+        );
+        return values.reduce<number | null>(
+          (sum, value) => (sum === null || value === null ? null : sum + value),
+          0,
+        );
+      });
+      portfolios.set(userId, result);
+      return result;
+    };
+    const episodes = new Map<string, Promise<ReturnType<typeof positionEpisodes>>>();
+    const getEpisodes = (userId: string, mint: string) => {
+      const key = `${userId}:${mint}`;
+      const cached = episodes.get(key);
+      if (cached) return cached;
+      const result = this.repository.tradeHistory(userId, mint).then(positionEpisodes);
+      episodes.set(key, result);
+      return result;
+    };
+    const items: FeedItemDto[] = [];
+    for (;;) {
+      const batch = await this.repository.feed({
+        ...input,
+        wallets,
+        cursor,
+        limit: input.limit,
+        viewerId,
+        types,
+      });
+      const filtered = await Promise.all(
+        batch.items.map(async ({ userId, ...item }) => {
+          const token = await quote(item.mint);
+          item.marketCapUsd = usableQuote(token?.marketCapUsd);
+          if (
+            input.minMarketCapUsd !== undefined &&
+            (item.marketCapUsd === null || item.marketCapUsd < input.minMarketCapUsd)
+          )
+            return null;
+          if (
+            input.maxMarketCapUsd !== undefined &&
+            (item.marketCapUsd === null || item.marketCapUsd > input.maxMarketCapUsd)
+          )
+            return null;
+          if (item.kind === "trade") {
+            const episode = (await getEpisodes(userId, item.mint)).find((entry) =>
+              entry.fills.some((fill) => fill.id === item.id),
+            );
+            if (episode) {
+              item.positionId = episode.id;
+              const firstPrice = Number(episode.fills[0]!.priceUsd);
+              const price = usableQuote(token?.priceUsd);
+              item.priceSinceFirstBuyPct =
+                price !== null && firstPrice > 0 ? (price / firstPrice - 1) * 100 : null;
+              if (episode.closedAt && episode.fills.at(-1)?.id === item.id) {
+                item.eventType = "closed";
+                item.realizedPnlUsd = Number(formatDecimal(episode.realizedPnl));
+              }
+            }
+          }
+          if (types && !types.includes(item.eventType)) return null;
+          if (
+            input.minPriceSinceFirstBuyPct !== undefined &&
+            (item.kind !== "trade" ||
+              item.priceSinceFirstBuyPct === null ||
+              item.priceSinceFirstBuyPct < input.minPriceSinceFirstBuyPct)
+          )
+            return null;
+          if (input.minPortfolioUsd !== undefined) {
+            const value = await portfolioValue(userId);
+            if (value === null || value < input.minPortfolioUsd) return null;
+          }
+          return item;
+        }),
+      );
+      for (const item of filtered) {
+        if (!item) continue;
+        if (items.length === input.limit) return { items, nextCursor: encodeCursor(items.at(-1)!) };
+        items.push(item);
+      }
+      if (!batch.nextCursor) return { items, nextCursor: null };
+      cursor = decodeSocialCursor(batch.nextCursor);
+    }
   }
 
   async follow(viewer: UserWithWallets, wallet: string) {

@@ -288,6 +288,7 @@ describe("portfolio database integration", () => {
     const today = rows.filter((row) => row.day === "2026-01-01");
     expect(today).toHaveLength(1);
     expect(Number(today[0]!.valueUsd)).toBe(140);
+    expect(Number(today[0]!.positionsValueUsd)).toBe(90);
   });
 
   it("snapshots cash-only linked wallets with no positions", async () => {

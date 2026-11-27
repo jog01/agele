@@ -127,6 +127,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         leaderboard ?? databaseRanks,
         follows,
         leaderboard ? true : "database",
+        market,
       ),
     tradeIndexer,
     privyUsers,

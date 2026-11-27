@@ -10,6 +10,7 @@ export const portfolioSnapshots = pgTable(
       .references(() => users.id),
     day: date().notNull(),
     valueUsd: numeric({ precision: 38, scale: 18 }).notNull(),
+    positionsValueUsd: numeric({ precision: 38, scale: 18 }),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );

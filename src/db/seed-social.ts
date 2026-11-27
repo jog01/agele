@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
-import { and, eq, isNull } from "drizzle-orm";
-import { decimal } from "../lib/decimal";
-import { comments, follows, reactions, theses, tokens, trades, users } from "../models";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { decimal, divide, formatDecimal } from "../lib/decimal";
+import {
+  comments,
+  follows,
+  portfolioSnapshots,
+  positions,
+  reactions,
+  theses,
+  tokens,
+  trades,
+  users,
+} from "../models";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { USDC_MINT } from "../services/helius-parser";
 import { MockMarketDataProvider } from "../services/market-data/mock.provider";
@@ -108,6 +118,53 @@ const seedId = (group: number, index: number) =>
 const demoWallet = (handle: string) =>
   getBase58Decoder().decode(createHash("sha256").update(`agele demo wallet:${handle}`).digest());
 
+async function upgradeDemoFill(
+  db: Db,
+  fill: { userId: string; signature: string; mint: string; timestamp: number },
+  legacyTimestamp: number,
+  milestoneProceeds?: bigint,
+) {
+  await db.transaction(async (tx) => {
+    const [profile] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, fill.userId), eq(users.demo, true)))
+      .for("update");
+    if (!profile) return;
+    const [legacy] = await tx
+      .select()
+      .from(trades)
+      .where(
+        and(
+          eq(trades.userId, fill.userId),
+          eq(trades.signature, fill.signature),
+          eq(trades.mint, fill.mint),
+          eq(trades.executedAt, new Date(legacyTimestamp * 1000)),
+        ),
+      );
+    if (!legacy) return;
+    const executedAt = new Date(fill.timestamp * 1000);
+    if (milestoneProceeds === undefined || legacy.realizedPnlUsd === null) {
+      await tx.update(trades).set({ executedAt }).where(eq(trades.id, legacy.id));
+      return;
+    }
+    const delta = milestoneProceeds - decimal(legacy.quoteAmountUsd);
+    await tx
+      .update(trades)
+      .set({
+        executedAt,
+        quoteAmountUsd: formatDecimal(milestoneProceeds),
+        priceUsd: formatDecimal(divide(milestoneProceeds, decimal(legacy.tokenAmount))),
+        realizedPnlUsd: formatDecimal(decimal(legacy.realizedPnlUsd) + delta),
+      })
+      .where(eq(trades.id, legacy.id));
+    await tx
+      .update(positions)
+      .set({ realizedPnlUsd: sql`${positions.realizedPnlUsd} + ${formatDecimal(delta)}::numeric` })
+      .where(and(eq(positions.userId, fill.userId), eq(positions.mint, fill.mint)));
+  });
+}
+
 export async function seedSocialDemo(db: Db, now = Date.now()) {
   const profiles = traders.map(([handle, displayName, bio], index) => ({
     id: seedId(0, index),
@@ -118,14 +175,20 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     bio,
     avatarUrl: `https://api.dicebear.com/9.x/notionists/png?seed=${handle}`,
     demo: true,
-    createdAt: new Date(Math.floor(now / 1000) * 1000),
+    createdAt: new Date((Math.floor(now / 1000) - 35 * day) * 1000),
   }));
   await db.insert(users).values(profiles).onConflictDoNothing({ target: users.id });
   const [first] = await db
     .select({ createdAt: users.createdAt })
     .from(users)
     .where(eq(users.id, profiles[0]!.id));
-  const anchor = first!.createdAt.getTime() / 1000;
+  const [baseline] = await db
+    .select({ executedAt: trades.executedAt })
+    .from(trades)
+    .where(and(eq(trades.userId, profiles[0]!.id), eq(trades.signature, "demo:northstar:0")));
+  const anchor = baseline
+    ? baseline.executedAt.getTime() / 1000 + 21 * day
+    : first!.createdAt.getTime() / 1000 + 35 * day;
   const market = new MockMarketDataProvider(() => anchor * 1000);
   const mints = MockMarketDataProvider.mints;
   const metadata = await Promise.all(mints.map((mint) => market.getToken(mint)));
@@ -135,7 +198,7 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     const quantity = 2 * Math.max(2, Math.round((500 + index * 145) / priceUsd));
     const legs = [
       [21 * day, "buy", quantity, 86],
-      [16 * day, "sell", quantity, 93 + (index % 5)],
+      [16 * day, "sell", quantity, index === 11 ? 155 : 93 + (index % 5)],
       [4 * day, "buy", quantity, 95 + index],
       [2 * day, "sell", quantity / 2, 96 + (index % 5)],
       [3600, "buy", quantity, 91 + index],
@@ -143,7 +206,7 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     ] as const;
     for (const [leg, [age, side, amount, percent]] of legs.entries()) {
       const usd = decimal(((priceUsd * amount * percent) / 100).toFixed(2));
-      await repository.record({
+      const fill = {
         userId: profile.id,
         wallet: profile.walletAddress,
         mint,
@@ -157,9 +220,50 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         quoteMint: USDC_MINT,
         side,
         signature: `demo:${profile.handle}:${leg}`,
-        timestamp: anchor - age - index * 60,
+        timestamp: anchor - age - (index % mints.length) * 60,
+      };
+      const stored = await repository.record(fill);
+      const legacyTimestamp = anchor - age - index * 60;
+      if (!stored && legacyTimestamp !== fill.timestamp) {
+        await upgradeDemoFill(db, fill, legacyTimestamp, index === 11 && leg === 1 ? usd : undefined);
+      }
+    }
+    const joinedAt = new Date((anchor - 35 * day) * 1000);
+    if (first!.createdAt > joinedAt)
+      await db.update(users).set({ createdAt: joinedAt }).where(eq(users.id, profile.id));
+    const fills = await db
+      .select()
+      .from(trades)
+      .where(eq(trades.userId, profile.id))
+      .orderBy(asc(trades.executedAt));
+    const midnight = Math.floor(anchor / day) * day;
+    const snapshots = [];
+    for (let i = 20; i >= 0; i--) {
+      const time = midnight - i * day;
+      const held = fills.reduce(
+        (sum, fill) =>
+          fill.executedAt.getTime() <= time * 1000
+            ? sum + Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1)
+            : sum,
+        0,
+      );
+      const past = await new MockMarketDataProvider(() => time * 1000).getToken(mint);
+      const valueUsd = (held * past!.priceUsd).toFixed(2);
+      snapshots.push({
+        userId: profile.id,
+        day: new Date(time * 1000).toISOString().slice(0, 10),
+        valueUsd,
+        positionsValueUsd: valueUsd,
       });
     }
+    await db
+      .insert(portfolioSnapshots)
+      .values(snapshots)
+      .onConflictDoUpdate({
+        target: [portfolioSnapshots.userId, portfolioSnapshots.day],
+        set: { positionsValueUsd: sql`excluded.positions_value_usd` },
+        setWhere: isNull(portfolioSnapshots.positionsValueUsd),
+      });
     const thesisId = seedId(1, index);
     const versionId = seedId(4, index);
     const [entry] = await db

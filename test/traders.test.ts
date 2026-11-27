@@ -13,7 +13,7 @@ import { PgPortfolioRepository } from "../src/repositories/portfolio.repository"
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import { PgTraderRepository } from "../src/repositories/trader.repository";
 import { UserTradesSchema } from "../src/schemas/portfolio";
-import { TraderProfileSchema } from "../src/schemas/trader";
+import { TraderConnectionsSchema, TraderPositionSchema, TraderProfileSchema } from "../src/schemas/trader";
 import { USDC_MINT } from "../src/services/helius-parser";
 import { LeaderboardService } from "../src/services/leaderboard.service";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
@@ -59,7 +59,7 @@ describe("public trader profiles", () => {
     () => FIXED_NOW,
   );
   const repository = new PgTraderRepository(db);
-  const traders = new TraderService(repository, portfolio, leaderboard, follows, true);
+  const traders = new TraderService(repository, portfolio, leaderboard, follows, true, market);
   const app = testApp({
     market,
     portfolio,
@@ -144,12 +144,17 @@ describe("public trader profiles", () => {
     await follows.follow(ids[1]!, wallets[4]!);
     await follows.follow(ids[0]!, wallets[1]!);
     await follows.follow(ids[0]!, demoWallet);
+    await db.insert(schema.portfolioSnapshots).values([
+      { userId: ids[0]!, day: "2025-12-31", valueUsd: "999" },
+      { userId: ids[0]!, day: "2026-01-01", valueUsd: "999", positionsValueUsd: "120" },
+    ]);
     await leaderboard.rebuild();
   });
   afterAll(async () => {
     if (ids.length) {
       await db.delete(schema.trades).where(inArray(schema.trades.userId, ids));
       await db.delete(schema.positions).where(inArray(schema.positions.userId, ids));
+      await db.delete(schema.portfolioSnapshots).where(inArray(schema.portfolioSnapshots.userId, ids));
       await db.delete(schema.users).where(inArray(schema.users.id, ids));
     }
     await db.delete(schema.tokens).where(inArray(schema.tokens.mint, [mint]));
@@ -282,6 +287,50 @@ describe("public trader profiles", () => {
     expect(second.trades[0]!.realizedPnlUsd).toBeNull();
   });
 
+  it("serves replay with chronological fills, position metrics and public history", async () => {
+    const response = await request(wallets[4], `/positions/${mint}`);
+    expect(response.status).toBe(200);
+    const position = TraderPositionSchema.parse(await response.json());
+    expect(position).toMatchObject({
+      wallet: wallets[0],
+      quantity: 8,
+      avgCostUsd: 8.75,
+      realizedPnlUsd: 20,
+      unrealizedPnlUsd: 50,
+    });
+    expect(position.fills.map((fill) => fill.side)).toEqual(["buy", "buy", "sell"]);
+    expect(position.id).toBe(position.fills[0]!.id);
+    expect((await request(wallets[0], `/positions/${mint}?positionId=${crypto.randomUUID()}`)).status).toBe(
+      404,
+    );
+    expect(await (await request(wallets[0], "/portfolio/history?range=all")).json()).toEqual({
+      points: [{ time: Date.UTC(2026, 0, 1) / 1000, valueUsd: 120 }],
+    });
+  });
+
+  it("keyset-paginates distinct followers, returns following edges and annotates mutuals", async () => {
+    const result = await request(wallets[4], "/followers?limit=1");
+    const page = TraderConnectionsSchema.parse(await result.json());
+    expect(page.users).toHaveLength(1);
+    expect(page.nextCursor).toBeString();
+    const next = TraderConnectionsSchema.parse(
+      await (await request(wallets[4], `/followers?cursor=${page.nextCursor}`)).json(),
+    );
+    expect(new Set([...page.users, ...next.users].map((user) => user.wallet))).toEqual(
+      new Set([wallets[1]!, wallets[2]!]),
+    );
+    const followed = TraderConnectionsSchema.parse(
+      await (await request(wallets[0], "/following", true)).json(),
+    );
+    expect(new Set(followed.users.map((user) => user.wallet))).toEqual(new Set([wallets[1]!, wallets[2]!]));
+    const profile = TraderProfileSchema.parse(await (await request(wallets[0], "", true)).json());
+    expect(profile).toMatchObject({
+      tradeCount: 3,
+      avgHoldSeconds: null,
+      mutuals: { count: 0, preview: [] },
+    });
+  });
+
   it("keeps demo wallet links working with labelled stored stats, holdings and history", async () => {
     const response = await request(demoWallet);
     expect(response.headers.get("X-Data-Source")).toBe("demo");
@@ -310,7 +359,7 @@ describe("public trader profiles", () => {
   });
 
   it("reports null ranks if indexing is disabled or the Redis member is absent", async () => {
-    const unranked = new TraderService(repository, portfolio, leaderboard, follows, false);
+    const unranked = new TraderService(repository, portfolio, leaderboard, follows, false, market);
     expect((await unranked.profile(wallets[0]!)).profile.stats["24h"].rank).toBeNull();
     await store.replace({ "24h": [], "7d": [], "30d": [] });
     try {

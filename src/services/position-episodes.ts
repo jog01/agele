@@ -54,8 +54,16 @@ export function positionEpisodes(trades: Trade[]) {
       if (!position) continue;
       let sold = amount;
       if (sold > position.quantity) sold = position.quantity;
-      const basis = (position.costBasis * sold) / position.quantity;
-      position.realizedPnl += (usd * sold) / amount - basis;
+      const proceeds = (usd * sold) / amount;
+      const weightedBasis = (position.costBasis * sold) / position.quantity;
+      const realized =
+        trade.realizedPnlUsd === null ? proceeds - weightedBasis : decimal(trade.realizedPnlUsd);
+      const impliedBasis = proceeds - realized;
+      const basis =
+        sold === position.quantity || impliedBasis < 0n || impliedBasis > position.costBasis
+          ? weightedBasis
+          : impliedBasis;
+      position.realizedPnl += realized;
       position.quantity -= sold;
       position.costBasis -= basis;
       if (!position.quantity) {

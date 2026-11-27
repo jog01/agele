@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { and, eq, like, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
+import { positions, trades, users } from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
-import type { FeedPage, LeaderboardEntryDto } from "../src/schemas/social";
+import { FeedEventType, type FeedPage, FeedSchema, type LeaderboardEntryDto } from "../src/schemas/social";
+import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { encodeCursor } from "../src/services/social/cursor";
+import { TokenService } from "../src/services/token.service";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
 
@@ -14,10 +18,11 @@ const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
 const fixture = socialDemoFixture();
 beforeAll(fixture.setUp);
 afterAll(fixture.tearDown);
-function setup() {
+function setup(tokens?: TokenService) {
   const follows = new InMemoryFollowRepository();
   const app = testApp({
     follows,
+    ...(tokens ? { tokens } : {}),
     auth: {
       verify: async (token) => {
         if (token !== "good") throw unauthorized("Invalid access token");
@@ -67,7 +72,7 @@ describe("feed", () => {
           expect(["buy", "sell"]).toContain(item.side);
           expect(item.amountUsd).toBeNumber();
           expect(item).not.toHaveProperty("body");
-        } else {
+        } else if (item.kind === "thesis") {
           expect(item.body).toBeString();
           expect(item).not.toHaveProperty("side");
           expect(item).not.toHaveProperty("amountUsd");
@@ -98,9 +103,124 @@ describe("feed", () => {
       "limit=0",
       "limit=101",
       "limit=1.5",
+      "types=bought,nope",
+      "minMarketCapUsd=200&maxMarketCapUsd=100",
+      "minSizeUsd=-1",
     ]) {
       expect((await app.request(`/v1/feed?${query}`)).status).toBe(400);
     }
+  });
+
+  it("emits all requested event variants and paginates a filtered result", async () => {
+    const { app } = setup();
+    const types = FeedEventType.options.join(",");
+    const first = FeedSchema.parse(await page(app, `?types=${types}&limit=1`));
+    const events = [...first.items];
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const next = FeedSchema.parse(await page(app, `?types=${types}&limit=100&cursor=${cursor}`));
+      events.push(...next.items);
+      cursor = next.nextCursor;
+    }
+    expect(new Set(events.map((item) => item.eventType))).toEqual(new Set(FeedEventType.options));
+    expect(new Set(events.map((item) => item.id)).size).toBe(events.length);
+    const closed = events.find((item) => item.eventType === "closed");
+    expect(closed).toMatchObject({
+      kind: "trade",
+      side: "sell",
+      positionId: expect.any(String),
+      realizedPnlUsd: expect.any(Number),
+    });
+    const groups = await page(app, "?types=multi-user&limit=1");
+    expect(groups.items[0]).toMatchObject({ kind: "multi-user", traderCount: 2 });
+    const nextGroup = await page(app, `?types=multi-user&limit=1&cursor=${groups.nextCursor}`);
+    expect(nextGroup.items[0]?.id).not.toBe(groups.items[0]?.id);
+  });
+
+  it("combines trade size, portfolio, cap, wallet, mint and first-buy filters", async () => {
+    const { app } = setup();
+    const size = 100;
+    const query = `types=bought&mint=${SOL}&minSizeUsd=${size}&minPortfolioUsd=1&minMarketCapUsd=1&maxMarketCapUsd=1000000000000&minPriceSinceFirstBuyPct=-99`;
+    const result = await page(app, `?${query}`);
+    expect(result.items.length).toBeGreaterThan(1);
+    for (const item of result.items) {
+      expect(item).toMatchObject({ kind: "trade", eventType: "bought", mint: SOL });
+      if (item.kind === "trade") {
+        expect(item.amountUsd).toBeGreaterThanOrEqual(size);
+        expect(item.priceSinceFirstBuyPct).toBeGreaterThanOrEqual(-99);
+      }
+    }
+    const wallet = result.items[0]!.wallet;
+    expect((await page(app, `?${query}&wallet=${wallet}`)).items).toEqual(
+      result.items.filter((item) => item.wallet === wallet),
+    );
+    expect(
+      (await page(app, `?${query.replace("minPortfolioUsd=1", "minPortfolioUsd=100000000000")}`)).items,
+    ).toEqual([]);
+  });
+
+  it("does not match absent live quotes represented by zero", async () => {
+    const market = new MockMarketDataProvider();
+    const getToken = market.getToken.bind(market);
+    market.getToken = async (mint) => {
+      const token = await getToken(mint);
+      return token && { ...token, priceUsd: 0, marketCapUsd: 0 };
+    };
+    const { app } = setup(new TokenService(market));
+    const query = `?types=bought&mint=${SOL}`;
+    const unfiltered = await page(app, query);
+    expect(unfiltered.items.length).toBeGreaterThan(0);
+    expect(unfiltered.items[0]).toMatchObject({ marketCapUsd: null, priceSinceFirstBuyPct: null });
+    for (const filter of ["maxMarketCapUsd=100", "minPriceSinceFirstBuyPct=-100", "minPortfolioUsd=0"]) {
+      expect((await page(app, `${query}&${filter}`)).items).toEqual([]);
+    }
+  });
+
+  it("upgrades existing demo activity without replacing fill identities or double-counting gains", async () => {
+    const db = getDb();
+    const [trader] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.demo, true), eq(users.handle, "candlejournal")));
+    const sale = and(eq(trades.userId, trader!.id), eq(trades.signature, "demo:candlejournal:1"));
+    const [expected] = await db.select().from(trades).where(sale);
+    const position = and(eq(positions.userId, trader!.id), eq(positions.mint, expected!.mint));
+    const [accounting] = await db.select().from(positions).where(position);
+    const route = `?types=milestone,multi-user&mint=${expected!.mint}`;
+    await db
+      .update(trades)
+      .set({
+        executedAt: sql`${trades.executedAt} - interval '8 minutes'`,
+        quoteAmountUsd: sql`${trades.quoteAmountUsd} - 2000`,
+        realizedPnlUsd: sql`${trades.realizedPnlUsd} - 2000`,
+      })
+      .where(sale);
+    await db
+      .update(positions)
+      .set({ realizedPnlUsd: sql`${positions.realizedPnlUsd} - 2000` })
+      .where(position);
+    await db
+      .update(trades)
+      .set({ executedAt: sql`${trades.executedAt} - interval '8 minutes'` })
+      .where(
+        and(
+          eq(trades.userId, trader!.id),
+          like(trades.signature, "demo:candlejournal:%"),
+          sql`${trades.id} <> ${expected!.id}`,
+        ),
+      );
+    const { app } = setup();
+    expect((await page(app, route)).items).toEqual([]);
+    await seedSocialDemo(db);
+    await seedSocialDemo(db);
+    const [restored] = await db.select().from(trades).where(sale);
+    const [restoredAccounting] = await db.select().from(positions).where(position);
+    expect(restored).toEqual(expected);
+    expect(restoredAccounting!.realizedPnlUsd).toBe(accounting!.realizedPnlUsd);
+    expect([...new Set((await page(app, route)).items.map((item) => item.eventType))].sort()).toEqual([
+      "milestone",
+      "multi-user",
+    ]);
   });
 
   it("requires auth for following scope and filters by the viewer's followed wallets", async () => {

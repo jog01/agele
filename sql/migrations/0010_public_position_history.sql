@@ -1,0 +1,1 @@
+ALTER TABLE "portfolio_snapshots" ADD COLUMN "positions_value_usd" numeric(38, 18);
