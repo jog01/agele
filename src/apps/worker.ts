@@ -12,7 +12,11 @@ import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 import { PgLeaderboardRepository } from "../repositories/leaderboard.repository";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { LeaderboardService } from "../services/leaderboard.service";
-import { createUpstreamMarketDataProvider } from "../services/market-data";
+import {
+  createDemoPortfolioMarketDataProvider,
+  createUpstreamMarketDataProvider,
+} from "../services/market-data";
+import { createPositionQuote } from "../services/market-data/position-quotes";
 import { RedisLeaderboard } from "../services/social/leaderboard-store";
 import { TradeIndexer } from "../services/trade-indexer";
 
@@ -21,7 +25,14 @@ initTelemetry("fomo-worker");
 const events = new RedisEventPublisher();
 const market = createUpstreamMarketDataProvider();
 const leaderboard = env.HELIUS_WEBHOOK_SECRET
-  ? new LeaderboardService(new PgLeaderboardRepository(getDb()), new RedisLeaderboard(), market, events)
+  ? new LeaderboardService(
+      new PgLeaderboardRepository(getDb()),
+      new RedisLeaderboard(),
+      market,
+      events,
+      Date.now,
+      createPositionQuote(market, createDemoPortfolioMarketDataProvider()),
+    )
   : undefined;
 const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
 if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));

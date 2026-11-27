@@ -12,7 +12,7 @@ import type {
   LeaderboardEntryDto,
   LeaderboardWindowValue,
 } from "../schemas/social";
-import type { TokenDto } from "../schemas/token";
+import { cachePositionQuotes, type PositionQuote } from "./market-data/position-quotes";
 import { positionEpisodes } from "./position-episodes";
 import { decodeCursor, encodeCursor } from "./social/cursor";
 import type { TokenService } from "./token.service";
@@ -47,6 +47,7 @@ export class SocialService {
     private readonly follows: FollowRepository,
     private readonly ranks: (window: LeaderboardWindowValue, limit: number) => Promise<LeaderboardEntryDto[]>,
     private readonly moderate: TextModeration = moderateText,
+    private readonly positionQuote: PositionQuote = (mint) => tokens.getToken(mint),
   ) {}
 
   async leaderboard(window: LeaderboardWindowValue, limit: number, viewerId?: string) {
@@ -67,17 +68,7 @@ export class SocialService {
     let cursor = input.cursor === undefined ? undefined : decodeSocialCursor(input.cursor);
     const wallets = input.scope === "following" ? await this.follows.listWallets(viewerId!) : undefined;
     const types = input.types?.split(",");
-    const market = new Map<string, Promise<TokenDto | null>>();
-    const quote = (mint: string) => {
-      const cached = market.get(mint);
-      if (cached) return cached;
-      const result = this.tokens.getToken(mint).catch((error: unknown) => {
-        if (error instanceof AppError && error.status === 404) return null;
-        throw error;
-      });
-      market.set(mint, result);
-      return result;
-    };
+    const quote = cachePositionQuotes(this.positionQuote);
     const portfolios = new Map<string, Promise<number | null>>();
     const portfolioValue = (userId: string) => {
       const cached = portfolios.get(userId);
@@ -87,7 +78,7 @@ export class SocialService {
           holdings
             .filter((holding) => Number(holding.quantity) > 0)
             .map(async (holding) => {
-              const token = await quote(holding.mint);
+              const token = await quote(holding.mint, holding.seeded);
               const price = usableQuote(token?.priceUsd);
               return price === null ? null : Number(holding.quantity) * price;
             }),
@@ -121,7 +112,8 @@ export class SocialService {
       });
       const filtered = await Promise.all(
         batch.items.map(async ({ userId, ...item }) => {
-          const token = await quote(item.mint);
+          const seeded = item.source === "demo";
+          const token = await quote(item.mint, seeded);
           item.marketCapUsd = usableQuote(token?.marketCapUsd);
           if (
             input.minMarketCapUsd !== undefined &&

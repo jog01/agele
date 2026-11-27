@@ -3,6 +3,7 @@ import { badRequest, notFound } from "../lib/errors";
 import type { Position } from "../models";
 import type { PgTokenActivityRepository, TokenTraderCursor } from "../repositories/token-activity.repository";
 import type { MarketDataProvider } from "./market-data";
+import { cachePositionQuotes, optionalQuote, type PositionQuote } from "./market-data/position-quotes";
 
 const cursorSchema = z.object({
   mint: z.string(),
@@ -40,24 +41,27 @@ export class TokenActivityService {
   constructor(
     private readonly repository: PgTokenActivityRepository,
     private readonly market: MarketDataProvider,
+    private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
   ) {}
 
-  private async getToken(mint: string) {
-    const [stored, current] = await Promise.all([this.repository.getToken(mint), this.market.getToken(mint)]);
-    if (!stored && !current) throw notFound("Token");
-    return { symbol: current?.symbol ?? stored!.symbol, price: current?.priceUsd };
-  }
-
   async getPosition(userId: string, mint: string) {
-    const token = await this.getToken(mint);
-    const position = await this.repository.getPosition(userId, mint);
+    const [stored, row] = await Promise.all([
+      this.repository.getToken(mint),
+      this.repository.getPosition(userId, mint),
+    ]);
+    const token = row
+      ? await optionalQuote(() => this.positionQuote(mint, row.seeded))
+      : !stored
+        ? await this.market.getToken(mint)
+        : null;
+    if (!stored && !token) throw notFound("Token");
     return {
-      position: position
+      position: row
         ? {
             mint,
-            symbol: token.symbol,
-            ...valuePosition(position, token.price),
-            realizedPnlUsd: Number(position.realizedPnlUsd),
+            symbol: token?.symbol ?? stored!.symbol,
+            ...valuePosition(row.position, token?.priceUsd),
+            realizedPnlUsd: Number(row.position.realizedPnlUsd),
           }
         : null,
     };
@@ -65,25 +69,35 @@ export class TokenActivityService {
 
   async getTraders(mint: string, limit: number, encodedCursor?: string) {
     const cursor = encodedCursor === undefined ? undefined : decodeCursor(encodedCursor, mint);
-    const token = await this.getToken(mint);
-    const rows = await this.repository.getTraders(mint, limit + 1, cursor);
+    const [stored, rows] = await Promise.all([
+      this.repository.getToken(mint),
+      this.repository.getTraders(mint, limit + 1, cursor),
+    ]);
+    const quote = cachePositionQuotes(this.positionQuote);
+    if (!stored && !(await this.market.getToken(mint))) throw notFound("Token");
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      traders: page.map((row) => {
-        const realizedPnlUsd = Number(row.realizedPnlUsd);
-        const unrealizedPnlUsd = row.position ? valuePosition(row.position, token.price).unrealizedPnlUsd : 0;
-        return {
-          wallet: row.wallet,
-          handle: row.handle ?? (row.wallet ?? row.userId).slice(0, 8),
-          buys: row.buys,
-          sells: row.sells,
-          volumeUsd: Number(row.volumeUsd),
-          realizedPnlUsd,
-          unrealizedPnlUsd,
-          pnlUsd: realizedPnlUsd + unrealizedPnlUsd,
-        };
-      }),
+      traders: await Promise.all(
+        page.map(async (row) => {
+          const realizedPnlUsd = Number(row.realizedPnlUsd);
+          const token =
+            row.position && Number(row.position.quantity) > 0 ? await quote(mint, row.seeded) : null;
+          const unrealizedPnlUsd = row.position
+            ? valuePosition(row.position, token?.priceUsd).unrealizedPnlUsd
+            : 0;
+          return {
+            wallet: row.wallet,
+            handle: row.handle ?? (row.wallet ?? row.userId).slice(0, 8),
+            buys: row.buys,
+            sells: row.sells,
+            volumeUsd: Number(row.volumeUsd),
+            realizedPnlUsd,
+            unrealizedPnlUsd,
+            pnlUsd: realizedPnlUsd + unrealizedPnlUsd,
+          };
+        }),
+      ),
       nextCursor:
         rows.length > limit && last
           ? Buffer.from(JSON.stringify({ mint, volumeUsd: last.volumeUsd, userId: last.userId })).toString(

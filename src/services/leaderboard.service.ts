@@ -2,6 +2,7 @@ import type { EventPublisher } from "../events/bus";
 import type { LeaderboardRepository } from "../repositories/leaderboard.repository";
 import type { LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
 import type { MarketDataProvider } from "./market-data";
+import { cachePositionQuotes, type PositionQuote } from "./market-data/position-quotes";
 import {
   LEADERBOARD_WINDOWS,
   type LeaderboardSnapshot,
@@ -16,9 +17,10 @@ export class LeaderboardService {
   constructor(
     private readonly repository: LeaderboardRepository,
     private readonly store: LeaderboardStore,
-    private readonly market: MarketDataProvider,
+    market: MarketDataProvider,
     private readonly hub: EventPublisher,
     private readonly now: () => number = Date.now,
+    private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
   ) {}
 
   private serialize(callback: () => Promise<void>) {
@@ -33,16 +35,16 @@ export class LeaderboardService {
       this.repository.getPositions(userId),
     ]);
     const unrealized = new Map<string, number>();
-    const prices = new Map(
-      await Promise.all(
-        [...new Set(positions.filter((p) => Number(p.quantity) > 0).map((p) => p.mint))].map(
-          async (mint) => [mint, await this.market.getToken(mint)] as const,
-        ),
-      ),
+    const quote = cachePositionQuotes(this.positionQuote);
+    const valued = await Promise.all(
+      positions
+        .filter((position) => Number(position.quantity) > 0)
+        .map(async (position) => ({
+          position,
+          token: await quote(position.mint, position.seeded ?? false),
+        })),
     );
-    for (const position of positions) {
-      if (Number(position.quantity) <= 0) continue;
-      const token = prices.get(position.mint);
+    for (const { position, token } of valued) {
       const pnl =
         token && Number.isFinite(token.priceUsd) && token.priceUsd > 0
           ? Number(position.quantity) * token.priceUsd - Number(position.costBasisUsd)
