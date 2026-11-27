@@ -14,7 +14,12 @@ import { PgTraderRepository } from "./repositories/trader.repository";
 import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
 import { LeaderboardService } from "./services/leaderboard.service";
-import { createMarketDataProvider, type MarketDataProvider } from "./services/market-data";
+import {
+  createDemoPortfolioMarketDataProvider,
+  createMarketDataProvider,
+  createUpstreamMarketDataProvider,
+  type MarketDataProvider,
+} from "./services/market-data";
 import { PortfolioService } from "./services/portfolio.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
 import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
@@ -59,6 +64,7 @@ export interface Container {
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
   const market = overrides.market ?? createMarketDataProvider();
+  const walletMarket = overrides.market ?? createUpstreamMarketDataProvider();
   const tokens = overrides.tokens ?? new TokenService(market);
   const privyUsers = overrides.privyUsers ?? createPrivyUserDirectory();
   const feeSponsor = env.SPONSOR_ENABLED
@@ -70,7 +76,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
             secret: env.FEE_PAYER_SECRET,
             rpc: new HttpSponsorRpc(env.SOLANA_RPC_URL),
             store: new RedisSponsorStore(getRedis(), BigInt(Math.floor(env.DAILY_SPEND_CAP_SOL * 1e9))),
-            market,
+            market: walletMarket,
             maxCuPrice: BigInt(env.MAX_CU_PRICE_MICROLAMPORTS),
             maxLamports: BigInt(env.MAX_LAMPORTS_PER_TX),
             referralAccount: env.SPONSOR_REFERRAL_ACCOUNT,
@@ -84,19 +90,27 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const leaderboard =
     overrides.leaderboard ??
     (env.HELIUS_WEBHOOK_SECRET
-      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, market, events)
+      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, walletMarket, events)
       : undefined);
-  const tradeIndexer = overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), market);
+  const tradeIndexer =
+    overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), walletMarket);
   if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
   const databaseRanks = new LeaderboardService(
     new PgLeaderboardRepository(getDb()),
     leaderboardStore,
-    market,
+    walletMarket,
     events,
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
-    overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), market, balances);
+    overrides.portfolio ??
+    new PortfolioService(
+      new PgPortfolioRepository(getDb()),
+      walletMarket,
+      balances,
+      Date.now,
+      overrides.market ?? createDemoPortfolioMarketDataProvider(),
+    );
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),

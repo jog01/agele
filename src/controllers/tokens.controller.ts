@@ -5,8 +5,11 @@ import {
   CandlesQuery,
   HoldersQuery,
   ListQuery,
+  PulseQuery,
+  PulseSchema,
   TokenHoldersSchema,
   TokenSchema,
+  TokenSearchQuery,
   TradeSchema,
 } from "../schemas/token";
 import type { AppEnv } from "../types";
@@ -22,6 +25,31 @@ const listTrending = createRoute({
   tags: ["tokens"],
   request: { query: ListQuery },
   responses: { 200: json(z.object({ tokens: z.array(TokenSchema) }), "Trending tokens") },
+});
+
+const searchTokens = createRoute({
+  method: "get",
+  path: "/tokens/search",
+  tags: ["tokens"],
+  request: { query: TokenSearchQuery },
+  responses: {
+    200: json(
+      z.object({ tokens: z.array(TokenSchema) }),
+      "Exact mint or case-insensitive symbol/name prefix matches",
+    ),
+    400: errorResponse("Invalid query"),
+    502: errorResponse("Market data upstream unavailable"),
+  },
+});
+
+const listPulse = createRoute({
+  method: "get",
+  path: "/pulse",
+  tags: ["tokens"],
+  description:
+    "Limit per lane. New is below 7,000 bps; Final stretch starts at 7,000 bps; Migrated requires a migration event. Timestamps are Unix seconds.",
+  request: { query: PulseQuery },
+  responses: { 200: json(PulseSchema, "Pulse lanes"), 400: errorResponse("Invalid limit") },
 });
 
 const getToken = createRoute({
@@ -75,6 +103,16 @@ export const tokensController = new OpenAPIHono<AppEnv>()
   .openapi(listTrending, async (c) => {
     const { limit } = c.req.valid("query");
     return c.json({ tokens: await c.get("container").tokens.listTrending(limit) }, 200);
+  })
+  .openapi(searchTokens, async (c) => {
+    const { q } = c.req.valid("query");
+    return c.json({ tokens: await c.get("container").tokens.searchTokens(q) }, 200);
+  })
+  .openapi(listPulse, async (c) => {
+    const { limit } = c.req.valid("query");
+    const pulse = await c.get("container").tokens.listPulse(limit);
+    c.header("X-Data-Source", pulse.source);
+    return c.json(pulse, 200);
   })
   .openapi(getToken, async (c) => {
     const { mint } = c.req.valid("param");

@@ -1,9 +1,514 @@
 {
-  "id": "1d38641b-a023-429a-878b-3a83f865aad3",
+  "id": "e5480fca-f2f9-4bd5-876d-2692121eb264",
   "prevId": "d56d3e08-dd4d-4d1f-8fa6-f562aa5f0fa0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.chain_candles_1m": {
+      "name": "chain_candles_1m",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time": {
+          "name": "time",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "open": {
+          "name": "open",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "high": {
+          "name": "high",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "low": {
+          "name": "low",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "close": {
+          "name": "close",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "volume": {
+          "name": "volume",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_trade_key": {
+          "name": "first_trade_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_trade_key": {
+          "name": "last_trade_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chain_candles_1m_source_mint_chain_tokens_source_mint_fk": {
+          "name": "chain_candles_1m_source_mint_chain_tokens_source_mint_fk",
+          "tableFrom": "chain_candles_1m",
+          "tableTo": "chain_tokens",
+          "columnsFrom": [
+            "source",
+            "mint"
+          ],
+          "columnsTo": [
+            "source",
+            "mint"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chain_candles_1m_source_mint_time_pk": {
+          "name": "chain_candles_1m_source_mint_time_pk",
+          "columns": [
+            "source",
+            "mint",
+            "time"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chain_events": {
+      "name": "chain_events",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_index": {
+          "name": "event_index",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "chain_events_source_signature_event_index_pk": {
+          "name": "chain_events_source_signature_event_index_pk",
+          "columns": [
+            "source",
+            "signature",
+            "event_index"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chain_tokens": {
+      "name": "chain_tokens",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "venue": {
+          "name": "venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pool": {
+          "name": "pool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creator": {
+          "name": "creator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata_uri": {
+          "name": "metadata_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decimals": {
+          "name": "decimals",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_supply_raw": {
+          "name": "total_supply_raw",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "curve_progress_bps": {
+          "name": "curve_progress_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "launched_at": {
+          "name": "launched_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migrated_at": {
+          "name": "migrated_at",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "migrated_venue": {
+          "name": "migrated_venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_usd": {
+          "name": "price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_trade_key": {
+          "name": "last_trade_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "chain_tokens_launch_idx": {
+          "name": "chain_tokens_launch_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "launched_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chain_tokens_progress_idx": {
+          "name": "chain_tokens_progress_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "curve_progress_bps",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chain_tokens_migration_idx": {
+          "name": "chain_tokens_migration_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "migrated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "chain_tokens_source_mint_pk": {
+          "name": "chain_tokens_source_mint_pk",
+          "columns": [
+            "source",
+            "mint"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chain_trades": {
+      "name": "chain_trades",
+      "schema": "",
+      "columns": {
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_index": {
+          "name": "event_index",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trader": {
+          "name": "trader",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "trade_side",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "venue": {
+          "name": "venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pool": {
+          "name": "pool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_key": {
+          "name": "order_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time": {
+          "name": "time",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_amount_raw": {
+          "name": "token_amount_raw",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sol_amount_lamports": {
+          "name": "sol_amount_lamports",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_usd": {
+          "name": "price_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_usd": {
+          "name": "amount_usd",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "chain_trades_mint_time_idx": {
+          "name": "chain_trades_mint_time_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "mint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "time",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "order_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chain_trades_time_idx": {
+          "name": "chain_trades_time_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "time",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chain_trades_source_mint_chain_tokens_source_mint_fk": {
+          "name": "chain_trades_source_mint_chain_tokens_source_mint_fk",
+          "tableFrom": "chain_trades",
+          "tableTo": "chain_tokens",
+          "columnsFrom": [
+            "source",
+            "mint"
+          ],
+          "columnsTo": [
+            "source",
+            "mint"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chain_trades_source_signature_event_index_pk": {
+          "name": "chain_trades_source_signature_event_index_pk",
+          "columns": [
+            "source",
+            "signature",
+            "event_index"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.comments": {
       "name": "comments",
       "schema": "",
@@ -55,12 +560,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "discussion_key": {
-          "name": "discussion_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "parent_id": {
           "name": "parent_id",
           "type": "uuid",
@@ -109,21 +608,6 @@
           "columns": [
             {
               "expression": "thesis_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_discussion_idx": {
-          "name": "comments_discussion_idx",
-          "columns": [
-            {
-              "expression": "discussion_key",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -249,19 +733,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "comments_discussion_key_feed_discussions_key_fk": {
-          "name": "comments_discussion_key_feed_discussions_key_fk",
-          "tableFrom": "comments",
-          "tableTo": "feed_discussions",
-          "columnsFrom": [
-            "discussion_key"
-          ],
-          "columnsTo": [
-            "key"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "comments_parent_id_comments_id_fk": {
           "name": "comments_parent_id_comments_id_fk",
           "tableFrom": "comments",
@@ -287,111 +758,8 @@
         "comments_pin_shape": {
           "name": "comments_pin_shape",
           "value": "not \"comments\".\"pinned\" OR \"comments\".\"kind\" = 'thesis'"
-        },
-        "comments_discussion_shape": {
-          "name": "comments_discussion_shape",
-          "value": "\"comments\".\"discussion_key\" IS NULL OR (\"comments\".\"thesis_id\" IS NULL AND \"comments\".\"kind\" = 'comment')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.feed_discussions": {
-      "name": "feed_discussions",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "mint": {
-          "name": "mint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "feed_discussions_mint_tokens_mint_fk": {
-          "name": "feed_discussions_mint_tokens_mint_fk",
-          "tableFrom": "feed_discussions",
-          "tableTo": "tokens",
-          "columnsFrom": [
-            "mint"
-          ],
-          "columnsTo": [
-            "mint"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.feed_reactions": {
-      "name": "feed_reactions",
-      "schema": "",
-      "columns": {
-        "discussion_key": {
-          "name": "discussion_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "feed_reactions_discussion_key_feed_discussions_key_fk": {
-          "name": "feed_reactions_discussion_key_feed_discussions_key_fk",
-          "tableFrom": "feed_reactions",
-          "tableTo": "feed_discussions",
-          "columnsFrom": [
-            "discussion_key"
-          ],
-          "columnsTo": [
-            "key"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "feed_reactions_user_id_users_id_fk": {
-          "name": "feed_reactions_user_id_users_id_fk",
-          "tableFrom": "feed_reactions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "feed_reactions_discussion_key_user_id_pk": {
-          "name": "feed_reactions_discussion_key_user_id_pk",
-          "columns": [
-            "discussion_key",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.social_follow_actions": {
@@ -1287,22 +1655,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "trades_demo_seed_idx": {
-          "name": "trades_demo_seed_idx",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"trades\".\"signature\" like 'demo:%'",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { VenueSchema } from "../services/chain-ingest/validation";
 
 export const TokenSchema = z
   .object({
@@ -107,3 +108,56 @@ export const PriceTickSchema = z
   .openapi("PriceTick");
 export type PriceTick = z.infer<typeof PriceTickSchema>;
 export type IntervalValue = z.infer<typeof Interval>;
+
+export const PulseStage = z.enum(["new", "finalStretch", "migrated"]);
+export type PulseStage = z.infer<typeof PulseStage>;
+const timestamp = z.int().openapi({ description: "Unix seconds" });
+
+export const PulseTokenSchema = TokenSchema.omit({ decimals: true, priceChange24hPct: true })
+  .extend({
+    creator: z.string(),
+    venue: VenueSchema,
+    stage: PulseStage,
+    launchedAt: timestamp,
+    curveProgressBps: z.int().min(0).max(10_000),
+    migratedAt: timestamp.nullable(),
+    migratedVenue: VenueSchema.nullable(),
+    txCount24h: z.int().nonnegative(),
+    buys24h: z.int().nonnegative(),
+    sells24h: z.int().nonnegative(),
+  })
+  .openapi("PulseToken");
+export type PulseToken = z.infer<typeof PulseTokenSchema>;
+
+export const PulseSchema = z
+  .object({
+    source: z.enum(["demo", "indexed"]),
+    new: z.array(PulseTokenSchema),
+    finalStretch: z.array(PulseTokenSchema),
+    migrated: z.array(PulseTokenSchema),
+  })
+  .openapi("Pulse");
+export type PulseDto = z.infer<typeof PulseSchema>;
+
+export const PulseEventSchema = z
+  .discriminatedUnion("type", [
+    z.object({ type: z.literal("upsert"), stage: PulseStage, token: PulseTokenSchema }),
+    z.object({
+      type: z.literal("migrated"),
+      mint: z.string(),
+      migratedVenue: VenueSchema,
+      migratedAt: timestamp,
+    }),
+  ])
+  .openapi("PulseEvent");
+export type PulseEvent = z.infer<typeof PulseEventSchema>;
+
+export const PulseQuery = z.object({ limit: ListQuery.shape.limit.default(30) });
+export const TokenSearchQuery = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .openapi({ param: { name: "q", in: "query" } }),
+});

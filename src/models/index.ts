@@ -1,3 +1,4 @@
+export * from "./chain";
 export * from "./portfolio-snapshots";
 export * from "./positions";
 export * from "./social";

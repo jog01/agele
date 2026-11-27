@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { MockMarketDataProvider } from "../services/market-data/mock.provider";
 
 const boolish = z.enum(["true", "false", "1", "0"]).transform((v) => v === "true" || v === "1");
 
@@ -53,19 +52,7 @@ const EnvSchema = z
     SPONSOR_REFERRAL_ACCOUNT: z.string().optional(),
     SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
-    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("mock"),
-    MARKET_TOKEN_ALLOWLIST: z
-      .string()
-      .default(MockMarketDataProvider.mints.join(","))
-      .transform((v) => [
-        ...new Set(
-          v
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        ),
-      ]),
-    ENABLE_MOCK_FEED: boolish.default(true),
+    MARKET_DATA_PROVIDER: z.enum(["indexed", "live"]).default("indexed"),
 
     OTEL_SERVICE_NAME: z.string().default("fomo-api"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
@@ -77,7 +64,12 @@ const EnvSchema = z
   .refine((v) => !v.HELIUS_WEBHOOK_SECRET || v.MARKET_DATA_PROVIDER === "live", {
     message: "Helius indexing requires MARKET_DATA_PROVIDER=live",
     path: ["MARKET_DATA_PROVIDER"],
-  });
+  })
+  .transform((v) => ({
+    ...v,
+    CHAIN_SOURCE:
+      v.YELLOWSTONE_GRPC_URL && v.YELLOWSTONE_GRPC_TOKEN ? ("solana" as const) : ("demo" as const),
+  }));
 
 export type Env = z.infer<typeof EnvSchema>;
 

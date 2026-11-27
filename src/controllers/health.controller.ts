@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { AppEnv } from "../types";
 
 const HealthSchema = z
-  .object({ status: z.literal("ok"), uptimeSec: z.number(), marketData: z.enum(["mock", "live"]) })
+  .object({ status: z.literal("ok"), uptimeSec: z.number(), marketData: z.enum(["mock", "live", "indexed"]) })
   .openapi("Health");
 
 const health = createRoute({
@@ -19,7 +19,7 @@ export const healthController = new OpenAPIHono<AppEnv>().openapi(health, (c) =>
     {
       status: "ok" as const,
       uptimeSec: Math.round(process.uptime()),
-      marketData: c.get("container").market.name as "mock" | "live",
+      marketData: c.get("container").market.name as "mock" | "live" | "indexed",
     },
     200,
   ),

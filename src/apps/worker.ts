@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { env } from "../config/env";
 import { closeDb, getDb } from "../db/client";
-import { assertLiveDatabase } from "../db/live-data-guard";
+import { guardLiveStartup } from "../db/live-data-guard";
 import { RedisEventPublisher } from "../events/bus";
 import { portfolioSnapshotProcessor } from "../jobs/processors/portfolio-snapshot";
 import { createTradeIndexProcessor } from "../jobs/processors/trade-index";
@@ -12,18 +12,18 @@ import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 import { PgLeaderboardRepository } from "../repositories/leaderboard.repository";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { LeaderboardService } from "../services/leaderboard.service";
-import { createMarketDataProvider, createTradeMarketDataProvider } from "../services/market-data";
+import { createUpstreamMarketDataProvider } from "../services/market-data";
 import { RedisLeaderboard } from "../services/social/leaderboard-store";
 import { TradeIndexer } from "../services/trade-indexer";
 
-if (env.MARKET_DATA_PROVIDER === "live") await assertLiveDatabase(getDb());
+await guardLiveStartup();
 initTelemetry("fomo-worker");
 const events = new RedisEventPublisher();
-const market = createMarketDataProvider();
+const market = createUpstreamMarketDataProvider();
 const leaderboard = env.HELIUS_WEBHOOK_SECRET
   ? new LeaderboardService(new PgLeaderboardRepository(getDb()), new RedisLeaderboard(), market, events)
   : undefined;
-const indexer = new TradeIndexer(new PgTradeRepository(getDb()), createTradeMarketDataProvider());
+const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
 if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
 const connection = getRedis();
 const scheduledRetention = { removeOnComplete: 100, removeOnFail: 500 };

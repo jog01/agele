@@ -1,14 +1,16 @@
 # PostgreSQL social store
 
 Social routes use the same tables, repository, and auth path in demo and live.
-In the default `MARKET_DATA_PROVIDER=mock` mode the API runs an idempotent seed
+With the default demo chain source and `MARKET_DATA_PROVIDER=indexed`, the API runs an idempotent seed
 step before listening. Run `bun run db:migrate` first. The seed adds 12 fictional
 traders, follows, versioned theses, replies and reactions, and records dated
 buys and sells via `PgTradeRepository.record`, including both open and closed
 positions. Its timestamps are anchored to the first seed, not shifted on every
-read or restart. Set `MARKET_DATA_PROVIDER=live` and use a separate unseeded
-database for a live-only deployment. The live API and worker refuse startup if
-PostgreSQL contains demo users or seeded trade signatures; no rows are erased.
+read or restart. Use a separate unseeded database with the Yellowstone chain
+source or `MARKET_DATA_PROVIDER=live`. In either mode the API, worker, and feed
+refuse startup if PostgreSQL contains demo users or seeded social trade
+signatures. No rows are erased, and the simulator's source-scoped tables are not
+part of this check.
 Writes always use verified Privy identity; the seeded accounts are not login identities.
 
 ```mermaid
