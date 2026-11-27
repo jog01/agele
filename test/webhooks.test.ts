@@ -20,10 +20,12 @@ describe("Helius webhook database integration", () => {
     name: "test",
     listTrending: (...args) => market.listTrending(...args),
     getCandles: (...args) => market.getCandles(...args),
+    getHistoricalPriceUsd: async (mint, minute) =>
+      mint === SOL_MINT && minute === sell.timestamp ? 100 : null,
     getRecentTrades: (...args) => market.getRecentTrades(...args),
     getHolders: (...args) => market.getHolders(...args),
     getToken: async (mint) =>
-      mint === SOL_MINT ? { ...(await market.getToken(SOL_MINT))!, priceUsd: 100 } : null,
+      mint === SOL_MINT ? { ...(await market.getToken(SOL_MINT))!, priceUsd: 400 } : null,
   });
   const queued: (typeof buy)[] = [];
   const app = testApp({
@@ -133,6 +135,8 @@ describe("Helius webhook database integration", () => {
       const stored = await db.select().from(schema.trades).where(eq(schema.trades.userId, userId));
       expect(stored).toHaveLength(2);
       expect(Number(stored.find((trade) => trade.side === "sell")!.realizedPnlUsd)).toBe(20);
+      expect(Number(stored.find((trade) => trade.side === "sell")!.solPriceUsd)).toBe(100);
+      expect(stored.find((trade) => trade.side === "buy")!.solPriceUsd).toBeNull();
       const duplicates = await Promise.all([
         deliver([fixture(buy), fixture(sell)]),
         deliver([fixture(buy), fixture(sell)]),
@@ -145,6 +149,7 @@ describe("Helius webhook database integration", () => {
         position!,
       ]);
       expect(events).toHaveLength(2);
+      expect(await db.select().from(schema.trades).where(eq(schema.trades.userId, userId))).toEqual(stored);
       const [token] = await db.select().from(schema.tokens).where(eq(schema.tokens.mint, mint));
       expect(token!.symbol).toBe(mint.slice(0, 8));
     } finally {

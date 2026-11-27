@@ -7,6 +7,7 @@ import type { ParsedTrade } from "../services/helius-parser";
 export interface IndexedTrade extends ParsedTrade {
   userId: string;
   usd: bigint;
+  solPriceUsd?: bigint;
   symbol: string;
   name: string;
   imageUrl: string | null;
@@ -50,6 +51,7 @@ export class PgTradeRepository implements TradeRepository {
           side: trade.side,
           tokenAmount: formatDecimal(trade.amount),
           quoteAmountUsd: formatDecimal(trade.usd),
+          solPriceUsd: trade.solPriceUsd === undefined ? null : formatDecimal(trade.solPriceUsd),
           priceUsd: formatDecimal(divide(trade.usd, trade.amount)),
           signature: trade.signature,
           executedAt: new Date(trade.timestamp * 1000),

@@ -46,6 +46,7 @@ function setup() {
       tokenAmount: "1",
       priceUsd: volume,
       quoteAmountUsd: volume,
+      solPriceUsd: null,
       realizedPnlUsd: realized,
       signature: crypto.randomUUID(),
       executedAt: new Date(FIXED_NOW - days * 86400000),

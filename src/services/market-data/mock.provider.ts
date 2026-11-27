@@ -92,6 +92,11 @@ export class MockMarketDataProvider implements MarketDataProvider {
     return seed ? this.toToken(seed) : null;
   }
 
+  async getHistoricalPriceUsd(mint: string, minute: number) {
+    const seed = SEEDS.find((s) => s.mint === mint);
+    return seed ? this.priceAt(seed, minute) : null;
+  }
+
   async getCandles(mint: string, interval: IntervalValue, limit: number) {
     const seed = SEEDS.find((s) => s.mint === mint);
     if (!seed) return [];

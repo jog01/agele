@@ -18,6 +18,7 @@ export const trades = pgTable(
     side: tradeSide().notNull(),
     tokenAmount: numeric({ precision: 38, scale: 18 }).notNull(),
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),
+    solPriceUsd: numeric({ precision: 38, scale: 18 }),
     priceUsd: numeric({ precision: 38, scale: 18 }).notNull(),
     realizedPnlUsd: numeric({ precision: 38, scale: 18 }),
     signature: text().notNull(),
