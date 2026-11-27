@@ -25,6 +25,21 @@ const EnvSchema = z
     HELIUS_API_KEY: z.string().optional(),
     HELIUS_WEBHOOK_SECRET: z.string().optional(),
     HELIUS_WEBHOOK_URL: z.url().optional(),
+    YELLOWSTONE_GRPC_URL: z
+      .url()
+      .refine((value) => {
+        const url = new URL(value);
+        return (
+          url.protocol === "https:" &&
+          !url.username &&
+          !url.password &&
+          url.pathname === "/" &&
+          !url.search &&
+          !url.hash
+        );
+      }, "Expected an HTTPS Yellowstone host and optional port")
+      .optional(),
+    YELLOWSTONE_GRPC_TOKEN: z.string().trim().min(1).optional(),
     JUPITER_API_KEY: z.string().optional(),
     JUPITER_BASE_URL: z.url().default("https://api.jup.ag"),
     FEE_PAYER_PUBKEY: z.string().optional(),
