@@ -58,6 +58,10 @@ const EnvSchema = z
   .refine((v) => !v.FEE_PAYER_SECRET || v.NODE_ENV === "development", {
     message: "FEE_PAYER_SECRET is development-only",
     path: ["FEE_PAYER_SECRET"],
+  })
+  .refine((v) => !v.HELIUS_WEBHOOK_SECRET || v.MARKET_DATA_PROVIDER === "live", {
+    message: "Helius indexing requires MARKET_DATA_PROVIDER=live",
+    path: ["MARKET_DATA_PROVIDER"],
   });
 
 export type Env = z.infer<typeof EnvSchema>;
