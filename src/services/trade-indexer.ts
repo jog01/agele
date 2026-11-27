@@ -42,6 +42,8 @@ export class TradeIndexer {
   async index(transactions: EnhancedTransaction[]) {
     let indexed = 0;
     let skipped = 0;
+    let priceFailure: { error: unknown } | undefined;
+    const blockedPositions = new Set<string>();
     for (const tx of transactions) {
       const addresses = new Set(
         tx.accountData.flatMap((account) => [
@@ -53,15 +55,27 @@ export class TradeIndexer {
       const parsed = parseTrades(tx, new Set(linked.map((wallet) => wallet.address)));
       if (!parsed.length) skipped++;
       for (const trade of parsed) {
-        const solPriceUsd =
-          trade.quoteMint === SOL_MINT ? await this.historicalSolPrice(trade.timestamp) : undefined;
+        const userId = linked.find((wallet) => wallet.address === trade.wallet)!.userId;
+        const position = `${userId}:${trade.mint}`;
+        if (blockedPositions.has(position)) continue;
+        let solPriceUsd: bigint | undefined;
+        if (trade.quoteMint === SOL_MINT) {
+          try {
+            solPriceUsd = await this.historicalSolPrice(trade.timestamp);
+          } catch (error) {
+            // Later fills for this position must not change its cost basis out of order.
+            blockedPositions.add(position);
+            priceFailure ??= { error };
+            continue;
+          }
+        }
         const usd = solPriceUsd === undefined ? trade.quoteAmount : multiply(trade.quoteAmount, solPriceUsd);
         const metadata = await this.market.getToken(trade.mint);
         const stored = await this.repository.record({
           ...trade,
           usd,
           solPriceUsd,
-          userId: linked.find((wallet) => wallet.address === trade.wallet)!.userId,
+          userId,
           symbol: metadata?.symbol ?? trade.mint.slice(0, 8),
           name: metadata?.name ?? trade.mint.slice(0, 8),
           imageUrl: metadata?.imageUrl ?? null,
@@ -80,6 +94,7 @@ export class TradeIndexer {
         }
       }
     }
+    if (priceFailure) throw priceFailure.error;
     return { indexed, skipped };
   }
 }

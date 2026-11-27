@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { createTradeIndexProcessor } from "../src/jobs/processors/trade-index";
 import { decimal } from "../src/lib/decimal";
 import type { IndexedTrade, TradeRepository } from "../src/repositories/trade.repository";
 import { SOL_MINT } from "../src/services/helius-parser";
 import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { TradeIndexer } from "../src/services/trade-indexer";
-import { buy, sell, WALLET } from "./fixtures/helius";
+import { buy, MINT, sell, usdtBuy, WALLET } from "./fixtures/helius";
 
 describe("TradeIndexer failure handling", () => {
   it("does not write SOL trades without a usable price", async () => {
@@ -23,6 +24,49 @@ describe("TradeIndexer failure handling", () => {
     await expect(indexer.index([sell])).rejects.toMatchObject({ status: 503, code: "price_unavailable" });
     expect(writes).toBe(0);
   });
+
+  it("retries an unpriced SOL fill without blocking independent stablecoin fills", async () => {
+    const writes = new Map<string, IndexedTrade>();
+    const repository: TradeRepository = {
+      linkedWallets: async () => [{ address: WALLET, userId: "user" }],
+      record: async (trade) => {
+        if (!writes.has(trade.signature)) writes.set(trade.signature, trade);
+        return null;
+      },
+    };
+    const market = new LiveMarketDataProvider({ allowlist: [] });
+    const process = createTradeIndexProcessor(new TradeIndexer(repository, market));
+    const stable = (tx: typeof buy, mint: string, offset: number) => ({
+      ...tx,
+      signature: `${tx.signature}-${offset}`,
+      timestamp: sell.timestamp + offset,
+      accountData: tx.accountData.map((account) => ({
+        ...account,
+        tokenBalanceChanges: account.tokenBalanceChanges.map((change) => ({
+          ...change,
+          mint: change.mint === MINT ? mint : change.mint,
+        })),
+      })),
+    });
+    const dependent = stable(buy, MINT, 1);
+    const independentUsdc = stable(buy, "another-token", 2);
+    const independentUsdt = stable(usdtBuy, "a-third-token", 3);
+    const job = { data: [buy, sell, dependent, independentUsdc, independentUsdt] };
+    await expect(process(job)).rejects.toMatchObject({ status: 503, code: "service_unavailable" });
+    expect([...writes.keys()]).toEqual([buy.signature, independentUsdc.signature, independentUsdt.signature]);
+
+    market.getHistoricalPriceUsd = async () => 100;
+    await process(job);
+    expect([...writes.keys()]).toEqual([
+      buy.signature,
+      independentUsdc.signature,
+      independentUsdt.signature,
+      sell.signature,
+      dependent.signature,
+    ]);
+    expect(writes.get(sell.signature)?.solPriceUsd).toBe(decimal("100"));
+  });
+
   it("values SOL with the transaction minute, shares lookups within a bucket and ignores spot prices", async () => {
     const writes: IndexedTrade[] = [];
     const repository: TradeRepository = {
