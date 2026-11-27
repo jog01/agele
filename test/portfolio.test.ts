@@ -116,8 +116,12 @@ describe("portfolio database integration", () => {
   });
 
   it("values a real SOL balance using Jupiter even with indexed market data", async () => {
-    const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input) =>
-      Response.json(new URL(String(input)).pathname === "/price/v3" ? prices : tokens),
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof globalThis.fetch>[0]) =>
+          Response.json(new URL(String(input)).pathname === "/price/v3" ? prices : tokens),
+        { preconnect: globalThis.fetch.preconnect },
+      ),
     );
     try {
       const container = createContainer({
