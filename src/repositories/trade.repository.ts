@@ -1,7 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { decimal, divide, formatDecimal } from "../lib/decimal";
-import { positions, type Trade, tokens, trades, users, wallets } from "../models";
+import { AppError } from "../lib/errors";
+import { pendingTradeFills, positions, type Trade, tokens, trades, users, wallets } from "../models";
 import type { ParsedTrade } from "../services/helius-parser";
 
 export interface IndexedTrade extends ParsedTrade {
@@ -15,6 +16,9 @@ export interface IndexedTrade extends ParsedTrade {
 
 export interface TradeRepository {
   linkedWallets(addresses: string[]): Promise<{ address: string; userId: string }[]>;
+  reserve(
+    trade: Pick<IndexedTrade, "userId" | "mint" | "signature" | "timestamp">,
+  ): Promise<"ready" | "indexed" | "pending">;
   record(trade: IndexedTrade): Promise<Trade | null>;
 }
 
@@ -29,10 +33,46 @@ export class PgTradeRepository implements TradeRepository {
       .where(and(inArray(wallets.address, addresses), eq(wallets.chainType, "solana")));
   }
 
+  reserve({
+    userId,
+    mint,
+    signature,
+    timestamp,
+  }: Pick<IndexedTrade, "userId" | "mint" | "signature" | "timestamp">) {
+    return this.db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+      const [indexed] = await tx
+        .select({ id: trades.id })
+        .from(trades)
+        .where(and(eq(trades.userId, userId), eq(trades.signature, signature)));
+      if (indexed) return "indexed";
+      await tx
+        .insert(pendingTradeFills)
+        .values({ userId, mint, signature, executedAt: new Date(timestamp * 1000) })
+        .onConflictDoNothing();
+      const [first] = await tx
+        .select({ signature: pendingTradeFills.signature })
+        .from(pendingTradeFills)
+        .where(and(eq(pendingTradeFills.userId, userId), eq(pendingTradeFills.mint, mint)))
+        .orderBy(asc(pendingTradeFills.executedAt), asc(pendingTradeFills.id))
+        .limit(1);
+      return first?.signature === signature ? "ready" : "pending";
+    });
+  }
+
   async record(trade: IndexedTrade): Promise<Trade | null> {
     return this.db.transaction(async (tx) => {
       // Serialize a user's position updates, including the first insert.
       await tx.select({ id: users.id }).from(users).where(eq(users.id, trade.userId)).for("update");
+      const [pending] = await tx
+        .select({ signature: pendingTradeFills.signature })
+        .from(pendingTradeFills)
+        .where(and(eq(pendingTradeFills.userId, trade.userId), eq(pendingTradeFills.mint, trade.mint)))
+        .orderBy(asc(pendingTradeFills.executedAt), asc(pendingTradeFills.id))
+        .limit(1);
+      if (pending && pending.signature !== trade.signature) {
+        throw new AppError(503, "position_fill_pending", "An earlier position fill is pending");
+      }
       await tx
         .insert(tokens)
         .values({
@@ -90,6 +130,11 @@ export class PgTradeRepository implements TradeRepository {
         .set({ realizedPnlUsd: formatDecimal(realized) })
         .where(eq(trades.id, inserted.id))
         .returning();
+      await tx
+        .delete(pendingTradeFills)
+        .where(
+          and(eq(pendingTradeFills.userId, trade.userId), eq(pendingTradeFills.signature, trade.signature)),
+        );
       return updated!;
     });
   }

@@ -42,8 +42,7 @@ export class TradeIndexer {
   async index(transactions: EnhancedTransaction[]) {
     let indexed = 0;
     let skipped = 0;
-    let priceFailure: { error: unknown } | undefined;
-    const blockedPositions = new Set<string>();
+    let retry: { error: unknown } | undefined;
     for (const tx of transactions) {
       const addresses = new Set(
         tx.accountData.flatMap((account) => [
@@ -56,30 +55,43 @@ export class TradeIndexer {
       if (!parsed.length) skipped++;
       for (const trade of parsed) {
         const userId = linked.find((wallet) => wallet.address === trade.wallet)!.userId;
-        const position = `${userId}:${trade.mint}`;
-        if (blockedPositions.has(position)) continue;
+        const reservation = await this.repository.reserve({ ...trade, userId });
+        if (reservation === "indexed") {
+          skipped++;
+          continue;
+        }
+        if (reservation === "pending") {
+          retry ??= {
+            error: new AppError(503, "position_fill_pending", "An earlier position fill is pending"),
+          };
+          continue;
+        }
         let solPriceUsd: bigint | undefined;
         if (trade.quoteMint === SOL_MINT) {
           try {
             solPriceUsd = await this.historicalSolPrice(trade.timestamp);
           } catch (error) {
-            // Later fills for this position must not change its cost basis out of order.
-            blockedPositions.add(position);
-            priceFailure ??= { error };
+            retry ??= { error };
             continue;
           }
         }
         const usd = solPriceUsd === undefined ? trade.quoteAmount : multiply(trade.quoteAmount, solPriceUsd);
         const metadata = await this.market.getToken(trade.mint);
-        const stored = await this.repository.record({
-          ...trade,
-          usd,
-          solPriceUsd,
-          userId,
-          symbol: metadata?.symbol ?? trade.mint.slice(0, 8),
-          name: metadata?.name ?? trade.mint.slice(0, 8),
-          imageUrl: metadata?.imageUrl ?? null,
-        });
+        const stored = await this.repository
+          .record({
+            ...trade,
+            usd,
+            solPriceUsd,
+            userId,
+            symbol: metadata?.symbol ?? trade.mint.slice(0, 8),
+            name: metadata?.name ?? trade.mint.slice(0, 8),
+            imageUrl: metadata?.imageUrl ?? null,
+          })
+          .catch((error: unknown) => {
+            if (!(error instanceof AppError) || error.code !== "position_fill_pending") throw error;
+            retry ??= { error };
+            return null;
+          });
         if (!stored) {
           skipped++;
           continue;
@@ -94,7 +106,7 @@ export class TradeIndexer {
         }
       }
     }
-    if (priceFailure) throw priceFailure.error;
+    if (retry) throw retry.error;
     return { indexed, skipped };
   }
 }

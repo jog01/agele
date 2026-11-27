@@ -12,6 +12,7 @@ describe("TradeIndexer failure handling", () => {
   it("does not write SOL trades without a usable price", async () => {
     let writes = 0;
     const repository: TradeRepository = {
+      reserve: async () => "ready",
       linkedWallets: async () => [{ address: WALLET, userId: "user" }],
       record: async () => {
         writes++;
@@ -27,10 +28,17 @@ describe("TradeIndexer failure handling", () => {
 
   it("retries an unpriced SOL fill without blocking independent stablecoin fills", async () => {
     const writes = new Map<string, IndexedTrade>();
+    const pending = new Map<string, string>();
     const repository: TradeRepository = {
       linkedWallets: async () => [{ address: WALLET, userId: "user" }],
+      reserve: async ({ mint, signature }) => {
+        if (writes.has(signature)) return "indexed";
+        if (!pending.has(mint)) pending.set(mint, signature);
+        return pending.get(mint) === signature ? "ready" : "pending";
+      },
       record: async (trade) => {
         if (!writes.has(trade.signature)) writes.set(trade.signature, trade);
+        pending.delete(trade.mint);
         return null;
       },
     };
@@ -70,6 +78,7 @@ describe("TradeIndexer failure handling", () => {
   it("values SOL with the transaction minute, shares lookups within a bucket and ignores spot prices", async () => {
     const writes: IndexedTrade[] = [];
     const repository: TradeRepository = {
+      reserve: async () => "ready",
       linkedWallets: async () => [{ address: WALLET, userId: "user" }],
       record: async (trade) => {
         writes.push(trade);
@@ -118,6 +127,7 @@ describe("TradeIndexer failure handling", () => {
   });
   it("propagates database errors so webhook deliveries can retry", async () => {
     const repository: TradeRepository = {
+      reserve: async () => "ready",
       linkedWallets: async () => [{ address: WALLET, userId: "user" }],
       record: async () => {
         throw new Error("database unavailable");
