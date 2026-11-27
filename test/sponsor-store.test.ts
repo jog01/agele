@@ -1,7 +1,6 @@
 import { afterAll, expect, it, mock } from "bun:test";
 import Redis from "ioredis";
 import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
-import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import {
   type IssuedRecord,
   MemorySponsorStore,
@@ -213,10 +212,9 @@ it("rejects ineligible balance/notional, missing referral, mock prices and live 
     expect(s.store.charges).toHaveLength(0);
   }
 });
-it("values USDC at face value without metadata and keeps SOL priced on the default live allowlist", async () => {
+it("values USDC at face value without metadata and resolves the live SOL price", async () => {
   const s = await sponsorSetup();
   const market = new LiveMarketDataProvider({
-    allowlist: MockMarketDataProvider.mints,
     fetch: async (url) => Response.json(url.includes("search") ? tokenFixture : priceFixture),
   });
   expect(await market.getToken(MINTS.USDC)).toBeNull();

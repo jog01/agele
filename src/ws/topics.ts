@@ -5,9 +5,11 @@ import { z } from "zod";
  *   token:<mint>:trades   live trades for a token
  *   token:<mint>:price    price ticks for a token
  *   leaderboard:global    leaderboard updates
+ *   pulse                launch, curve and migration updates
  *   user:<id>:alerts      private alerts (requires auth, not yet implemented)
  */
-export const TOPIC_RE = /^(token:[1-9A-HJ-NP-Za-km-z]{32,44}:(trades|price)|leaderboard:global)$/;
+export const TOPIC_RE = /^(token:[1-9A-HJ-NP-Za-km-z]{32,44}:(trades|price)|leaderboard:global|pulse)$/;
+export const PRICE_TOPIC_RE = /^token:([1-9A-HJ-NP-Za-km-z]{32,44}):price$/;
 
 export const ClientMessage = z.discriminatedUnion("op", [
   z.object({ op: z.literal("subscribe"), topic: z.string().regex(TOPIC_RE) }),

@@ -1,4 +1,4 @@
-import { notFound } from "../lib/errors";
+import { AppError, notFound } from "../lib/errors";
 import type { IntervalValue } from "../schemas/token";
 import type { MarketDataProvider } from "./market-data";
 
@@ -7,6 +7,16 @@ export class TokenService {
 
   listTrending(limit: number) {
     return this.market.listTrending(limit);
+  }
+
+  searchTokens(query: string) {
+    if (!this.market.searchTokens) throw new AppError(503, "service_unavailable", "Token search unavailable");
+    return this.market.searchTokens(query);
+  }
+
+  listPulse(limit: number) {
+    if (!this.market.listPulse) throw new AppError(503, "service_unavailable", "Pulse unavailable");
+    return this.market.listPulse(limit);
   }
 
   async getToken(mint: string) {

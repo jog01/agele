@@ -85,7 +85,6 @@ const types: Record<IntervalValue, string> = {
 };
 
 interface Options {
-  allowlist: string[];
   jupiterApiKey?: string;
   birdeyeApiKey?: string;
   solanaRpcUrl?: string;
@@ -98,24 +97,26 @@ export class LiveMarketDataProvider implements MarketDataProvider {
   readonly name = "live";
   private readonly cache = new Map<string, { expires: number; value: Promise<unknown> }>();
   private readonly now: () => number;
-  private readonly mints: string[];
 
   constructor(private readonly options: Options) {
     this.now = options.now ?? Date.now;
-    this.mints = [...new Set(options.allowlist)];
   }
 
   private cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key);
     if (hit && hit.expires > this.now()) return hit.value as Promise<T>;
+    if (this.cache.size >= 1000) {
+      const expired = [...this.cache].find(([, entry]) => entry.expires <= this.now());
+      if (expired) this.cache.delete(expired[0]);
+    }
     const entry = { expires: Number.POSITIVE_INFINITY, value: Promise.resolve().then(load) };
-    this.cache.set(key, entry);
+    if (this.cache.size < 1000 || hit) this.cache.set(key, entry);
     void entry.value.then(
       () => {
         entry.expires = this.now() + ttl;
       },
       () => {
-        this.cache.delete(key);
+        if (this.cache.get(key) === entry) this.cache.delete(key);
       },
     );
     return entry.value;
@@ -164,56 +165,69 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     );
   }
 
-  private tokens() {
-    return this.cached("tokens", 5000, async () => {
-      if (!this.mints.length) return [];
-      const meta = await this.cached("metadata", 15000, async () => {
-        const tokens: z.infer<typeof metadata> = [];
-        for (let i = 0; i < this.mints.length; i += 100) {
-          tokens.push(
-            ...(await this.jupiter(
-              "/tokens/v2/search",
-              { query: this.mints.slice(i, i + 100).join(",") },
-              metadata,
-            )),
-          );
-        }
-        return tokens;
-      });
-      const allPrices: z.infer<typeof prices> = {};
-      for (let i = 0; i < this.mints.length; i += 50) {
-        Object.assign(
-          allPrices,
-          await this.jupiter("/price/v3", { ids: this.mints.slice(i, i + 50).join(",") }, prices),
-        );
-      }
-      return meta
-        .filter((t) => this.mints.includes(t.id))
-        .map(
-          (t): TokenDto => ({
-            mint: t.id,
-            symbol: t.symbol,
-            name: t.name,
-            decimals: t.decimals,
-            imageUrl: t.icon ?? null,
-            priceUsd: allPrices[t.id]?.usdPrice ?? t.usdPrice ?? 0,
-            priceChange24hPct: allPrices[t.id]?.priceChange24h ?? t.stats24h?.priceChange ?? 0,
-            marketCapUsd: t.mcap ?? 0,
-            liquidityUsd: t.liquidity ?? 0,
-            holders: t.holderCount ?? 0,
-            volume24hUsd: (t.stats24h?.buyVolume ?? 0) + (t.stats24h?.sellVolume ?? 0),
-          }),
-        );
-    });
+  private priceQuotes(ids: string[]) {
+    const value = ids.join(",");
+    return this.cached(`prices:${value}`, 5000, () => this.jupiter("/price/v3", { ids: value }, prices));
+  }
+
+  async getSolUsd(_time: number) {
+    const price = (await this.priceQuotes([SOL_MINT]))[SOL_MINT]?.usdPrice;
+    if (!price || price < 0) throw new AppError(502, "upstream_error", "SOL price unavailable");
+    return price;
+  }
+
+  private async withPrices(tokens: z.infer<typeof metadata>): Promise<TokenDto[]> {
+    const quotes: z.infer<typeof prices> = {};
+    for (let i = 0; i < tokens.length; i += 50) {
+      Object.assign(quotes, await this.priceQuotes(tokens.slice(i, i + 50).map((token) => token.id)));
+    }
+    return tokens.map((token) => ({
+      mint: token.id,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      imageUrl: token.icon ?? null,
+      priceUsd: quotes[token.id]?.usdPrice ?? token.usdPrice ?? 0,
+      priceChange24hPct: quotes[token.id]?.priceChange24h ?? token.stats24h?.priceChange ?? 0,
+      marketCapUsd: token.mcap ?? 0,
+      liquidityUsd: token.liquidity ?? 0,
+      holders: token.holderCount ?? 0,
+      volume24hUsd: (token.stats24h?.buyVolume ?? 0) + (token.stats24h?.sellVolume ?? 0),
+    }));
+  }
+
+  private searchMetadata(query: string) {
+    return this.cached(`metadata:${query}`, 15000, () =>
+      this.jupiter("/tokens/v2/search", { query }, metadata),
+    );
   }
 
   async listTrending(limit: number) {
-    return [...(await this.tokens())].sort((a, b) => b.volume24hUsd - a.volume24hUsd).slice(0, limit);
+    const tokens = await this.cached("trending", 15000, () =>
+      this.jupiter("/tokens/v2/toptrending/24h", { limit: "100" }, metadata),
+    );
+    return this.withPrices(tokens.slice(0, limit));
   }
 
   async getToken(mint: string) {
-    if (!this.mints.includes(mint)) return null;
-    return (await this.tokens()).find((t) => t.mint === mint) ?? null;
+    const exact = (await this.searchMetadata(mint)).find((token) => token.id === mint);
+    return exact ? (await this.withPrices([exact]))[0]! : null;
+  }
+
+  async searchTokens(query: string) {
+    const tokens = await this.searchMetadata(query);
+    const exact = tokens.find((token) => token.id === query);
+    const prefix = query.toLowerCase();
+    return this.withPrices(
+      exact
+        ? [exact]
+        : tokens
+            .filter(
+              (token) =>
+                token.name.toLowerCase().startsWith(prefix) || token.symbol.toLowerCase().startsWith(prefix),
+            )
+            .slice(0, 30),
+    );
   }
 
   private async rpc<T>(method: string, params: unknown[], schema: z.ZodType<T>): Promise<T> {
@@ -246,7 +260,6 @@ export class LiveMarketDataProvider implements MarketDataProvider {
   }
 
   async getHolders(mint: string, limit: number): Promise<TokenHoldersDto> {
-    if (!this.mints.includes(mint)) throw notFound("Token");
     const snapshot = await this.cached(`holders:${mint}`, 60000, async () => {
       const token = await this.getToken(mint);
       if (!token) throw notFound("Token");

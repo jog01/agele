@@ -3,6 +3,7 @@ import { LiveMarketDataProvider } from "../src/services/market-data/live.provide
 import { TokenService } from "../src/services/token.service";
 import priceFixture from "./fixtures/jupiter-prices.json";
 import tokenFixture from "./fixtures/jupiter-tokens.json";
+import trendingFixture from "./fixtures/jupiter-trending.json";
 import { testApp } from "./helpers";
 
 const mints = tokenFixture.map((t) => t.id);
@@ -12,11 +13,11 @@ function setup(extra: Partial<ConstructorParameters<typeof LiveMarketDataProvide
   const calls: { url: URL; init?: RequestInit }[] = [];
   let now = 1_800_000_000_000;
   const market = new LiveMarketDataProvider({
-    allowlist: mints,
     now: () => now,
     fetch: async (input, init) => {
       const url = new URL(input);
       calls.push({ url, init });
+      if (url.pathname.includes("toptrending")) return Response.json(trendingFixture);
       return Response.json(url.pathname.includes("search") ? tokenFixture : priceFixture);
     },
     ...extra,
@@ -31,7 +32,7 @@ function setup(extra: Partial<ConstructorParameters<typeof LiveMarketDataProvide
 }
 
 describe("live market data", () => {
-  it("maps real symbols/logos, stats and Price V3; sorts trending and limits", async () => {
+  it("maps real symbols/logos, stats and Price V3; preserves Jupiter's trending order and applies limit", async () => {
     const { market, calls } = setup();
     const token = await market.getToken(jup);
     expect(token).toMatchObject({
@@ -44,14 +45,17 @@ describe("live market data", () => {
       tokenFixture[0]!.stats24h.buyVolume + tokenFixture[0]!.stats24h.sellVolume,
     );
     expect((await market.listTrending(2)).map((t) => t.mint)).toEqual([sol, jup]);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
     expect(calls[0]!.url.host).toBe("lite-api.jup.ag");
-    expect(calls[0]!.url.searchParams.get("query")).toBe(mints.join(","));
+    expect(calls[0]!.url.searchParams.get("query")).toBe(jup);
+    expect(calls[2]!.url.pathname).toBe("/tokens/v2/toptrending/24h");
+    expect(calls[2]!.url.searchParams.get("limit")).toBe("100");
+    expect(await market.listTrending(1)).toHaveLength(1);
   });
 
   it("dedupes in flight, refreshes prices at 5s and metadata at 15s", async () => {
     const { market, calls, advance } = setup();
-    await Promise.all([market.getToken(jup), market.getToken(sol), market.listTrending(3)]);
+    await Promise.all([market.getToken(jup), market.getToken(jup), market.getToken(jup)]);
     expect(calls).toHaveLength(2);
     advance(5000);
     await market.getToken(jup);
@@ -61,47 +65,39 @@ describe("live market data", () => {
     expect(calls).toHaveLength(5);
   });
 
-  it("returns null/404 for non-allowlisted and unresolved mints, and handles empty lists", async () => {
-    const { market, calls } = setup({ allowlist: ["unknown"] });
-    expect(await market.getToken(jup)).toBeNull();
-    expect(calls).toHaveLength(0);
+  it("returns null/404 for unresolved mints and handles empty trending results", async () => {
+    const { market, calls } = setup({ fetch: async () => Response.json([]) });
     expect(await market.getToken("unknown")).toBeNull();
     const res = await testApp({ market, tokens: new TokenService(market) }).request(`/v1/tokens/${jup}`);
     expect(res.status).toBe(404);
-    const empty = setup({ allowlist: [] });
-    expect(await empty.market.listTrending(10)).toEqual([]);
-    expect(empty.calls).toHaveLength(0);
+    expect(await market.listTrending(10)).toEqual([]);
+    expect(calls).toHaveLength(0);
   });
 
   it("batches Price V3 at 50 ids and uses keyed Jupiter host/header", async () => {
+    const fixtures = Array.from({ length: 100 }, (_, i) => ({ ...tokenFixture[0]!, id: `mint${i}` }));
+    const requests: URL[] = [];
     const { market, calls } = setup({
-      allowlist: Array.from({ length: 101 }, (_, i) => `mint${i}`),
       jupiterApiKey: "test-key",
-    });
-    await market.listTrending(5);
-    expect(calls).toHaveLength(5);
-    expect(calls.slice(2).map((c) => c.url.searchParams.get("ids")!.split(",").length)).toEqual([50, 50, 1]);
-    expect(calls[0]!.url.host).toBe("api.jup.ag");
-    expect(calls[0]!.init?.headers).toEqual({ "x-api-key": "test-key" });
-  });
-
-  it("chunks metadata at 100 mints without losing tokens beyond the first batch", async () => {
-    const fixtures = Array.from({ length: 201 }, (_, i) => ({ ...tokenFixture[0]!, id: `mint${i}` }));
-    const batches: string[][] = [];
-    const { market } = setup({
-      allowlist: fixtures.map((t) => t.id),
-      fetch: async (input) => {
+      fetch: async (input, init) => {
         const url = new URL(input);
-        if (!url.pathname.includes("search")) return Response.json({});
-        const query = url.searchParams.get("query")!.split(",");
-        batches.push(query);
-        return Response.json(fixtures.filter((t) => query.slice(0, 100).includes(t.id)));
+        requests.push(url);
+        expect(url.host).toBe("api.jup.ag");
+        expect(init?.headers).toEqual({ "x-api-key": "test-key" });
+        return Response.json(url.pathname.includes("toptrending") ? fixtures : {});
       },
     });
-    expect(await market.listTrending(201)).toHaveLength(201);
-    expect(batches.map((batch) => batch.length)).toEqual([100, 100, 1]);
-    expect((await market.getToken("mint200"))?.mint).toBe("mint200");
-    expect(batches.flat()).toEqual(fixtures.map((t) => t.id));
+    expect(await market.listTrending(100)).toHaveLength(100);
+    expect(requests.slice(1).map((url) => url.searchParams.get("ids")!.split(",").length)).toEqual([50, 50]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("finds exact mints or case-insensitive name/symbol prefixes, and resolves live SOL/USD", async () => {
+    const { market } = setup();
+    expect((await market.searchTokens(jup)).map((token) => token.mint)).toEqual([jup]);
+    expect((await market.searchTokens("sOL")).map((token) => token.mint)).toEqual([sol]);
+    expect(await market.searchTokens("piter")).toEqual([]);
+    expect(await market.getSolUsd(0)).toBe(priceFixture[sol as keyof typeof priceFixture]!.usdPrice);
   });
 
   it("falls back to metadata prices when Price V3 omits a mint", async () => {
@@ -116,7 +112,9 @@ describe("live market data", () => {
       ...token,
       ...(i === 0 ? { stats24h: null } : i === 1 ? {} : { stats24h: { buyVolume: null } }),
     }));
-    const { market } = setup({ fetch: async (url) => Response.json(url.includes("search") ? sparse : {}) });
+    const { market } = setup({
+      fetch: async (url) => Response.json(url.includes("toptrending") ? sparse : {}),
+    });
     const tokens = await market.listTrending(3);
     expect(tokens).toHaveLength(3);
     for (const token of tokens) {

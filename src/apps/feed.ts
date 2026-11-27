@@ -1,11 +1,13 @@
 import { env } from "../config/env";
+import { closeDb, getDb } from "../db/client";
 import { ActiveTopicRegistry } from "../events/active-topics";
 import { RedisEventPublisher } from "../events/bus";
 import { FeedLock } from "../events/feed-lock";
 import { logger } from "../lib/logger";
 import { closeRedis, getRedis } from "../lib/redis";
+import { IngestService } from "../services/chain-ingest/service";
+import { DemoChainSimulator, DemoSolUsdPrice, demoChainFacts } from "../services/chain-ingest/simulator";
 import { createMarketDataProvider } from "../services/market-data";
-import { startMockFeed } from "../ws/mock-feed";
 import { startPriceFeed } from "../ws/price-feed";
 
 const redis = getRedis();
@@ -13,51 +15,101 @@ const lock = new FeedLock(redis);
 const registry = new ActiveTopicRegistry(redis);
 const events = new RedisEventPublisher();
 const market = createMarketDataProvider();
-let owner = false;
-let stop: (() => void) | undefined;
-const source = {
-  activeTopics: async () => (owner && (await lock.renew()) ? registry.activeTopics() : []),
-  publish: async (topic: string, data: unknown) => {
-    if (owner && (await lock.renew())) await events.publish(topic, data);
-  },
-};
+let owner: { controller: AbortController; running: Promise<void>; stopPrices: () => void } | undefined;
+let stopping = false;
+let election: Promise<void> | undefined;
+
+async function stopOwner() {
+  const previous = owner;
+  owner = undefined;
+  if (!previous) return;
+  previous.controller.abort();
+  previous.stopPrices();
+  await previous.running;
+  await lock.release();
+}
+
+function startOwner() {
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const start = Math.floor(Date.now() / 1000);
+  let live = false;
+  const publisher = {
+    publish: async (topic: string, data: unknown) => {
+      if (live && !signal.aborted) await events.publish(topic, data);
+    },
+  };
+  const ingest = new IngestService(getDb(), publisher, new DemoSolUsdPrice(), demoChainFacts);
+  const simulator = new DemoChainSimulator();
+  const running = simulator
+    .run(
+      {
+        ingest: async (batch) => {
+          if (signal.aborted) return;
+          if (!(await lock.renew())) {
+            controller.abort();
+            return;
+          }
+          live ||= batch.some((event) => (event.blockTime ?? 0) >= start);
+          await ingest.ingest(batch);
+        },
+      },
+      signal,
+    )
+    .catch((err) => {
+      controller.abort();
+      logger.warn({ err }, "Chain source stopped");
+    });
+  const stopPrices = startPriceFeed(
+    {
+      activeTopics: () => (signal.aborted ? [] : registry.activeTopics()),
+      publish: async (topic, data) => {
+        if (!signal.aborted && (await lock.renew())) await events.publish(topic, data);
+      },
+    },
+    { getToken: (mint) => market.getExternalToken(mint) },
+  );
+  owner = { controller, running, stopPrices };
+}
+
 async function elect() {
   try {
-    if (owner && !(await lock.renew())) {
-      owner = false;
-      stop?.();
-      stop = undefined;
-    }
-    if (!owner && (await lock.acquire())) {
-      owner = true;
-      stop =
-        market.name === "live"
-          ? startPriceFeed(source, market, env.MARKET_TOKEN_ALLOWLIST)
-          : env.ENABLE_MOCK_FEED
-            ? startMockFeed(source)
-            : undefined;
-      logger.info("feed lock acquired");
+    if (owner && (owner.controller.signal.aborted || !(await lock.renew()))) await stopOwner();
+    if (!stopping && !owner && (await lock.acquire())) {
+      startOwner();
+      logger.info({ source: env.CHAIN_SOURCE }, "Feed lock acquired");
     }
   } catch (err) {
-    owner = false;
-    stop?.();
-    stop = undefined;
-    logger.warn({ err }, "feed lock unavailable");
+    try {
+      await stopOwner();
+    } catch {}
+    logger.warn({ err }, "Feed lock unavailable");
   }
 }
-await elect();
-const timer = setInterval(() => {
-  void elect();
-}, 3000);
+
+function tick() {
+  election ??= elect().finally(() => {
+    election = undefined;
+  });
+}
+
+tick();
+const timer = setInterval(tick, 3000);
 logger.info("feed started (standby unless lock owner)");
 async function shutdown() {
+  if (stopping) return;
+  stopping = true;
   clearInterval(timer);
-  owner = false;
-  stop?.();
-  await lock.release();
-  await events.close();
-  await closeRedis();
-  process.exit(0);
+  try {
+    await election;
+    await stopOwner();
+  } finally {
+    await Promise.all([events.close(), closeRedis(), closeDb()]);
+  }
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => {
+  void shutdown().catch((err) => logger.warn({ err }, "Feed shutdown failed"));
+});
+process.on("SIGTERM", () => {
+  void shutdown().catch((err) => logger.warn({ err }, "Feed shutdown failed"));
+});

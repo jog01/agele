@@ -10,7 +10,7 @@ describe("system routes", () => {
   });
 
   it("reports the injected live provider, without fetching market data", async () => {
-    const res = await testApp({ market: new LiveMarketDataProvider({ allowlist: [] }) }).request("/health");
+    const res = await testApp({ market: new LiveMarketDataProvider({}) }).request("/health");
     expect(await res.json()).toMatchObject({ status: "ok", marketData: "live" });
   });
 

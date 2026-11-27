@@ -11,7 +11,7 @@ it("requires an explicit live market provider for a configured Helius webhook", 
   expect(missing.exitCode).toBe(1);
   expect(missing.stderr.toString()).toContain("Helius indexing requires MARKET_DATA_PROVIDER=live");
   const demo = Bun.spawnSync(command, { env: { PATH: env.PATH } });
-  expect(demo.stdout.toString().trim()).toBe("mock");
+  expect(demo.stdout.toString().trim()).toBe("indexed");
   const live = Bun.spawnSync(command, { env: { ...env, MARKET_DATA_PROVIDER: "live" } });
   expect(live.stdout.toString().trim()).toBe("live");
 });

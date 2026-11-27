@@ -1,7 +1,7 @@
 # PostgreSQL social store
 
 Social routes use the same tables, repository, and auth path in demo and live.
-In the default `MARKET_DATA_PROVIDER=mock` mode the API runs an idempotent seed
+With the default demo chain source and `MARKET_DATA_PROVIDER=indexed`, the API runs an idempotent seed
 step before listening. Run `bun run db:migrate` first. The seed adds 12 fictional
 traders, follows, versioned theses, replies and reactions, and records dated
 buys and sells via `PgTradeRepository.record`, including both open and closed

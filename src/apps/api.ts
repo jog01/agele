@@ -12,7 +12,7 @@ import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 initTelemetry();
 const container = createContainer();
 await container.feeSponsor.ready?.();
-if (env.MARKET_DATA_PROVIDER === "mock") await seedSocialDemo(getDb());
+if (env.CHAIN_SOURCE === "demo" && env.MARKET_DATA_PROVIDER === "indexed") await seedSocialDemo(getDb());
 const app = createApp(container);
 const server = Bun.serve({ port: env.PORT, fetch: app.fetch });
 logger.info({ port: server.port }, "api listening");
