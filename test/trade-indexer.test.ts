@@ -91,7 +91,7 @@ describe("TradeIndexer failure handling", () => {
         return null;
       },
     };
-    const market = new LiveMarketDataProvider({ allowlist: [] });
+    const market = new LiveMarketDataProvider({ fetch: async () => Response.json([]) });
     const process = createTradeIndexProcessor(new TradeIndexer(repository, market));
     const stable = (tx: typeof buy, mint: string, offset: number) => ({
       ...tx,
@@ -161,7 +161,6 @@ describe("TradeIndexer failure handling", () => {
     const minute = sell.timestamp;
     const fill = (unix_time: number, o: number) => ({ unix_time, o, h: 240, l: 80, c: 200, v_usd: 1000 });
     const market = new LiveMarketDataProvider({
-      allowlist: [],
       birdeyeApiKey: "fixture",
       fetch: async (input) => {
         const url = new URL(input);

@@ -167,6 +167,8 @@ describe("chain ingestion and indexed market data", () => {
     expect(await indexed.getCandles(token.mint, "5m", 10)).toEqual([
       { time, open: 100, high: 200, low: 50, close: 50, volume: 700 },
     ]);
+    expect(await indexed.getHistoricalPriceUsd(token.mint, time)).toBe(100);
+    expect(await indexed.getHistoricalPriceUsd(token.mint, time + 120)).toBeNull();
     const holders = await indexed.getHolders(token.mint, 1);
     expect(holders).toMatchObject({
       totalHolders: 1,
@@ -183,6 +185,7 @@ describe("chain ingestion and indexed market data", () => {
       upstream: new MockMarketDataProvider(),
     });
     expect((await demoIndexed.getToken(SOL))?.priceUsd).toBe(200);
+    expect(await demoIndexed.getHistoricalPriceUsd(SOL, time)).toBe(200);
   });
 
   it("scopes receipts by source, rolls back failed batches, rejects unsorted events and accepts empty input", async () => {

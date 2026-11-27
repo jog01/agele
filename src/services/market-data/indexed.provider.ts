@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../db/client";
-import { chainTokens, chainTrades } from "../../models/chain";
+import { chainCandles, chainTokens, chainTrades } from "../../models/chain";
 import type { CandleDto, IntervalValue, PulseDto, TokenDto, TokenHoldersDto } from "../../schemas/token";
 import type { SolUsdPrice } from "../chain-ingest/chain-facts";
 import type { EventRef } from "../chain-ingest/events";
@@ -85,6 +85,23 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
       if (upstream) return upstream;
     }
     return tokenDto(row, await tokenStats(this.db, row, this.seconds()));
+  }
+
+  async getHistoricalPriceUsd(mint: string, minute: number) {
+    if (mint === SOL_MINT && this.options.source === "demo") return this.options.solUsd.getSolUsd(minute);
+    const token = await this.indexedToken(mint);
+    if (!hasIndexedMarketData(token)) return this.options.upstream.getHistoricalPriceUsd(mint, minute);
+    const [candle] = await this.db
+      .select({ open: chainCandles.open })
+      .from(chainCandles)
+      .where(
+        and(
+          eq(chainCandles.source, token.source),
+          eq(chainCandles.mint, mint),
+          eq(chainCandles.time, minute),
+        ),
+      );
+    return candle?.open ?? null;
   }
 
   async listTrending(limit: number) {
