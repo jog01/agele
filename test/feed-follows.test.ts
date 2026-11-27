@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { getBase58Decoder } from "@solana/kit";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
@@ -49,6 +50,67 @@ async function page(app: ReturnType<typeof testApp>, query = "", authenticated =
 }
 
 describe("feed", () => {
+  it("keeps new-trader engagement reachable when a late-indexed fill becomes the first trade", async () => {
+    const db = getDb();
+    const id = crypto.randomUUID();
+    const wallet = getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
+    const { app } = setup(undefined, id);
+    const earlierMint = MockMarketDataProvider.mints[1]!;
+    const query = `?types=new-trader&wallet=${wallet}`;
+    let discussionKey: string | undefined;
+    const fill = (mint: string, executedAt: Date) =>
+      db.insert(trades).values({
+        userId: id,
+        mint,
+        side: "buy",
+        tokenAmount: "1",
+        priceUsd: "10",
+        quoteAmountUsd: "10",
+        signature: crypto.randomUUID(),
+        executedAt,
+      });
+    await db.insert(users).values({ id, privyDid: `privy:engagement:${id}`, walletAddress: wallet });
+    try {
+      await fill(SOL, new Date("2026-01-02"));
+      const [before] = (await page(app, query, true)).items;
+      if (before?.kind !== "new-trader") throw new Error("Missing new-trader card");
+      discussionKey = before.discussionKey;
+      const route = `/v1/feed/${encodeURIComponent(before.discussionKey)}`;
+      const reply = (body: string, parentId?: string) =>
+        app.request(`${route}/comments`, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ body, parentId }),
+        });
+      expect((await app.request(`${route}/reaction`, { method: "PUT", headers })).status).toBe(204);
+      const posted = await reply("Welcome to the feed");
+      expect(posted.status).toBe(201);
+      const parent = CommentSchema.parse(await posted.json());
+
+      await fill(earlierMint, new Date("2026-01-01"));
+
+      const thread = await app.request(`${route}/comments`);
+      expect(thread.status).toBe(200);
+      expect(CommentPage.parse(await thread.json()).comments).toMatchObject([{ id: parent.id }]);
+      const [after] = (await page(app, query, true)).items;
+      expect(after).toMatchObject({
+        id: before.id,
+        discussionKey: before.discussionKey,
+        mint: earlierMint,
+        likeCount: 1,
+        viewerLiked: true,
+        replyCount: 1,
+      });
+      const nested = await reply("Same trader, earlier fill", parent.id);
+      expect(nested.status).toBe(201);
+      expect(CommentSchema.parse(await nested.json())).toMatchObject({ mint: SOL, parentId: parent.id });
+    } finally {
+      if (discussionKey) await db.delete(feedDiscussions).where(eq(feedDiscussions.key, discussionKey));
+      await db.delete(trades).where(eq(trades.userId, id));
+      await db.delete(users).where(eq(users.id, id));
+    }
+  });
+
   it("persists independent reactions and threaded replies for trades and derived cards", async () => {
     const db = getDb();
     const id = crypto.randomUUID();

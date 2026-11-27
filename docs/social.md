@@ -83,6 +83,8 @@ sequenceDiagram
   Bought, sold, and closed cards attach to the underlying fill; a milestone
   for that fill has its own thread. A multi-user card shares a thread across
   global and following views for the same token, side, and UTC bucket.
+  A new-trader thread is tied to the trader, so its replies and likes survive
+  discovery of an earlier first fill. Existing threads keep their original token.
 - Feed and discussion rows carry `source`; profile and history responses use
   `X-Data-Source`. Seeded leaderboard entries carry `source: demo`. In the
   absence of the webhook/Redis projection, ranking reads derive results from

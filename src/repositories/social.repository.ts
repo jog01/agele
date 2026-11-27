@@ -97,7 +97,8 @@ export class PgSocialRepository {
       sql`'trade-group:' || groups.mint || ':' || groups.side || ':' || extract(epoch from groups.bucket)`,
     );
     const milestoneId = eventId(sql`'profit-milestone:' || t.id`);
-    const newTraderId = eventId(sql`'new-trader:' || t.user_id`);
+    const newTraderKey = sql`'new-trader:' || t.user_id`;
+    const newTraderId = eventId(newTraderKey);
     const enabled = (condition: boolean) => (condition ? sql.empty() : sql`and false`);
     const rows = await this.db.execute<FeedRow>(sql`
       with groups as (
@@ -138,7 +139,7 @@ export class PgSocialRepository {
          order by at desc, 1 desc limit ${limit + 1})
         union all
         (select ${newTraderId}, t.mint, t.user_id, 'new-trader', null, 'none', null,
-         null, ${tradeTime} as at, null, false, null, null, null, null, 'new-trader:' || t.id
+         null, ${tradeTime} as at, null, false, null, null, null, null, ${newTraderKey}
          from trades t join users u on u.id = t.user_id
          where ${wallet} is not null ${followed} ${scopedMint(sql`t.mint`)}
            ${enabled(minSizeUsd === undefined && (types?.includes("new-trader") ?? false))} ${before(tradeTime, newTraderId, cursor)}
@@ -337,14 +338,26 @@ export class PgSocialRepository {
           thesisId = created!.id;
         }
       }
-      if (input.discussionKey)
-        await tx
+      let mint = input.mint;
+      if (input.discussionKey) {
+        const [created] = await tx
           .insert(feedDiscussions)
-          .values({ key: input.discussionKey, mint: input.mint })
-          .onConflictDoNothing();
+          .values({ key: input.discussionKey, mint })
+          .onConflictDoNothing()
+          .returning({ mint: feedDiscussions.mint });
+        const discussion =
+          created ??
+          (
+            await tx
+              .select({ mint: feedDiscussions.mint })
+              .from(feedDiscussions)
+              .where(eq(feedDiscussions.key, input.discussionKey))
+          )[0]!;
+        mint = discussion.mint;
+      }
       const [row] = await tx
         .insert(comments)
-        .values({ ...input, thesisId })
+        .values({ ...input, mint, thesisId })
         .returning({ id: comments.id });
       return row!.id;
     });
@@ -421,10 +434,12 @@ export class PgSocialRepository {
       return row?.mint;
     }
     const predicate =
-      target.kind === "new-trader" ? firstTrade : target.kind === "milestone" ? milestone : sql`true`;
+      target.kind === "new-trader"
+        ? sql`t.user_id = ${target.id} and ${firstTrade}`
+        : sql`t.id = ${target.id} ${target.kind === "milestone" ? sql`and ${milestone}` : sql.empty()}`;
     const [row] = await this.db.execute<{ mint: string }>(sql`
       select t.mint from trades t join users u on u.id = t.user_id
-      where t.id = ${target.id} and ${predicate} and ${wallet} is not null
+      where ${predicate} and ${wallet} is not null
     `);
     return row?.mint;
   }
