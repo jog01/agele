@@ -1,5 +1,5 @@
 {
-  "id": "d8c7b208-d8e0-4095-b763-d2181ffe136a",
+  "id": "bf6d22e8-b0cf-4b59-b258-4ed660c66148",
   "prevId": "e12454af-f88b-481f-8c3b-c18a06356959",
   "version": "7",
   "dialect": "postgresql",
@@ -33,28 +33,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "social_post_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'comment'"
-        },
-        "position": {
-          "name": "position",
-          "type": "social_post_position",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'none'"
-        },
-        "thesis_id": {
-          "name": "thesis_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -81,43 +59,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_thesis_idx": {
-          "name": "comments_thesis_idx",
-          "columns": [
-            {
-              "expression": "thesis_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_feed_idx": {
-          "name": "comments_feed_idx",
-          "columns": [
-            {
-              "expression": "date_trunc('second', \"created_at\" AT TIME ZONE 'UTC')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"comments\".\"kind\" = 'thesis'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -149,30 +90,12 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "comments_thesis_id_comments_id_fk": {
-          "name": "comments_thesis_id_comments_id_fk",
-          "tableFrom": "comments",
-          "tableTo": "comments",
-          "columnsFrom": [
-            "thesis_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "comments_thesis_no_parent": {
-          "name": "comments_thesis_no_parent",
-          "value": "\"comments\".\"kind\" <> 'thesis' OR \"comments\".\"thesis_id\" IS NULL"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.follows": {
@@ -378,66 +301,6 @@
           "columns": [
             "user_id",
             "mint"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.social_reactions": {
-      "name": "social_reactions",
-      "schema": "",
-      "columns": {
-        "post_id": {
-          "name": "post_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "social_reactions_post_id_comments_id_fk": {
-          "name": "social_reactions_post_id_comments_id_fk",
-          "tableFrom": "social_reactions",
-          "tableTo": "comments",
-          "columnsFrom": [
-            "post_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "social_reactions_user_id_users_id_fk": {
-          "name": "social_reactions_user_id_users_id_fk",
-          "tableFrom": "social_reactions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "social_reactions_post_id_user_id_pk": {
-          "name": "social_reactions_post_id_user_id_pk",
-          "columns": [
-            "post_id",
-            "user_id"
           ]
         }
       },
@@ -695,6 +558,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "sol_price_usd": {
+          "name": "sol_price_usd",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "price_usd": {
           "name": "price_usd",
           "type": "numeric(38, 18)",
@@ -760,27 +629,6 @@
             },
             {
               "expression": "executed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "trades_feed_idx": {
-          "name": "trades_feed_idx",
-          "columns": [
-            {
-              "expression": "date_trunc('second', \"executed_at\" AT TIME ZONE 'UTC')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -875,19 +723,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "bio": {
-          "name": "bio",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "demo": {
-          "name": "demo",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -1029,23 +864,6 @@
     }
   },
   "enums": {
-    "public.social_post_kind": {
-      "name": "social_post_kind",
-      "schema": "public",
-      "values": [
-        "thesis",
-        "comment"
-      ]
-    },
-    "public.social_post_position": {
-      "name": "social_post_position",
-      "schema": "public",
-      "values": [
-        "long",
-        "short",
-        "none"
-      ]
-    },
     "public.swap_status": {
       "name": "swap_status",
       "schema": "public",
