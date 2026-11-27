@@ -53,6 +53,7 @@ export const CommentSchema = event
     kind: z.enum(["thesis", "comment"]),
     wallet: z.string().nullable(),
     thesisId: z.uuid().nullable(),
+    viewCount: z.number().int().nonnegative().nullable(),
     discussionKey: z.string().nullable(),
     parentId: z.uuid().nullable(),
     pinned: z.boolean(),
@@ -140,6 +141,7 @@ export const FeedItemSchema = z
       wallet: z.string(),
       body: z.string(),
       thesisId: z.uuid(),
+      viewCount: z.number().int().nonnegative(),
       positionId: z.uuid(),
       pinned: z.boolean(),
       eventType: z.literal("thesis"),
@@ -216,5 +218,12 @@ export const ThesisThreadSchema = CommentPage.extend({
   wallet: z.string(),
   mint: z.string(),
   positionId: z.uuid(),
+  viewCount: z.number().int().nonnegative(),
   pinned: z.union([CommentSchema, z.null()]),
 }).openapi("ThesisThread");
+export const ThesisViewSchema = ThesisThreadSchema.pick({ viewCount: true });
+export const MostLikedThesisSchema = z.object({
+  positionId: z.uuid(),
+  newerVersionCount: z.number().int().nonnegative(),
+  post: CommentSchema,
+});

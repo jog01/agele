@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
 import { createRoute, OpenAPIHono, type RouteConfig, z } from "@hono/zod-openapi";
 import { isAddress } from "@solana/kit";
+import { AppError } from "../lib/errors";
+import { getRedis } from "../lib/redis";
+import { withRedisDeadline } from "../lib/redis-deadline";
 import { optionalAuth, requireAuth } from "../middlewares/auth";
 import { errorResponse, MintParam } from "../schemas/common";
 import {
@@ -15,6 +19,7 @@ import {
   LeaderboardWindow,
   SocialPostBody,
   ThesisThreadSchema,
+  ThesisViewSchema,
 } from "../schemas/social";
 import type { AppEnv } from "../types";
 
@@ -188,6 +193,23 @@ const getThesis = createRoute({
     ...writeResponses,
   },
 });
+const viewThesis = createRoute({
+  method: "post",
+  path: "/tokens/{mint}/theses/{thesisId}/views",
+  tags: ["social"],
+  description: "Count a thesis open once per viewer per 24 hours. Anonymous requests are rate-limited.",
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  request: { params: getThesis.request.params },
+  responses: {
+    200: { content: { "application/json": { schema: ThesisViewSchema } }, description: "Updated view count" },
+    400: errorResponse("Invalid mint or thesis ID"),
+    401: errorResponse("Invalid bearer token"),
+    404: errorResponse("Unknown thesis"),
+    429: errorResponse("Anonymous thesis view limit exceeded"),
+    503: errorResponse("Authentication or view rate limiting temporarily unavailable"),
+  },
+});
 const postThesis = createRoute({
   method: "post",
   path: "/tokens/{mint}/theses",
@@ -327,6 +349,29 @@ export const socialController = new OpenAPIHono<AppEnv>()
     const { limit, cursor } = c.req.valid("query");
     const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
     return c.json(await container.social.thesisThread(mint, thesisId, limit, cursor, viewer?.id), 200);
+  })
+  .openapi(viewThesis, async (c) => {
+    const { mint, thesisId } = c.req.valid("param");
+    const { social, users } = c.get("container");
+    const auth = c.get("auth");
+    if (auth) {
+      const viewer = await users.ensureUser(auth);
+      return c.json(await social.recordThesisView(mint, thesisId, `user:${viewer.id}`), 200);
+    }
+    const peerKey = createHash("sha256")
+      .update(c.env?.clientIp ?? "unknown")
+      .digest("hex");
+    const count = await withRedisDeadline(() =>
+      getRedis().eval(
+        "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], 60) end; return n",
+        1,
+        `thesis-view-rate:${peerKey}`,
+      ),
+    ).catch(() => {
+      throw new AppError(503, "rate_limit_unavailable", "Thesis view rate limiting unavailable");
+    });
+    if (Number(count) > 30) throw new AppError(429, "rate_limited", "Anonymous thesis view limit exceeded");
+    return c.json(await social.recordThesisView(mint, thesisId, `anon:${peerKey}`), 200);
   })
   .openapi(postComment, async (c) => {
     const container = c.get("container");

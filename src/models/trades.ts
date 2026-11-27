@@ -32,6 +32,7 @@ export const trades = pgTable(
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),
     solPriceUsd: numeric({ precision: 38, scale: 18 }),
     priceUsd: numeric({ precision: 38, scale: 18 }).notNull(),
+    marketCapUsd: numeric({ precision: 38, scale: 18 }),
     realizedPnlUsd: numeric({ precision: 38, scale: 18 }),
     signature: text().notNull(),
     executedAt: timestamp({ withTimezone: true }).notNull(),

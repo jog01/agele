@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { decimal } from "../src/lib/decimal";
-import { comments, positions, theses, trades, users } from "../src/models";
+import { comments, positions, theses, thesisViewers, trades, users } from "../src/models";
 import { PgFollowRepository } from "../src/repositories/follow.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
-import { CommentSchema, FeedSchema, ThesisThreadSchema } from "../src/schemas/social";
+import { CommentSchema, FeedSchema, ThesisThreadSchema, ThesisViewSchema } from "../src/schemas/social";
 import { USDC_MINT } from "../src/services/helius-parser";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
@@ -138,15 +138,48 @@ describe("persistent discussions and follows", () => {
       expect((await app.request(`/v1/posts/${version.id}/pin`, { method: "PUT", headers })).status).toBe(204);
     }
     const restoredApp = makeApp();
+    const threadPath = `${token}/theses/${version.thesisId}`;
+    const binding = {
+      clientIp: `2001:db8::${crypto.randomUUID().slice(0, 4)}:${crypto.randomUUID().slice(0, 4)}`,
+    };
+    const views = await Promise.all(
+      Array.from({ length: 2 }, () => app.request(`${threadPath}/views`, { method: "POST" }, binding)),
+    );
+    expect(
+      (
+        await Promise.all(
+          views.map(async (response) => ThesisViewSchema.parse(await response.json()).viewCount),
+        )
+      ).sort(),
+    ).toEqual([1, 1]);
+    for (let i = 0; i < 2; i++) {
+      const result = await app.request(`${threadPath}/views`, {
+        method: "POST",
+        headers: { ...headers, "user-agent": `signed-in-${i}` },
+      });
+      expect(result.status).toBe(200);
+      expect(ThesisViewSchema.parse(await result.json()).viewCount).toBe(2);
+    }
+    expect(
+      (await app.request(`${token}/theses/${crypto.randomUUID()}/views`, { method: "POST" }, binding)).status,
+    ).toBe(404);
     const thread = ThesisThreadSchema.parse(
       await (await restoredApp.request(`${token}/theses/${version.thesisId}`, { headers })).json(),
     );
     expect(thread).toMatchObject({
       positionId: openPosition,
       wallet,
+      viewCount: 2,
       pinned: { id: version.id, likes: 1, likedByMe: true },
     });
     expect(thread.comments).toHaveLength(4);
+    expect(await (await restoredApp.request(`/v1/traders/${wallet}`)).json()).toMatchObject({
+      mostLikedThesis: {
+        positionId: openPosition,
+        newerVersionCount: 1,
+        post: { id: version.id, likes: 1, viewCount: 2 },
+      },
+    });
     const feed = FeedSchema.parse(await (await restoredApp.request("/v1/feed")).json());
     expect(feed.items.find((item) => item.id === version.id)).toMatchObject({
       source: "indexed",
@@ -160,6 +193,26 @@ describe("persistent discussions and follows", () => {
           .status,
       ).toBe(204);
     }
+    for (let i = 0; i < 28; i++) {
+      const result = await app.request(
+        `${threadPath}/views`,
+        {
+          method: "POST",
+          headers: { "user-agent": `anonymous-${i}`, "x-forwarded-for": `192.0.2.${i}` },
+        },
+        binding,
+      );
+      expect(result.status).toBe(i === 27 ? 429 : 200);
+      if (result.ok) expect(ThesisViewSchema.parse(await result.json()).viewCount).toBe(2);
+    }
+    await db
+      .update(thesisViewers)
+      .set({ countedAt: sql`now() - interval '24 hours 1 minute'` })
+      .where(
+        and(eq(thesisViewers.thesisId, version.thesisId!), eq(thesisViewers.viewerKey, `user:${viewerId}`)),
+      );
+    const renewed = await app.request(`${threadPath}/views`, { method: "POST", headers });
+    expect(ThesisViewSchema.parse(await renewed.json()).viewCount).toBe(3);
     expect((await write("comments", { body: "Rate limited." })).status).toBe(429);
   });
 

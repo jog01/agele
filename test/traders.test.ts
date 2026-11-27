@@ -5,11 +5,12 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../src/config/env";
 import { decimal } from "../src/lib/decimal";
-import { unauthorized } from "../src/lib/errors";
+import { AppError, unauthorized } from "../src/lib/errors";
 import * as schema from "../src/models";
 import { PgFollowRepository } from "../src/repositories/follow.repository";
 import { PgLeaderboardRepository } from "../src/repositories/leaderboard.repository";
 import { PgPortfolioRepository } from "../src/repositories/portfolio.repository";
+import { PgSocialRepository } from "../src/repositories/social.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import { PgTraderRepository } from "../src/repositories/trader.repository";
 import { UserTradesSchema } from "../src/schemas/portfolio";
@@ -19,6 +20,7 @@ import { LeaderboardService } from "../src/services/leaderboard.service";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { PortfolioService } from "../src/services/portfolio.service";
 import { LEADERBOARD_WINDOWS } from "../src/services/social/leaderboard-store";
+import { TokenService } from "../src/services/token.service";
 import { TraderService } from "../src/services/trader.service";
 import type { UserService } from "../src/services/user.service";
 import { MemoryLeaderboard } from "./fixtures/leaderboard-store";
@@ -36,7 +38,12 @@ describe("public trader profiles", () => {
   let price: number | null = 15;
   let priceError = false;
   let balanceCalls = 0;
-  const market = new MockMarketDataProvider();
+  const market = Object.assign(new MockMarketDataProvider(), {
+    async searchTokens(query: string) {
+      if (query === "@TRADER-") throw new AppError(502, "upstream_error", "Unavailable");
+      return query === "SOL" ? [(await originalGetToken(SOL))!] : [];
+    },
+  });
   const originalGetToken = market.getToken.bind(market);
   market.getToken = async (requested) => {
     if (priceError) throw new Error("Market unavailable");
@@ -59,9 +66,11 @@ describe("public trader profiles", () => {
     () => FIXED_NOW,
   );
   const repository = new PgTraderRepository(db);
-  const traders = new TraderService(repository, portfolio, leaderboard, follows, true, market);
+  const social = new PgSocialRepository(db);
+  const traders = new TraderService(repository, portfolio, leaderboard, follows, true, market, social);
   const app = testApp({
     market,
+    tokens: new TokenService(market),
     portfolio,
     leaderboard,
     leaderboardStore: store,
@@ -123,6 +132,7 @@ describe("public trader profiles", () => {
         side,
         amount: decimal(amount),
         usd: decimal(usd),
+        marketCapUsd: (1_000_000 * Number(usd)) / Number(amount),
         quoteMint: USDC_MINT,
         quoteAmount: decimal(usd),
         symbol: "TEST",
@@ -295,6 +305,9 @@ describe("public trader profiles", () => {
       wallet: wallets[0],
       quantity: 8,
       avgCostUsd: 8.75,
+      avgEntryMarketCapUsd: 110_000_000 / 12,
+      avgExitMarketCapUsd: 15_000_000,
+      totalInvestedUsd: 110,
       realizedPnlUsd: 20,
       unrealizedPnlUsd: 50,
     });
@@ -305,6 +318,159 @@ describe("public trader profiles", () => {
     );
     expect(await (await request(wallets[0], "/portfolio/history?range=all")).json()).toEqual({
       points: [{ time: Date.UTC(2026, 0, 1) / 1000, valueUsd: 120 }],
+    });
+  });
+
+  it("pages and filters position transactions without changing the position investment total", async () => {
+    const route = `/positions/${mint}/transactions`;
+    const first = await request(wallets[0], `${route}?minSizeUsd=60&limit=1`);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({
+      total: 2,
+      totalInvestedUsd: 110,
+      nextPage: 2,
+      transactions: [{ side: "sell", valueUsd: 60, marketCapUsd: 15_000_000 }],
+    });
+    expect(await (await request(wallets[0], `${route}?minSizeUsd=60&limit=1&page=2`)).json()).toMatchObject({
+      total: 2,
+      totalInvestedUsd: 110,
+      nextPage: null,
+      transactions: [{ side: "buy", valueUsd: 100, marketCapUsd: 10_000_000 }],
+    });
+  });
+
+  it("searches tokens and public traders together, including linked addresses", async () => {
+    const response = await app.request("/v1/search?q=SOL");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ tokens: [{ mint: SOL }], tokensUnavailable: false });
+    expect(await (await app.request("/v1/search?q=%40TRADER-")).json()).toMatchObject({
+      tokens: [],
+      tokensUnavailable: true,
+      traders: expect.arrayContaining([
+        expect.objectContaining({ wallet: wallets[0], handle: `trader-${mint}` }),
+      ]),
+    });
+    expect(await (await app.request(`/v1/search?q=${wallets[4]}`)).json()).toMatchObject({
+      traders: [{ wallet: wallets[0] }],
+    });
+    const fallback = legacyWallet.slice(0, 8);
+    expect(
+      await (await app.request(`/v1/search?q=%40${fallback.slice(0, 7).toLowerCase()}`)).json(),
+    ).toMatchObject({ traders: [{ wallet: legacyWallet, handle: fallback }] });
+  });
+
+  it("finds the displayed fallback handle of every linked wallet for a trader without a saved handle or address", async () => {
+    const aliases = [address(), address()];
+    const [user] = await db
+      .insert(schema.users)
+      .values({ privyDid: `did:privy:${aliases[0]}` })
+      .returning();
+    try {
+      await db.insert(schema.wallets).values(
+        aliases.map((wallet, index): typeof schema.wallets.$inferInsert => ({
+          userId: user!.id,
+          address: wallet,
+          chainType: "solana",
+          walletClientType: "external",
+          isPrimary: index === 0,
+        })),
+      );
+      for (const wallet of aliases) {
+        const profile = TraderProfileSchema.parse(await (await request(wallet)).json());
+        const prefix = profile.handle.slice(0, 7).toLowerCase();
+        const found = await app.request(`/v1/search?q=%40${prefix}`);
+        expect(await found.json()).toMatchObject({ traders: [{ wallet, handle: profile.handle }] });
+      }
+    } finally {
+      await db.delete(schema.users).where(inArray(schema.users.id, [user!.id]));
+    }
+  });
+
+  it("returns at most five closed positions ranked by realized dollars", async () => {
+    const writer = new PgTradeRepository(db);
+    const userId = ids[4]!;
+    const ranking = [5, -1, 11, 6, 10, 7];
+    const entries = new Map<number, string>();
+    for (const [i, pnl] of ranking.entries()) {
+      for (const [leg, side] of (["buy", "sell"] as const).entries()) {
+        const usd = decimal(String(side === "buy" ? 20 : 20 + pnl));
+        const row = await writer.record({
+          userId,
+          wallet: legacyWallet,
+          mint,
+          side,
+          usd,
+          symbol: "TEST",
+          name: "Test",
+          decimals: 6,
+          amount: decimal("1"),
+          quoteMint: USDC_MINT,
+          quoteAmount: usd,
+          imageUrl: null,
+          signature: crypto.randomUUID(),
+          timestamp: FIXED_NOW / 1000 - 90 * 86_400 + i * 10 + leg,
+        });
+        if (side === "buy") entries.set(pnl, row!.id);
+      }
+    }
+    const response = await request(legacyWallet);
+    const profile = TraderProfileSchema.parse(await response.json());
+    expect(
+      profile.topTrades.map(({ positionId, realizedPnlUsd, realizedPnlPct }) => ({
+        positionId,
+        realizedPnlUsd,
+        realizedPnlPct,
+      })),
+    ).toEqual(
+      [11, 10, 7, 6, 5].map((pnl) => ({
+        positionId: entries.get(pnl)!,
+        realizedPnlUsd: pnl,
+        realizedPnlPct: pnl * 5,
+      })),
+    );
+  });
+
+  it("returns hourly or daily public position changes without disclosing cash", async () => {
+    const day = Date.UTC(2026, 0, 1);
+    const hour = 3_600_000;
+    const repo = new PgPortfolioRepository(db);
+    const history = new PortfolioService(
+      repo,
+      market,
+      {
+        getBalances: async () => {
+          throw new Error("must not request balances");
+        },
+      },
+      () => FIXED_NOW,
+    );
+    await repo.upsertHourlyPositions(ids[0]!, new Date(FIXED_NOW - 24 * hour), "80");
+    await repo.upsertHourlyPositions(ids[0]!, new Date(FIXED_NOW), "120");
+    expect(await history.getPublicPositionsHistory(ids[0]!, "24h")).toMatchObject({
+      changeUsd: 40,
+      changePct: 50,
+      points: [{ valueUsd: 80 }, { valueUsd: 120 }],
+    });
+    await repo.upsertSnapshot(ids[1]!, new Date(day - 7 * 24 * hour).toISOString().slice(0, 10), "999", "80");
+    await repo.upsertSnapshot(
+      ids[1]!,
+      new Date(day - 30 * 24 * hour).toISOString().slice(0, 10),
+      "999",
+      "100",
+    );
+    await repo.upsertSnapshot(ids[1]!, "2026-01-01", "999", "120");
+    expect(await history.getPublicPositionsHistory(ids[1]!, "7d")).toMatchObject({
+      changeUsd: 40,
+      changePct: 50,
+    });
+    expect(await history.getPublicPositionsHistory(ids[1]!, "30d")).toMatchObject({
+      changeUsd: 20,
+      changePct: 20,
+    });
+    expect(await history.getPublicPositionsHistory(ids[3]!, "24h")).toEqual({
+      points: [],
+      changeUsd: null,
+      changePct: null,
     });
   });
 
@@ -359,7 +525,7 @@ describe("public trader profiles", () => {
   });
 
   it("reports null ranks if indexing is disabled or the Redis member is absent", async () => {
-    const unranked = new TraderService(repository, portfolio, leaderboard, follows, false, market);
+    const unranked = new TraderService(repository, portfolio, leaderboard, follows, false, market, social);
     expect((await unranked.profile(wallets[0]!)).profile.stats["24h"].rank).toBeNull();
     await store.replace({ "24h": [], "7d": [], "30d": [] });
     try {

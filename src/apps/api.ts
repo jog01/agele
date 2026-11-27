@@ -16,7 +16,10 @@ const container = createContainer();
 await container.feeSponsor.ready?.();
 if (env.CHAIN_SOURCE === "demo" && env.MARKET_DATA_PROVIDER === "indexed") await seedSocialDemo(getDb());
 const app = createApp(container);
-const server = Bun.serve({ port: env.PORT, fetch: app.fetch });
+const server = Bun.serve({
+  port: env.PORT,
+  fetch: (request, server) => app.fetch(request, { clientIp: server.requestIP(request)?.address }),
+});
 logger.info({ port: server.port }, "api listening");
 async function shutdown() {
   await server.stop();

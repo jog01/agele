@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   index,
@@ -49,6 +50,7 @@ export const theses = pgTable(
     positionId: uuid()
       .notNull()
       .references(() => trades.id),
+    viewCount: bigint({ mode: "number" }).notNull().default(0),
   },
   (t) => [unique().on(t.wallet, t.mint, t.positionId)],
 );
@@ -59,6 +61,21 @@ export const feedDiscussions = pgTable("feed_discussions", {
     .notNull()
     .references(() => tokens.mint, { onDelete: "cascade" }),
 });
+
+export const thesisViewers = pgTable(
+  "thesis_viewers",
+  {
+    thesisId: uuid()
+      .notNull()
+      .references(() => theses.id, { onDelete: "cascade" }),
+    viewerKey: text().notNull(),
+    countedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.thesisId, t.viewerKey] }),
+    index("thesis_viewers_counted_at_idx").on(t.countedAt),
+  ],
+);
 
 export const comments = pgTable(
   "comments",

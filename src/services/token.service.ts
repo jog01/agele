@@ -14,6 +14,11 @@ export class TokenService {
     return this.market.searchTokens(query);
   }
 
+  async searchTokensWithStatus(query: string) {
+    if (this.market.searchTokensWithStatus) return this.market.searchTokensWithStatus(query);
+    return { tokens: await this.searchTokens(query), tokensUnavailable: false };
+  }
+
   listPulse(limit: number) {
     if (!this.market.listPulse) throw new AppError(503, "service_unavailable", "Pulse unavailable");
     return this.market.listPulse(limit);

@@ -116,6 +116,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     positionQuote,
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
+  const socialRepository = new PgSocialRepository(getDb());
   const portfolio =
     overrides.portfolio ??
     new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances, Date.now, positionQuote);
@@ -150,6 +151,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         follows,
         leaderboard ? true : "database",
         market,
+        socialRepository,
         positionQuote,
       ),
     tradeIndexer,
@@ -164,7 +166,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     social:
       overrides.social ??
       new SocialService(
-        new PgSocialRepository(getDb()),
+        socialRepository,
         tokens,
         follows,
         (window, limit) =>

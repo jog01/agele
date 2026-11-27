@@ -42,6 +42,45 @@ export class PgTraderRepository {
     return user;
   }
 
+  search(query: string, limit: number) {
+    const prefix = query.replace(/^@/, "").toLowerCase();
+    const exact = sql`(u.wallet_address = ${query} or exists (
+      select 1 from wallets w where w.user_id = u.id and w.chain_type = 'solana' and w.address = ${query}
+    ))`;
+    const resultWallet = sql`coalesce(alias.address, ${canonical})`;
+    return this.db.execute<{
+      wallet: string;
+      handle: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+    }>(sql`
+      select result.wallet, result.handle,
+        result.display_name as "displayName", result.avatar_url as "avatarUrl"
+      from (
+        select ${resultWallet} as wallet, coalesce(u.handle, left(${resultWallet}, 8)) as handle,
+          u.display_name, u.avatar_url, ${exact} as exact
+        from users u
+        left join lateral (
+          select w.address from wallets w
+          where u.wallet_address is null and u.handle is null
+            and w.user_id = u.id and w.chain_type = 'solana'
+            and (w.address = ${query} or (
+              ${prefix} <> '' and starts_with(lower(left(w.address, 8)), ${prefix})
+            ))
+          order by (w.address = ${query}) desc, (lower(left(w.address, 8)) = ${prefix}) desc,
+            w.is_primary desc, w.address
+          limit 1
+        ) alias on true
+      ) result
+      where result.wallet is not null
+      and (result.exact or (${prefix} <> '' and (
+        starts_with(lower(result.handle), ${prefix}) or starts_with(lower(result.display_name), ${prefix})
+      )))
+      order by result.exact desc nulls last, (lower(result.handle) = ${prefix}) desc, result.handle, result.wallet
+      limit ${limit}
+    `);
+  }
+
   async linkedAddresses(userId: string) {
     const rows = await this.db
       .select({ address: wallets.address })
@@ -77,6 +116,10 @@ export class PgTraderRepository {
   async token(mint: string) {
     const [token] = await this.db.select().from(tokens).where(eq(tokens.mint, mint));
     return token;
+  }
+
+  tokens(mints: string[]) {
+    return this.db.select().from(tokens).where(inArray(tokens.mint, mints));
   }
 
   async mutualFollowers(addresses: string[], followed: string[]) {

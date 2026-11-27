@@ -231,6 +231,13 @@ describe("chain ingestion and indexed market data", () => {
       throw new Error("upstream unavailable");
     };
     expect((await indexed.searchTokens("SOL")).some(({ mint }) => mint === token.mint)).toBe(true);
+    const app = testApp({ tokens: new TokenService(indexed) });
+    const partial = await app.request("/v1/search?q=SOL");
+    expect(partial.status).toBe(200);
+    expect(await partial.json()).toMatchObject({
+      tokens: expect.arrayContaining([expect.objectContaining({ mint: token.mint })]),
+      tokensUnavailable: true,
+    });
     await expect(indexed.searchTokens("no-result")).rejects.toThrow("upstream unavailable");
   });
 

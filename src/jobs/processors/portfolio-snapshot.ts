@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import { getDb } from "../../db/client";
 import { logger } from "../../lib/logger";
 import { PgPortfolioRepository } from "../../repositories/portfolio.repository";
+import { PgSocialRepository } from "../../repositories/social.repository";
 import {
   createDemoPortfolioMarketDataProvider,
   createUpstreamMarketDataProvider,
@@ -47,5 +48,33 @@ export async function portfolioSnapshotProcessor(job: Job) {
     Date.now,
     createPositionQuote(live, createDemoPortfolioMarketDataProvider()),
   );
+  if (job.name === "hourly-public-portfolio-snapshot") {
+    await new PgSocialRepository(getDb()).pruneThesisViewers();
+    return createHourlyPortfolioSnapshotProcessor(repository, portfolio)(job);
+  }
   return createPortfolioSnapshotProcessor(repository, portfolio)(job);
+}
+
+export function createHourlyPortfolioSnapshotProcessor(
+  repository: PgPortfolioRepository,
+  portfolio: PortfolioService,
+  now: () => number = Date.now,
+) {
+  return async (_job: Job) => {
+    const hour = new Date(Math.floor(now() / 3_600_000) * 3_600_000);
+    await repository.pruneHourlyPositions(new Date(hour.getTime() - 48 * 3_600_000));
+    const users = await repository.usersForSnapshots();
+    let failed = 0;
+    for (const { userId } of users) {
+      try {
+        const { positions } = await portfolio.getPositionSummary(userId);
+        const value = positions.reduce((sum, position) => sum + position.valueUsd, 0);
+        await repository.upsertHourlyPositions(userId, hour, value.toFixed(18));
+      } catch (err) {
+        failed++;
+        logger.warn({ err, userId }, "Could not value portfolio for hourly public snapshot");
+      }
+    }
+    return { users: users.length, failed };
+  };
 }

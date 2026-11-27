@@ -239,6 +239,12 @@ export class SocialService {
     await this.repository.setPinned(thesisId, postId, pinned);
   }
 
+  async recordThesisView(mint: string, thesisId: string, viewerKey: string) {
+    const result = await this.repository.recordThesisView(mint, thesisId, viewerKey);
+    if (!result) throw notFound("Thesis");
+    return result;
+  }
+
   async react(postId: string, viewerId: string, liked: boolean) {
     if (!(await this.repository.getPost(postId))) throw notFound("Post");
     await this.repository.setReaction(postId, viewerId, liked);

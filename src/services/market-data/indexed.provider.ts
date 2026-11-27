@@ -152,6 +152,10 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
   }
 
   async searchTokens(query: string) {
+    return (await this.searchTokensWithStatus(query)).tokens;
+  }
+
+  async searchTokensWithStatus(query: string) {
     const prefix = query.toLowerCase();
     const rows = await this.tokens()
       .where(
@@ -163,9 +167,11 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
       .orderBy(desc(sql`${chainTokens.mint} = ${query}`), desc(chainTokens.launchedAt), chainTokens.mint)
       .limit(30);
     const demoSol = query === SOL_MINT && this.options.source === "demo";
+    let tokensUnavailable = false;
     const upstream =
       (await this.options.upstream.searchTokens?.(query).catch((err: unknown) => {
         if (!rows.length && !demoSol) throw err;
+        tokensUnavailable = true;
         return [];
       })) ?? [];
     const now = this.seconds();
@@ -187,7 +193,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     }
     const exact = tokens.get(query);
     tokens.delete(query);
-    return exact ? [exact, ...tokens.values()] : [...tokens.values()];
+    return { tokens: exact ? [exact, ...tokens.values()] : [...tokens.values()], tokensUnavailable };
   }
 
   async listPulse(limit: number): Promise<PulseDto> {
