@@ -124,6 +124,7 @@ class Simulation {
   private lastTime = -1;
   private tx = 0;
   private launches = 0;
+  private live = false;
 
   constructor(seed: number, traders?: readonly string[]) {
     this.random = mulberry32(seed);
@@ -131,7 +132,14 @@ class Simulation {
   }
 
   private address(size = 32) {
-    return base58.decode(Uint8Array.from({ length: size }, () => Math.floor(this.random() * 256)));
+    const bytes = this.live
+      ? crypto.getRandomValues(new Uint8Array(size))
+      : Uint8Array.from({ length: size }, () => Math.floor(this.random() * 256));
+    return base58.decode(bytes);
+  }
+
+  startLive() {
+    this.live = true;
   }
 
   private pick<T>(items: readonly T[]) {
@@ -267,6 +275,7 @@ export class DemoChainSimulator implements ChainEventSource {
     }
     if (signal.aborted) return;
     if (pending.length) await sink.ingest(pending);
+    sim.startLive();
     if (momentumMint) sim.coolOff(momentumMint, now() + 180);
     let nextLaunch = now();
     while (!signal.aborted) {

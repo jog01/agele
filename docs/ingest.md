@@ -63,7 +63,8 @@ sequenceDiagram
 The feed checks the Redis lease before each batch and aborts/awaits its source
 on loss or shutdown. The simulator replays three hours in batches and starts
 launching tokens every 5–12 seconds afterward. History is deterministic within
-each five-minute start epoch, so a replay within that epoch dedupes. Historical
+each five-minute start epoch, so a replay within that epoch dedupes. Live
+transactions get fresh signatures even when the feed restarts in the same epoch. Historical
 fills are available via REST but are not broadcast to WS clients. Tokens use
 synthetic base58 addresses and signatures with source `demo`, remote DiceBear
 images and a reusable trader wallet pool. A pump.fun-style curve starts with

@@ -34,7 +34,8 @@ describe("demo chain simulator", () => {
 
   it("is deterministic, backfills history, uses shared trader wallets and emits migrations followed by swaps", async () => {
     const events = await generate(73);
-    expect(await generate(73)).toEqual(events);
+    const history = (entries: ChainEvent[]) => entries.filter((entry) => entry.blockTime !== now() / 1000);
+    expect(history(await generate(73))).toEqual(history(events));
     expect((await generate(74))[0]).not.toEqual(events[0]);
     const launch = events.find((event) => event.kind === "TokenLaunched")!;
     expect(launch.blockTime).toBeLessThan(now() / 1000 - 10_000);
@@ -65,6 +66,17 @@ describe("demo chain simulator", () => {
       expect(encoder.encode(event.signature)).toHaveLength(64);
       expect(encoder.encode(event.mint)).toHaveLength(32);
     }
+  });
+
+  it("emits new live transaction identities on a restart in the same epoch", async () => {
+    const first = (await generate(73)).filter((event) => event.blockTime === now() / 1000);
+    const restarted = (await generate(73)).filter((event) => event.blockTime === now() / 1000);
+    const keys = new Set(first.map(({ signature, eventIndex }) => `${signature}:${eventIndex}`));
+    expect(first.some((event) => event.kind === "Trade")).toBe(true);
+    expect(restarted.some((event) => event.kind === "Trade")).toBe(true);
+    expect(restarted.filter(({ signature, eventIndex }) => keys.has(`${signature}:${eventIndex}`))).toEqual(
+      [],
+    );
   });
 
   it("uses virtual constant product reserves, caps graduation at 85 SOL and allows post-migration trading", () => {
