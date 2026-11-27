@@ -6,6 +6,7 @@ import {
   createDemoPortfolioMarketDataProvider,
   createUpstreamMarketDataProvider,
 } from "../../services/market-data";
+import { createPositionQuote } from "../../services/market-data/position-quotes";
 import { PortfolioService } from "../../services/portfolio.service";
 import { RpcWalletBalanceProvider } from "../../services/wallet-balance.provider";
 
@@ -38,12 +39,13 @@ export function createPortfolioSnapshotProcessor(
 
 export async function portfolioSnapshotProcessor(job: Job) {
   const repository = new PgPortfolioRepository(getDb());
+  const live = createUpstreamMarketDataProvider();
   const portfolio = new PortfolioService(
     repository,
-    createUpstreamMarketDataProvider(),
+    live,
     new RpcWalletBalanceProvider(),
     Date.now,
-    createDemoPortfolioMarketDataProvider(),
+    createPositionQuote(live, createDemoPortfolioMarketDataProvider()),
   );
   return createPortfolioSnapshotProcessor(repository, portfolio)(job);
 }

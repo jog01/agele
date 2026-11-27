@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../db/client";
 import { AppError } from "../../lib/errors";
 import { chainCandles, chainTokens, chainTrades } from "../../models/chain";
@@ -25,6 +25,8 @@ interface Options {
   now?: () => number;
 }
 
+const SOLANA_QUOTE_MAX_AGE_SECONDS = 5 * 60;
+
 function hasIndexedMarketData(token: TokenRow | undefined): token is TokenRow {
   return !!token && (token.source === "demo" || token.lastTradeKey !== null || token.priceUsd > 0);
 }
@@ -48,9 +50,9 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     return this.db.select().from(chainTokens);
   }
 
-  private async indexedToken(mint: string) {
+  private async indexedToken(mint: string, source = this.options.source) {
     const [token] = await this.tokens().where(
-      and(eq(chainTokens.source, this.options.source), eq(chainTokens.mint, mint)),
+      and(eq(chainTokens.source, source), eq(chainTokens.mint, mint)),
     );
     return token;
   }
@@ -86,6 +88,35 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
       if (upstream) return upstream;
     }
     return tokenDto(row, await tokenStats(this.db, row, this.seconds()));
+  }
+
+  async getIndexedToken(mint: string) {
+    const row = await this.indexedToken(mint);
+    return hasIndexedMarketData(row) ? tokenDto(row, await tokenStats(this.db, row, this.seconds())) : null;
+  }
+
+  async getIndexedSolanaQuote(mint: string) {
+    const row = await this.indexedToken(mint, "solana");
+    if (!row || !Number.isFinite(row.priceUsd) || row.priceUsd <= 0) return null;
+    const now = this.seconds();
+    const [stats, matchingTrades] = await Promise.all([
+      tokenStats(this.db, row, now),
+      row.lastTradeKey === null
+        ? []
+        : this.db
+            .select({ time: chainTrades.time })
+            .from(chainTrades)
+            .where(
+              and(
+                eq(chainTrades.source, row.source),
+                eq(chainTrades.mint, mint),
+                eq(chainTrades.orderKey, row.lastTradeKey),
+                between(chainTrades.time, now - SOLANA_QUOTE_MAX_AGE_SECONDS, now),
+              ),
+            )
+            .limit(1),
+    ]);
+    return { token: tokenDto(row, stats), fresh: matchingTrades.length > 0 };
   }
 
   async getHistoricalPriceUsd(mint: string, minute: number) {

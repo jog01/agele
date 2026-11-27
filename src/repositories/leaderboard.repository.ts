@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, getTableColumns, gte, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { type Position, positions, type Trade, trades, users } from "../models";
 
@@ -14,8 +14,9 @@ export class PgLeaderboardRepository {
 
   async getPositions(userId?: string) {
     return this.db
-      .select()
+      .select({ ...getTableColumns(positions), seeded: users.demo })
       .from(positions)
+      .innerJoin(users, eq(users.id, positions.userId))
       .where(userId ? eq(positions.userId, userId) : undefined);
   }
 
@@ -30,7 +31,7 @@ export class PgLeaderboardRepository {
 
 export interface LeaderboardRepository {
   getTrades(since: Date, userId?: string): Promise<Trade[]>;
-  getPositions(userId?: string): Promise<Position[]>;
+  getPositions(userId?: string): Promise<(Position & { seeded?: boolean })[]>;
   getUsers(
     ids: string[],
   ): Promise<{ id: string; wallet: string | null; handle: string | null; demo?: boolean }[]>;

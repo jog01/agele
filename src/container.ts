@@ -20,6 +20,7 @@ import {
   createUpstreamMarketDataProvider,
   type MarketDataProvider,
 } from "./services/market-data";
+import { createPositionQuote, type PositionQuote } from "./services/market-data/position-quotes";
 import { PortfolioService } from "./services/portfolio.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
 import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
@@ -65,6 +66,10 @@ export interface Container {
 export function createContainer(overrides: Partial<Container> = {}): Container {
   const market = overrides.market ?? createMarketDataProvider();
   const walletMarket = overrides.market ?? createUpstreamMarketDataProvider();
+  const demoMarket = createDemoPortfolioMarketDataProvider();
+  const positionQuote: PositionQuote = overrides.market
+    ? (mint) => walletMarket.getToken(mint)
+    : createPositionQuote(walletMarket, demoMarket);
   const tokens = overrides.tokens ?? new TokenService(market);
   const privyUsers = overrides.privyUsers ?? createPrivyUserDirectory();
   const feeSponsor = env.SPONSOR_ENABLED
@@ -90,7 +95,14 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   const leaderboard =
     overrides.leaderboard ??
     (env.HELIUS_WEBHOOK_SECRET
-      ? new LeaderboardService(new PgLeaderboardRepository(getDb()), leaderboardStore, walletMarket, events)
+      ? new LeaderboardService(
+          new PgLeaderboardRepository(getDb()),
+          leaderboardStore,
+          walletMarket,
+          events,
+          Date.now,
+          positionQuote,
+        )
       : undefined);
   const tradeIndexer =
     overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), walletMarket);
@@ -100,17 +112,13 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     leaderboardStore,
     walletMarket,
     events,
+    Date.now,
+    positionQuote,
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
     overrides.portfolio ??
-    new PortfolioService(
-      new PgPortfolioRepository(getDb()),
-      walletMarket,
-      balances,
-      Date.now,
-      overrides.market ?? createDemoPortfolioMarketDataProvider(),
-    );
+    new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances, Date.now, positionQuote);
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),
@@ -142,6 +150,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         follows,
         leaderboard ? true : "database",
         market,
+        positionQuote,
       ),
     tradeIndexer,
     privyUsers,
@@ -149,14 +158,21 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     auth: overrides.auth ?? createAuthVerifier(),
     tokens,
     tokenActivity:
-      overrides.tokenActivity ?? new TokenActivityService(new PgTokenActivityRepository(getDb()), market),
+      overrides.tokenActivity ??
+      new TokenActivityService(new PgTokenActivityRepository(getDb()), market, positionQuote),
     follows,
     social:
       overrides.social ??
-      new SocialService(new PgSocialRepository(getDb()), tokens, follows, (window, limit) =>
-        leaderboard
-          ? leaderboard.leaderboard(window, limit)
-          : databaseRanks.databaseLeaderboard(window, limit),
+      new SocialService(
+        new PgSocialRepository(getDb()),
+        tokens,
+        follows,
+        (window, limit) =>
+          leaderboard
+            ? leaderboard.leaderboard(window, limit)
+            : databaseRanks.databaseLeaderboard(window, limit),
+        undefined,
+        overrides.tokens ? undefined : positionQuote,
       ),
     users: overrides.users ?? new UserService(new PgUserRepository(getDb()), privyUsers),
   };

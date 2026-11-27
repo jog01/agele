@@ -174,24 +174,31 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     return (await this.priceQuotes([mint]))[mint]?.usdPrice;
   }
 
-  private async withPrices(tokens: z.infer<typeof metadata>): Promise<TokenDto[]> {
+  private async withPrices(tokens: z.infer<typeof metadata>, fallback?: TokenDto): Promise<TokenDto[]> {
     const quotes: z.infer<typeof prices> = {};
     for (let i = 0; i < tokens.length; i += 50) {
       Object.assign(quotes, await this.priceQuotes(tokens.slice(i, i + 50).map((token) => token.id)));
     }
-    return tokens.map((token) => ({
-      mint: token.id,
-      symbol: token.symbol,
-      name: token.name,
-      decimals: token.decimals,
-      imageUrl: token.icon ?? null,
-      priceUsd: quotes[token.id]?.usdPrice ?? token.usdPrice ?? 0,
-      priceChange24hPct: quotes[token.id]?.priceChange24h ?? token.stats24h?.priceChange ?? 0,
-      marketCapUsd: token.mcap ?? 0,
-      liquidityUsd: token.liquidity ?? 0,
-      holders: token.holderCount ?? 0,
-      volume24hUsd: (token.stats24h?.buyVolume ?? 0) + (token.stats24h?.sellVolume ?? 0),
-    }));
+    return tokens.map((token) => {
+      const { buyVolume, sellVolume } = token.stats24h ?? {};
+      return {
+        mint: token.id,
+        symbol: token.symbol,
+        name: token.name,
+        decimals: token.decimals,
+        imageUrl: token.icon ?? fallback?.imageUrl ?? null,
+        priceUsd: quotes[token.id]?.usdPrice ?? token.usdPrice ?? 0,
+        priceChange24hPct:
+          quotes[token.id]?.priceChange24h ?? token.stats24h?.priceChange ?? fallback?.priceChange24hPct ?? 0,
+        marketCapUsd: token.mcap ?? fallback?.marketCapUsd ?? 0,
+        liquidityUsd: token.liquidity ?? fallback?.liquidityUsd ?? 0,
+        holders: token.holderCount ?? fallback?.holders ?? 0,
+        volume24hUsd:
+          buyVolume != null || sellVolume != null
+            ? (buyVolume ?? 0) + (sellVolume ?? 0)
+            : (fallback?.volume24hUsd ?? 0),
+      };
+    });
   }
 
   private searchMetadata(query: string) {
@@ -207,9 +214,9 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     return this.withPrices(tokens.slice(0, limit));
   }
 
-  async getToken(mint: string) {
+  async getToken(mint: string, fallback?: TokenDto) {
     const exact = (await this.searchMetadata(mint)).find((token) => token.id === mint);
-    return exact ? (await this.withPrices([exact]))[0]! : null;
+    return exact ? (await this.withPrices([exact], fallback))[0]! : null;
   }
 
   async searchTokens(query: string) {

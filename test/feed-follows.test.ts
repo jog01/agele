@@ -1,11 +1,25 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { createApp } from "../src/app";
+import { env } from "../src/config/env";
+import { createContainer } from "../src/container";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
+import { decimal } from "../src/lib/decimal";
 import { unauthorized } from "../src/lib/errors";
-import { feedDiscussions, positions, trades, users } from "../src/models";
+import {
+  chainTokens,
+  chainTrades,
+  feedDiscussions,
+  positions,
+  tokens,
+  trades,
+  users,
+  wallets,
+} from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
+import { PgTradeRepository } from "../src/repositories/trade.repository";
 import {
   CommentPage,
   CommentSchema,
@@ -26,6 +40,189 @@ const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
 const fixture = socialDemoFixture();
 beforeAll(fixture.setUp);
 afterAll(fixture.tearDown);
+
+it("prices seeded social positions locally when keyless Jupiter returns 429", async () => {
+  const originalKey = env.JUPITER_API_KEY;
+  env.JUPITER_API_KEY = undefined;
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => new Response(null, { status: 429 }), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+  try {
+    const app = createApp(createContainer());
+    const [feed, leaderboard] = await Promise.all([
+      app.request("/v1/feed?minPortfolioUsd=1"),
+      app.request("/v1/leaderboard?window=30d"),
+    ]);
+    expect([feed.status, leaderboard.status]).toEqual([200, 200]);
+    const { items } = FeedSchema.parse(await feed.json());
+    const trade = items.find((item) => item.kind === "trade" && item.priceSinceFirstBuyPct !== null);
+    expect(trade).toBeDefined();
+    const { entries } = (await leaderboard.json()) as { entries: LeaderboardEntryDto[] };
+    expect(entries.some((entry) => entry.source === "demo" && entry.pnlUsd !== 0)).toBe(true);
+    const { wallet, mint } = trade!;
+    const profile = await app.request(`/v1/traders/${wallet}`);
+    const position = await app.request(`/v1/traders/${wallet}/positions/${mint}`);
+    const traders = await app.request(`/v1/tokens/${mint}/traders`);
+    expect([profile.status, position.status, traders.status]).toEqual([200, 200, 200]);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await getDb().update(users).set({ demo: false }).where(eq(users.walletAddress, wallet));
+    try {
+      const [mixedFeed, mixedRanks] = await Promise.all([
+        app.request(`/v1/feed?wallet=${wallet}`),
+        app.request("/v1/leaderboard?window=30d"),
+      ]);
+      expect([mixedFeed.status, mixedRanks.status]).toEqual([200, 200]);
+      const mixed = FeedSchema.parse(await mixedFeed.json());
+      expect(mixed.items.length).toBeGreaterThan(0);
+      expect(mixed.items.every((item) => item.marketCapUsd === null)).toBe(true);
+      expect(fetch).toHaveBeenCalled();
+    } finally {
+      await getDb().update(users).set({ demo: true }).where(eq(users.walletAddress, wallet));
+    }
+  } finally {
+    env.JUPITER_API_KEY = originalKey;
+    fetch.mockRestore();
+  }
+});
+
+it("uses fresh indexed quotes and refreshes stale Solana quotes through Jupiter", async () => {
+  const db = getDb();
+  const address = () => getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
+  const wallet = address();
+  const mint = address();
+  const [user] = await db
+    .insert(users)
+    .values({ privyDid: `did:privy:${wallet}`, walletAddress: wallet })
+    .returning();
+  let jupiterAvailable = true;
+  let jupiterMarketCap: number | null = 800;
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: Parameters<typeof globalThis.fetch>[0]) => {
+        if (!jupiterAvailable) return new Response(null, { status: 429 });
+        return new URL(String(input)).pathname === "/price/v3"
+          ? Response.json({ [mint]: { usdPrice: 8 } })
+          : Response.json([{ id: mint, symbol: "TEST", name: "Test", decimals: 6, mcap: jupiterMarketCap }]);
+      },
+      {
+        preconnect: globalThis.fetch.preconnect,
+      },
+    ),
+  );
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    await db
+      .insert(wallets)
+      .values({ userId: user!.id, address: wallet, chainType: "solana", walletClientType: "privy" });
+    await new PgTradeRepository(db).record({
+      userId: user!.id,
+      wallet,
+      mint,
+      symbol: "TEST",
+      name: "Test",
+      decimals: 6,
+      imageUrl: null,
+      amount: decimal("2"),
+      usd: decimal("4"),
+      quoteAmount: decimal("4"),
+      quoteMint: SOL,
+      signature: address(),
+      side: "buy",
+      timestamp,
+    });
+    const pool = address();
+    const orderKey = "0:0:1";
+    await db.insert(chainTokens).values({
+      source: "solana",
+      mint,
+      venue: "pump.fun",
+      pool,
+      creator: wallet,
+      name: "Test",
+      symbol: "TEST",
+      decimals: 6,
+      totalSupplyRaw: "100000000",
+      launchedAt: timestamp,
+      priceUsd: 5,
+      lastTradeKey: orderKey,
+    });
+    await db.insert(chainTrades).values({
+      source: "solana",
+      signature: address(),
+      mint,
+      eventIndex: 1,
+      trader: wallet,
+      side: "buy",
+      venue: "pump.fun",
+      pool,
+      time: timestamp,
+      orderKey,
+      tokenAmountRaw: "2000000",
+      solAmountLamports: "50000000",
+      priceUsd: 5,
+      amountUsd: 10,
+    });
+    const container = createContainer();
+    const app = createApp(container);
+    const feed = await app.request(`/v1/feed?wallet=${wallet}&minPortfolioUsd=9`);
+    expect(feed.status).toBe(200);
+    expect(FeedSchema.parse(await feed.json()).items).toMatchObject([
+      { mint, marketCapUsd: 500, priceSinceFirstBuyPct: 150 },
+    ]);
+    const rank = await app.request("/v1/leaderboard?window=30d");
+    expect(rank.status).toBe(200);
+    const { entries } = (await rank.json()) as { entries: LeaderboardEntryDto[] };
+    expect(entries.find((entry) => entry.wallet === wallet)?.pnlUsd).toBe(6);
+    expect((await container.portfolio.getPositionSummary(user!.id)).unrealizedPnlUsd).toBe(6);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await db
+      .update(chainTrades)
+      .set({ time: timestamp - 600 })
+      .where(eq(chainTrades.mint, mint));
+    const stale = await app.request(`/v1/feed?wallet=${wallet}`);
+    expect(FeedSchema.parse(await stale.json()).items).toMatchObject([
+      { mint, marketCapUsd: 800, priceSinceFirstBuyPct: 300 },
+    ]);
+    expect((await container.portfolio.getPositionSummary(user!.id)).unrealizedPnlUsd).toBe(12);
+
+    jupiterMarketCap = null;
+    const partialApp = createApp(createContainer());
+    const partial = await partialApp.request(`/v1/feed?wallet=${wallet}&minMarketCapUsd=500`);
+    expect(partial.status).toBe(200);
+    expect(FeedSchema.parse(await partial.json()).items).toMatchObject([
+      { mint, marketCapUsd: 500, priceSinceFirstBuyPct: 300 },
+    ]);
+
+    jupiterAvailable = false;
+    fetch.mockClear();
+    const unavailableApp = createApp(createContainer());
+    const outage = await unavailableApp.request(`/v1/feed?wallet=${wallet}`);
+    expect(FeedSchema.parse(await outage.json()).items).toMatchObject([
+      { mint, marketCapUsd: 500, priceSinceFirstBuyPct: 150 },
+    ]);
+    expect(fetch).toHaveBeenCalled();
+
+    await db.update(chainTokens).set({ priceUsd: 0 }).where(eq(chainTokens.mint, mint));
+    const unpriced = await unavailableApp.request(`/v1/feed?wallet=${wallet}`);
+    expect(unpriced.status).toBe(200);
+    expect(FeedSchema.parse(await unpriced.json()).items).toMatchObject([{ mint, marketCapUsd: null }]);
+    expect(fetch).toHaveBeenCalled();
+  } finally {
+    fetch.mockRestore();
+    await db.delete(positions).where(eq(positions.userId, user!.id));
+    await db.delete(trades).where(eq(trades.userId, user!.id));
+    await db.delete(wallets).where(eq(wallets.userId, user!.id));
+    await db.delete(users).where(eq(users.id, user!.id));
+    await db.delete(chainTrades).where(eq(chainTrades.mint, mint));
+    await db.delete(chainTokens).where(eq(chainTokens.mint, mint));
+    await db.delete(tokens).where(eq(tokens.mint, mint));
+  }
+});
+
 function setup(tokens?: TokenService, id = viewerId) {
   const follows = new InMemoryFollowRepository();
   const app = testApp({

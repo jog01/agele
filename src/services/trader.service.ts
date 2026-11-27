@@ -5,6 +5,7 @@ import type { FollowRepository } from "../repositories/follow.repository";
 import type { PgTraderRepository } from "../repositories/trader.repository";
 import type { LeaderboardService } from "./leaderboard.service";
 import type { MarketDataProvider } from "./market-data";
+import { optionalQuote, type PositionQuote } from "./market-data/position-quotes";
 import type { PortfolioService } from "./portfolio.service";
 import { positionEpisodes } from "./position-episodes";
 import { decodeCursor, encodeCursor } from "./social/cursor";
@@ -19,7 +20,8 @@ export class TraderService {
     private readonly leaderboard: LeaderboardService,
     private readonly follows: FollowRepository,
     private readonly ranks: boolean | "database",
-    private readonly market: MarketDataProvider,
+    market: MarketDataProvider,
+    private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
   ) {}
 
   private async resolve(wallet: string) {
@@ -92,7 +94,7 @@ export class TraderService {
     const episodes = positionEpisodes(fills);
     const episode = positionId ? episodes.find((item) => item.id === positionId) : episodes.at(-1);
     if (!episode || !token) throw notFound("Position");
-    const market = await this.market.getToken(mint);
+    const market = episode.closedAt ? null : await optionalQuote(() => this.positionQuote(mint, user.demo));
     const remaining = number(episode.quantity);
     const entry = number(divide(episode.invested, episode.bought));
     const avgCost = episode.quantity ? number(divide(episode.costBasis, episode.quantity)) : entry;

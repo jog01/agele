@@ -52,7 +52,10 @@ const EnvSchema = z
     SPONSOR_REFERRAL_ACCOUNT: z.string().optional(),
     SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
-    MARKET_DATA_PROVIDER: z.enum(["indexed", "live"]).default("indexed"),
+    MARKET_DATA_PROVIDER: z
+      .enum(["indexed", "live", "mock"])
+      .default("indexed")
+      .transform((v) => (v === "mock" ? "indexed" : v)),
 
     OTEL_SERVICE_NAME: z.string().default("fomo-api"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
