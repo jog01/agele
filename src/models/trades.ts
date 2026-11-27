@@ -16,6 +16,7 @@ export const trades = pgTable(
     mint: text()
       .notNull()
       .references(() => tokens.mint),
+    walletAddress: text(),
     side: tradeSide().notNull(),
     tokenAmount: numeric({ precision: 38, scale: 18 }).notNull(),
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),

@@ -32,6 +32,21 @@ describe("social controller", () => {
     expect((await app.request(`/v1/tokens/${SOL}/comments`)).status).toBe(200);
     expect((await app.request("/v1/tokens/11111111111111111111111111111111/comments")).status).toBe(404);
   });
+
+  it("documents that a thesis thread can have no pinned version", async () => {
+    const document = await (await app.request("/openapi.json")).json();
+    expect(document).toMatchObject({
+      components: {
+        schemas: {
+          ThesisThread: {
+            properties: {
+              pinned: { anyOf: [{ $ref: "#/components/schemas/Comment" }, { type: "null" }] },
+            },
+          },
+        },
+      },
+    });
+  });
 });
 
 describe("persistent discussions and follows", () => {
@@ -75,7 +90,11 @@ describe("persistent discussions and follows", () => {
         imageUrl: null,
       });
     oldPosition = (await fill("buy", 15_000))!.id;
-    await fill("sell", 14_000);
+    const closingFill = (await fill("sell", 15_000))!;
+    await db
+      .update(trades)
+      .set({ id: "00000000-0000-4000-8000-000000000000" })
+      .where(eq(trades.id, closingFill.id));
     closedPosition = (await fill("buy", 200))!.id;
     await fill("sell", 150);
     openPosition = (await fill("buy", 100))!.id;
@@ -95,9 +114,11 @@ describe("persistent discussions and follows", () => {
     ).toBe(201);
     expect((await write("comments", { body: "x".repeat(201) })).status).toBe(400);
     expect((await write("comments", { body: "Join discord.gg/rooms" })).status).toBe(422);
+    viewer.walletAddress = getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
     const first = await write("theses", { body: "x".repeat(3000), positionId: openPosition });
     expect(first.status).toBe(201);
     const version = CommentSchema.parse(await first.json());
+    viewer.walletAddress = getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
     const update = CommentSchema.parse(
       await (await write("theses", { body: "Scaled down after the bounce." })).json(),
     );
@@ -122,6 +143,7 @@ describe("persistent discussions and follows", () => {
     );
     expect(thread).toMatchObject({
       positionId: openPosition,
+      wallet,
       pinned: { id: version.id, likes: 1, likedByMe: true },
     });
     expect(thread.comments).toHaveLength(4);

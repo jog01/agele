@@ -21,7 +21,7 @@ const market = createMarketDataProvider();
 const leaderboard = env.HELIUS_WEBHOOK_SECRET
   ? new LeaderboardService(new PgLeaderboardRepository(getDb()), new RedisLeaderboard(), market, events)
   : undefined;
-const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
+const indexer = new TradeIndexer(new PgTradeRepository(getDb()), createMarketDataProvider("live"));
 if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
 const connection = getRedis();
 const scheduledRetention = { removeOnComplete: 100, removeOnFail: 500 };

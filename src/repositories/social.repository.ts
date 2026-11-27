@@ -278,19 +278,24 @@ export class PgSocialRepository {
       }
       let thesisId = input.thesisId;
       if (episode) {
-        const identity = { ...episode, mint: input.mint, userId: input.userId };
-        await tx.insert(theses).values(identity).onConflictDoNothing();
         const [thesis] = await tx
           .select({ id: theses.id })
           .from(theses)
           .where(
             and(
-              eq(theses.wallet, episode.wallet),
+              eq(theses.userId, input.userId),
               eq(theses.mint, input.mint),
               eq(theses.positionId, episode.positionId),
             ),
           );
-        thesisId = thesis!.id;
+        if (thesis) thesisId = thesis.id;
+        else {
+          const [created] = await tx
+            .insert(theses)
+            .values({ ...episode, mint: input.mint, userId: input.userId })
+            .returning({ id: theses.id });
+          thesisId = created!.id;
+        }
       }
       const [row] = await tx
         .insert(comments)
