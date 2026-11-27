@@ -43,6 +43,7 @@
     "@privy-io/node": "^0.41.0",
     "@scalar/hono-api-reference": "^0.12.22",
     "@solana/kit": "^8.6.0",
+    "@triton-one/yellowstone-grpc": "4.0.2",
     "bullmq": "^6.7.7",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.19",

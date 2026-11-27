@@ -1,6 +1,6 @@
 {
-  "id": "d56d3e08-dd4d-4d1f-8fa6-f562aa5f0fa0",
-  "prevId": "453242a7-2880-401b-8dcd-f1ae732a7e7c",
+  "id": "ce7fa88f-f767-4d52-af77-6602e4f67f11",
+  "prevId": "d8c7b208-d8e0-4095-b763-d2181ffe136a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -417,12 +417,6 @@
           "type": "numeric(38, 18)",
           "primaryKey": false,
           "notNull": true
-        },
-        "positions_value_usd": {
-          "name": "positions_value_usd",
-          "type": "numeric(38, 18)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -927,12 +921,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "wallet_address": {
-          "name": "wallet_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "side": {
           "name": "side",
           "type": "trade_side",
@@ -982,6 +970,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sol_price_usd": {
+          "name": "sol_price_usd",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1277,6 +1271,106 @@
           "nullsNotDistinct": false,
           "columns": [
             "address"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pending_trade_fills": {
+      "name": "pending_trade_fills",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "pending_trade_fills_position_idx": {
+          "name": "pending_trade_fills_position_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "mint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "executed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_trade_fills_user_id_users_id_fk": {
+          "name": "pending_trade_fills_user_id_users_id_fk",
+          "tableFrom": "pending_trade_fills",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "pending_trade_fills_userId_signature_unique": {
+          "name": "pending_trade_fills_userId_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "signature"
           ]
         }
       },

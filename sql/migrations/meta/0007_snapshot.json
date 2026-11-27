@@ -1,6 +1,6 @@
 {
-  "id": "453242a7-2880-401b-8dcd-f1ae732a7e7c",
-  "prevId": "ce7fa88f-f767-4d52-af77-6602e4f67f11",
+  "id": "d8c7b208-d8e0-4095-b763-d2181ffe136a",
+  "prevId": "3c89be09-f2a7-4c78-83aa-abb5a8caca7e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -55,19 +55,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "parent_id": {
-          "name": "parent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pinned": {
-          "name": "pinned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -103,58 +90,6 @@
           "columns": [
             {
               "expression": "thesis_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_parent_idx": {
-          "name": "comments_parent_idx",
-          "columns": [
-            {
-              "expression": "parent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_pinned_thesis_idx": {
-          "name": "comments_pinned_thesis_idx",
-          "columns": [
-            {
-              "expression": "thesis_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"comments\".\"pinned\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "comments_user_created_idx": {
-          "name": "comments_user_created_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -215,25 +150,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "comments_thesis_id_theses_id_fk": {
-          "name": "comments_thesis_id_theses_id_fk",
-          "tableFrom": "comments",
-          "tableTo": "theses",
-          "columnsFrom": [
-            "thesis_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "comments_parent_id_comments_id_fk": {
-          "name": "comments_parent_id_comments_id_fk",
+        "comments_thesis_id_comments_id_fk": {
+          "name": "comments_thesis_id_comments_id_fk",
           "tableFrom": "comments",
           "tableTo": "comments",
           "columnsFrom": [
-            "parent_id"
+            "thesis_id"
           ],
           "columnsTo": [
             "id"
@@ -246,84 +168,11 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "comments_thesis_shape": {
-          "name": "comments_thesis_shape",
-          "value": "\"comments\".\"kind\" <> 'thesis' OR (\"comments\".\"parent_id\" IS NULL AND \"comments\".\"thesis_id\" IS NOT NULL)"
-        },
-        "comments_pin_shape": {
-          "name": "comments_pin_shape",
-          "value": "not \"comments\".\"pinned\" OR \"comments\".\"kind\" = 'thesis'"
+        "comments_thesis_no_parent": {
+          "name": "comments_thesis_no_parent",
+          "value": "\"comments\".\"kind\" <> 'thesis' OR \"comments\".\"thesis_id\" IS NULL"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.social_follow_actions": {
-      "name": "social_follow_actions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "social_follow_actions_user_time_idx": {
-          "name": "social_follow_actions_user_time_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "social_follow_actions_user_id_users_id_fk": {
-          "name": "social_follow_actions_user_id_users_id_fk",
-          "tableFrom": "social_follow_actions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.follows": {
@@ -754,100 +603,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.theses": {
-      "name": "theses",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "wallet": {
-          "name": "wallet",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mint": {
-          "name": "mint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position_id": {
-          "name": "position_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "theses_user_id_users_id_fk": {
-          "name": "theses_user_id_users_id_fk",
-          "tableFrom": "theses",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "theses_mint_tokens_mint_fk": {
-          "name": "theses_mint_tokens_mint_fk",
-          "tableFrom": "theses",
-          "tableTo": "tokens",
-          "columnsFrom": [
-            "mint"
-          ],
-          "columnsTo": [
-            "mint"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "theses_position_id_trades_id_fk": {
-          "name": "theses_position_id_trades_id_fk",
-          "tableFrom": "theses",
-          "tableTo": "trades",
-          "columnsFrom": [
-            "position_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "theses_wallet_mint_positionId_unique": {
-          "name": "theses_wallet_mint_positionId_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "wallet",
-            "mint",
-            "position_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.tokens": {
       "name": "tokens",
       "schema": "",
@@ -921,12 +676,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "wallet_address": {
-          "name": "wallet_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "side": {
           "name": "side",
           "type": "trade_side",
@@ -976,6 +725,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sol_price_usd": {
+          "name": "sol_price_usd",
+          "type": "numeric(38, 18)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1271,6 +1026,106 @@
           "nullsNotDistinct": false,
           "columns": [
             "address"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pending_trade_fills": {
+      "name": "pending_trade_fills",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "pending_trade_fills_position_idx": {
+          "name": "pending_trade_fills_position_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "mint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "executed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_trade_fills_user_id_users_id_fk": {
+          "name": "pending_trade_fills_user_id_users_id_fk",
+          "tableFrom": "pending_trade_fills",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "pending_trade_fills_userId_signature_unique": {
+          "name": "pending_trade_fills_userId_signature_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "signature"
           ]
         }
       },

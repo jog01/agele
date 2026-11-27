@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { index, numeric, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  bigserial,
+  index,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { tokens } from "./tokens";
 import { users } from "./users";
 
@@ -20,6 +30,7 @@ export const trades = pgTable(
     side: tradeSide().notNull(),
     tokenAmount: numeric({ precision: 38, scale: 18 }).notNull(),
     quoteAmountUsd: numeric({ precision: 38, scale: 18 }).notNull(),
+    solPriceUsd: numeric({ precision: 38, scale: 18 }),
     priceUsd: numeric({ precision: 38, scale: 18 }).notNull(),
     realizedPnlUsd: numeric({ precision: 38, scale: 18 }),
     signature: text().notNull(),
@@ -35,3 +46,20 @@ export const trades = pgTable(
 );
 
 export type Trade = typeof trades.$inferSelect;
+
+export const pendingTradeFills = pgTable(
+  "pending_trade_fills",
+  {
+    id: bigserial({ mode: "bigint" }).primaryKey(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mint: text().notNull(),
+    signature: text().notNull(),
+    executedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique().on(t.userId, t.signature),
+    index("pending_trade_fills_position_idx").on(t.userId, t.mint, t.executedAt, t.id),
+  ],
+);

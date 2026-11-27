@@ -1,0 +1,1 @@
+ALTER TABLE "trades" ADD COLUMN "sol_price_usd" numeric(38, 18);
