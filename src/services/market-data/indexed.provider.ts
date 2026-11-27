@@ -117,7 +117,11 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     for (const token of [...indexed, ...upstream]) {
       if (!tokens.has(token.mint)) tokens.set(token.mint, token);
     }
-    const exact = tokens.get(query) ?? (demoSol ? await this.getFallbackToken(query) : null);
+    if (this.options.source === "demo" && (demoSol || tokens.has(SOL_MINT))) {
+      const sol = await this.getToken(SOL_MINT);
+      if (sol) tokens.set(SOL_MINT, sol);
+    }
+    const exact = tokens.get(query);
     tokens.delete(query);
     return exact ? [exact, ...tokens.values()] : [...tokens.values()];
   }

@@ -218,7 +218,9 @@ describe("chain ingestion and indexed market data", () => {
     expect(results.filter(({ mint }) => mint === token.mint)).toEqual([
       expect.objectContaining(localMetadata),
     ]);
-    expect(results.find(({ mint }) => mint === SOL)).toEqual(sol);
+    const detail = (await indexed.getToken(SOL))!;
+    expect(results.find(({ mint }) => mint === SOL)).toEqual(detail);
+    expect((await indexed.searchTokens(SOL))[0]).toEqual(detail);
     expect((await indexed.searchTokens(SOL)).map(({ mint }) => mint)).toEqual([SOL, token.mint]);
     upstream.searchTokens = async () => {
       throw new Error("upstream unavailable");
