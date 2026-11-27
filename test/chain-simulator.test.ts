@@ -79,6 +79,62 @@ describe("demo chain simulator", () => {
     );
   });
 
+  it("continues a persisted live mint from its last reserves, market and transaction index", async () => {
+    const mint = "4vbX11omHkUZLmpw2GyAYAp4AGZPB47VPh39VgphgQRU";
+    const time = now() / 1000;
+    const used = new Curve();
+    const graduation = used.buy(85_000_000_000n)!;
+    used.migrate();
+    const prior = used.buy(40_000_000_000n)!;
+    const loadState = async () => ({
+      tip: { time, nextTransactionIndex: 20 },
+      markets: [
+        {
+          mint,
+          pool: wallet,
+          migrated: true,
+          trades: [
+            {
+              trader: wallet,
+              side: "buy" as const,
+              venue: "pump.fun" as const,
+              solAmountLamports: String(graduation.sol),
+              tokenAmountRaw: String(graduation.tokens),
+            },
+            {
+              trader: wallet,
+              side: "buy" as const,
+              venue: "pumpswap" as const,
+              solAmountLamports: String(prior.sol),
+              tokenAmountRaw: String(prior.tokens),
+            },
+          ],
+        },
+      ],
+    });
+    const stop = new AbortController();
+    const events: ChainEvent[] = [];
+    const options = { seed: 73, now, traders: [wallet], loadState };
+    await new DemoChainSimulator(options).run(
+      {
+        ingest: async (batch) => {
+          events.push(...batch);
+          stop.abort();
+        },
+      },
+      stop.signal,
+    );
+    expect(events[0]?.transactionIndex).toBe(20);
+    const resumed = events.filter((event) => event.kind === "Trade").filter((event) => event.mint === mint);
+    expect(resumed.length).toBeGreaterThan(0);
+    for (const trade of resumed) {
+      expect(trade.market).toMatchObject({ address: wallet, venue: "pumpswap" });
+      const fill =
+        trade.side === "buy" ? used.buy(BigInt(trade.quote.raw)) : used.sell(BigInt(trade.base.raw));
+      expect(fill).toEqual({ sol: BigInt(trade.quote.raw), tokens: BigInt(trade.base.raw) });
+    }
+  });
+
   it("uses virtual constant product reserves, caps graduation at 85 SOL and allows post-migration trading", () => {
     const curve = new Curve();
     expect(curve.sell(1000n)).toBeNull();

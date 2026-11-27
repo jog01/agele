@@ -3,6 +3,7 @@ import { getBase58Decoder } from "@solana/kit";
 import { hash, mulberry32 } from "../../lib/prng";
 import { SOL_MINT } from "../helius-parser";
 import type { ChainFacts, SolUsdPrice } from "./chain-facts";
+import { DEMO_ACTIVE_MARKETS, type DemoState } from "./demo-state";
 import type { ChainEvent, ChainEventSink, ChainEventSource, Market } from "./events";
 
 const DECIMALS = 6;
@@ -78,6 +79,12 @@ export class Curve {
     this.tokens = (this.sol * this.tokens) / (this.sol + VIRTUAL_SOL);
     this.product = this.sol * this.tokens;
   }
+
+  applyFill(side: "buy" | "sell", sol: bigint, tokens: bigint) {
+    const direction = side === "buy" ? 1n : -1n;
+    this.sol += direction * sol;
+    this.tokens -= direction * tokens;
+  }
 }
 
 function min(a: bigint, b: bigint) {
@@ -115,6 +122,7 @@ type SimulatorOptions = {
   traders?: readonly string[];
   now?: () => number;
   historyHours?: number;
+  loadState?: () => Promise<DemoState | null>;
 };
 
 class Simulation {
@@ -142,6 +150,42 @@ class Simulation {
     this.live = true;
   }
 
+  restore({ markets, tip }: DemoState) {
+    this.lastTime = tip.time;
+    this.tx = tip.nextTransactionIndex;
+    for (const { mint, pool, migrated, trades } of markets) {
+      const curve = new Curve();
+      const balances = new Map<string, bigint>();
+      let onCurve = true;
+      for (const trade of trades) {
+        if (onCurve && trade.venue === "pumpswap") {
+          curve.migrate();
+          onCurve = false;
+        }
+        const tokens = BigInt(trade.tokenAmountRaw);
+        curve.applyFill(trade.side, BigInt(trade.solAmountLamports), tokens);
+        const balance = (balances.get(trade.trader) ?? 0n) + (trade.side === "buy" ? tokens : -tokens);
+        balances.set(trade.trader, balance);
+      }
+      if (onCurve && migrated) curve.migrate();
+      const heat =
+        hash(mint) % 4 === 0 || (!migrated && curve.progressBps >= 7000) ? 0.97 : 0.15 + this.random() * 0.53;
+      this.tokens.push({
+        mint,
+        market: {
+          address: pool,
+          venue: migrated ? "pumpswap" : "pump.fun",
+          programId: migrated ? swapProgram : pumpProgram,
+        },
+        curve,
+        balances,
+        heat,
+        cooldownUntil: 0,
+      });
+    }
+    this.launches = markets.length;
+  }
+
   private pick<T>(items: readonly T[]) {
     return items[Math.floor(this.random() * items.length)]!;
   }
@@ -167,7 +211,7 @@ class Simulation {
     const market: Market = { address: this.address(), venue: "pump.fun", programId: pumpProgram };
     const heat = this.launches++ % 4 === 0 || hot ? 0.97 : 0.15 + this.random() * 0.53;
     this.tokens.push({ mint, market, curve: new Curve(), balances: new Map(), heat, cooldownUntil: 0 });
-    if (this.tokens.length > 48) this.tokens.shift();
+    if (this.tokens.length > DEMO_ACTIVE_MARKETS) this.tokens.shift();
     const prefix = this.pick(prefixes);
     const mascot = this.pick(mascots);
     const metadata = {
@@ -252,14 +296,17 @@ export class DemoChainSimulator implements ChainEventSource {
   constructor(private readonly options: SimulatorOptions = {}) {}
 
   async run(sink: ChainEventSink, signal: AbortSignal) {
+    if (signal.aborted) return;
     const now = () => Math.floor((this.options.now ?? Date.now)() / 1000);
     const start = now();
     const origin = Math.floor(start / 300) * 300;
     const sim = new Simulation(this.options.seed ?? hash(`demo:${origin}`), this.options.traders);
+    const state = await this.options.loadState?.();
+    if (state) sim.restore(state);
     const originHistory = origin - (this.options.historyHours ?? 3) * 3600;
     let pending: ChainEvent[] = [];
     let momentumMint: string | undefined;
-    for (let time = originHistory; time < origin && !signal.aborted; time += 12) {
+    for (let time = originHistory; !state && time < origin && !signal.aborted; time += 12) {
       if ((time - originHistory) % 432 === 0) pending.push(sim.launch(time));
       if (time === origin - 144) {
         const launch = sim.launch(time, true);
@@ -277,9 +324,10 @@ export class DemoChainSimulator implements ChainEventSource {
     if (pending.length) await sink.ingest(pending);
     sim.startLive();
     if (momentumMint) sim.coolOff(momentumMint, now() + 180);
-    let nextLaunch = now();
+    let time = Math.max(now(), state?.tip.time ?? 0);
+    let nextLaunch = time;
     while (!signal.aborted) {
-      const time = now();
+      time = Math.max(time, now());
       const events: ChainEvent[] = [];
       if (time >= nextLaunch) {
         events.push(sim.launch(time));
