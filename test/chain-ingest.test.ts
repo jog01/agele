@@ -203,6 +203,30 @@ describe("chain ingestion and indexed market data", () => {
     expect((await other.getToken(token.mint))?.priceUsd).toBe(0);
   });
 
+  it("merges indexed prefix results with upstream search, dedupes, and ranks exact mints first", async () => {
+    const { sink } = setup();
+    const token = launch(newMint());
+    const localMetadata = { name: "Solar Otter", symbol: "SOLATO" };
+    await sink.ingest([
+      { ...token, metadataUri: `data:application/json,${encodeURIComponent(JSON.stringify(localMetadata))}` },
+    ]);
+    const mock = new MockMarketDataProvider();
+    const sol = (await mock.getToken(SOL))!;
+    const upstream = Object.assign(mock, { searchTokens: async () => [{ ...sol, mint: token.mint }, sol] });
+    const indexed = new IndexedMarketDataProvider(db, { source: "demo", upstream, solUsd });
+    const results = await indexed.searchTokens("SOL");
+    expect(results.filter(({ mint }) => mint === token.mint)).toEqual([
+      expect.objectContaining(localMetadata),
+    ]);
+    expect(results.find(({ mint }) => mint === SOL)).toEqual(sol);
+    expect((await indexed.searchTokens(SOL)).map(({ mint }) => mint)).toEqual([SOL, token.mint]);
+    upstream.searchTokens = async () => {
+      throw new Error("upstream unavailable");
+    };
+    expect((await indexed.searchTokens("SOL")).some(({ mint }) => mint === token.mint)).toBe(true);
+    await expect(indexed.searchTokens("no-result")).rejects.toThrow("upstream unavailable");
+  });
+
   it("serves the Pulse board and token search routes and validates queries", async () => {
     const { sink, indexed } = setup();
     const token = launch(newMint(), "solana");

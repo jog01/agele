@@ -93,22 +93,33 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
   }
 
   async searchTokens(query: string) {
-    const exact = await this.indexedToken(query);
-    if (exact) return [tokenDto(exact, await tokenStats(this.db, exact, this.seconds()))];
-    if (query === SOL_MINT && this.options.source === "demo") return [(await this.getFallbackToken(query))!];
     const prefix = query.toLowerCase();
     const rows = await this.tokens()
       .where(
         and(
           eq(chainTokens.source, this.options.source),
-          sql`(starts_with(lower(${chainTokens.symbol}), ${prefix}) or starts_with(lower(${chainTokens.name}), ${prefix}))`,
+          sql`(${chainTokens.mint} = ${query} or starts_with(lower(${chainTokens.symbol}), ${prefix}) or starts_with(lower(${chainTokens.name}), ${prefix}))`,
         ),
       )
-      .orderBy(desc(chainTokens.launchedAt), chainTokens.mint)
+      .orderBy(desc(sql`${chainTokens.mint} = ${query}`), desc(chainTokens.launchedAt), chainTokens.mint)
       .limit(30);
-    if (!rows.length) return this.options.upstream.searchTokens?.(query) ?? [];
+    const demoSol = query === SOL_MINT && this.options.source === "demo";
+    const upstream =
+      (await this.options.upstream.searchTokens?.(query).catch((err: unknown) => {
+        if (!rows.length && !demoSol) throw err;
+        return [];
+      })) ?? [];
     const now = this.seconds();
-    return Promise.all(rows.map(async (row) => tokenDto(row, await tokenStats(this.db, row, now))));
+    const indexed = await Promise.all(
+      rows.map(async (row) => tokenDto(row, await tokenStats(this.db, row, now))),
+    );
+    const tokens = new Map<string, TokenDto>();
+    for (const token of [...indexed, ...upstream]) {
+      if (!tokens.has(token.mint)) tokens.set(token.mint, token);
+    }
+    const exact = tokens.get(query) ?? (demoSol ? await this.getFallbackToken(query) : null);
+    tokens.delete(query);
+    return exact ? [exact, ...tokens.values()] : [...tokens.values()];
   }
 
   async listPulse(limit: number): Promise<PulseDto> {
