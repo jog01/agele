@@ -337,4 +337,21 @@ describe("portfolio database integration", () => {
       { day: "2026-01-01", valueUsd: "50.000000000000000000" },
     ]);
   });
+
+  it("continues the snapshot sweep when one wallet's price lookup throws", async () => {
+    const lookup = spyOn(portfolio, "getPortfolio").mockImplementationOnce(async () => {
+      throw new Error("Quote unavailable");
+    });
+    try {
+      const processor = createPortfolioSnapshotProcessor(repository, portfolio, () => FIXED_NOW + 86_400_000);
+      await processor({} as Job);
+      const [failed, recovered] = lookup.mock.calls;
+      expect(failed).toBeDefined();
+      expect(recovered).toBeDefined();
+      expect((await repository.history(failed![0])).some(({ day }) => day === "2026-01-02")).toBe(false);
+      expect((await repository.history(recovered![0])).some(({ day }) => day === "2026-01-02")).toBe(true);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
 });
