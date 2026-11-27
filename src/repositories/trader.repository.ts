@@ -47,6 +47,7 @@ export class PgTraderRepository {
     const exact = sql`(u.wallet_address = ${query} or exists (
       select 1 from wallets w where w.user_id = u.id and w.chain_type = 'solana' and w.address = ${query}
     ))`;
+    const resultWallet = sql`coalesce(alias.address, ${canonical})`;
     return this.db.execute<{
       wallet: string;
       handle: string;
@@ -56,9 +57,20 @@ export class PgTraderRepository {
       select result.wallet, result.handle,
         result.display_name as "displayName", result.avatar_url as "avatarUrl"
       from (
-        select ${canonical} as wallet, coalesce(u.handle, left(${canonical}, 8)) as handle,
+        select ${resultWallet} as wallet, coalesce(u.handle, left(${resultWallet}, 8)) as handle,
           u.display_name, u.avatar_url, ${exact} as exact
         from users u
+        left join lateral (
+          select w.address from wallets w
+          where u.wallet_address is null and u.handle is null
+            and w.user_id = u.id and w.chain_type = 'solana'
+            and (w.address = ${query} or (
+              ${prefix} <> '' and starts_with(lower(left(w.address, 8)), ${prefix})
+            ))
+          order by (w.address = ${query}) desc, (lower(left(w.address, 8)) = ${prefix}) desc,
+            w.is_primary desc, w.address
+          limit 1
+        ) alias on true
       ) result
       where result.wallet is not null
       and (result.exact or (${prefix} <> '' and (

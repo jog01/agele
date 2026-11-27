@@ -359,6 +359,33 @@ describe("public trader profiles", () => {
     ).toMatchObject({ traders: [{ wallet: legacyWallet, handle: fallback }] });
   });
 
+  it("finds the displayed fallback handle of every linked wallet for a trader without a saved handle or address", async () => {
+    const aliases = [address(), address()];
+    const [user] = await db
+      .insert(schema.users)
+      .values({ privyDid: `did:privy:${aliases[0]}` })
+      .returning();
+    try {
+      await db.insert(schema.wallets).values(
+        aliases.map((wallet, index): typeof schema.wallets.$inferInsert => ({
+          userId: user!.id,
+          address: wallet,
+          chainType: "solana",
+          walletClientType: "external",
+          isPrimary: index === 0,
+        })),
+      );
+      for (const wallet of aliases) {
+        const profile = TraderProfileSchema.parse(await (await request(wallet)).json());
+        const prefix = profile.handle.slice(0, 7).toLowerCase();
+        const found = await app.request(`/v1/search?q=%40${prefix}`);
+        expect(await found.json()).toMatchObject({ traders: [{ wallet, handle: profile.handle }] });
+      }
+    } finally {
+      await db.delete(schema.users).where(inArray(schema.users.id, [user!.id]));
+    }
+  });
+
   it("returns at most five closed positions ranked by realized dollars", async () => {
     const writer = new PgTradeRepository(db);
     const userId = ids[4]!;
