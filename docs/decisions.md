@@ -42,3 +42,11 @@ Run migrations as a one-off `bun run db:migrate` job before deploy, not a fifth
 process. Only existing rebuild/snapshot logic is scheduled. Reconciliation,
 historical backfills and alerts need explicit correctness contracts before they
 can become scheduled jobs.
+
+## 2026-11-27 — SOL quote, USD accounting and separate fee paths
+
+For v0.2, quote SOL pairs in SOL and keep PnL and rankings in USD. Prefer user-paid
+fees when the wallet can afford them; only that path may tip Jito. Keep gasless
+landing on Jupiter under the existing sponsor policy. Sponsored native SOL
+settlement and the wallet-value eligibility rule require policy amendments.
+See the [design and rollout](sol-quote-and-fees.md).
