@@ -112,5 +112,5 @@ export const ThesisThreadSchema = CommentPage.extend({
   wallet: z.string(),
   mint: z.string(),
   positionId: z.uuid(),
-  pinned: CommentSchema.nullable(),
+  pinned: z.union([CommentSchema, z.null()]),
 }).openapi("ThesisThread");

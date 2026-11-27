@@ -1108,15 +1108,12 @@
             "format": "uuid"
           },
           "pinned": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/Comment"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }

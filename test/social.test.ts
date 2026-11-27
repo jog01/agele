@@ -32,6 +32,13 @@ describe("social controller", () => {
     expect((await app.request(`/v1/tokens/${SOL}/comments`)).status).toBe(200);
     expect((await app.request("/v1/tokens/11111111111111111111111111111111/comments")).status).toBe(404);
   });
+
+  it("documents that a thesis thread can have no pinned version", async () => {
+    const document = await (await app.request("/openapi.json")).json();
+    expect(document.components.schemas.ThesisThread.properties.pinned).toMatchObject({
+      anyOf: [{ $ref: "#/components/schemas/Comment" }, { type: "null" }],
+    });
+  });
 });
 
 describe("persistent discussions and follows", () => {
