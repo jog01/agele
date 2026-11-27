@@ -14,6 +14,7 @@ export const PortfolioSchema = z
       z.object({
         mint: z.string(),
         symbol: z.string(),
+        imageUrl: z.string().nullable(),
         quantity: z.number(),
         avgCostUsd: z.number(),
         priceUsd: z.number(),
@@ -34,6 +35,7 @@ export const UserTradeSchema = z
     signature: z.string(),
     mint: z.string(),
     symbol: z.string(),
+    imageUrl: z.string().nullable(),
     side: z.enum(["buy", "sell"]),
     tokenAmount: z.number(),
     priceUsd: z.number(),

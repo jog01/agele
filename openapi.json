@@ -373,7 +373,19 @@
           "handle": {
             "type": "string"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bio": {
             "type": [
               "string",
               "null"
@@ -418,14 +430,34 @@
           "positions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TokenPosition"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/TokenPosition"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "imageUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "imageUrl"
+                  ]
+                }
+              ]
             }
           }
         },
         "required": [
           "wallet",
           "handle",
+          "displayName",
           "avatarUrl",
+          "bio",
           "followers",
           "following",
           "realizedPnlUsd",
@@ -484,6 +516,12 @@
           "symbol": {
             "type": "string"
           },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "side": {
             "type": "string",
             "enum": [
@@ -515,6 +553,7 @@
           "signature",
           "mint",
           "symbol",
+          "imageUrl",
           "side",
           "tokenAmount",
           "priceUsd",
@@ -617,6 +656,12 @@
                 "symbol": {
                   "type": "string"
                 },
+                "imageUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "quantity": {
                   "type": "number"
                 },
@@ -639,6 +684,7 @@
               "required": [
                 "mint",
                 "symbol",
+                "imageUrl",
                 "quantity",
                 "avgCostUsd",
                 "priceUsd",
@@ -710,6 +756,12 @@
           "winRatePct": {
             "type": "number"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo"
+            ]
+          },
           "isFollowing": {
             "type": "boolean"
           }
@@ -730,17 +782,37 @@
           {
             "type": "object",
             "properties": {
-              "id": {
+              "handle": {
                 "type": "string"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
               },
               "mint": {
                 "type": "string"
               },
-              "handle": {
+              "symbol": {
                 "type": "string"
               },
-              "body": {
-                "type": "string"
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "position": {
                 "type": "string",
@@ -762,30 +834,87 @@
               },
               "wallet": {
                 "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "thesisId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "positionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "pinned": {
+                "type": "boolean"
+              },
+              "likes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "replyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "likedByMe": {
+                "type": "boolean"
               }
             },
             "required": [
+              "handle",
+              "avatarUrl",
+              "source",
               "id",
               "mint",
-              "handle",
-              "body",
+              "symbol",
+              "imageUrl",
               "position",
               "createdAt",
               "kind",
-              "wallet"
+              "wallet",
+              "body",
+              "thesisId",
+              "positionId",
+              "pinned",
+              "likes",
+              "replyCount"
             ]
           },
           {
             "type": "object",
             "properties": {
-              "id": {
+              "handle": {
                 "type": "string"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
               },
               "mint": {
                 "type": "string"
               },
-              "handle": {
+              "symbol": {
                 "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "position": {
                 "type": "string",
@@ -820,9 +949,13 @@
               }
             },
             "required": [
+              "handle",
+              "avatarUrl",
+              "source",
               "id",
               "mint",
-              "handle",
+              "symbol",
+              "imageUrl",
               "position",
               "createdAt",
               "kind",
@@ -836,17 +969,37 @@
       "Comment": {
         "type": "object",
         "properties": {
-          "id": {
+          "handle": {
             "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "indexed"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
           },
           "mint": {
             "type": "string"
           },
-          "handle": {
+          "symbol": {
             "type": "string"
           },
-          "body": {
-            "type": "string"
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "position": {
             "type": "string",
@@ -856,22 +1009,126 @@
               "none"
             ]
           },
-          "likes": {
-            "type": "integer"
-          },
           "createdAt": {
             "type": "integer",
             "description": "Unix seconds"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "thesis",
+              "comment"
+            ]
+          },
+          "wallet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thesisId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "body": {
+            "type": "string"
+          },
+          "likes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "likedByMe": {
+            "type": "boolean"
           }
         },
         "required": [
+          "handle",
+          "avatarUrl",
+          "source",
           "id",
           "mint",
-          "handle",
-          "body",
+          "symbol",
+          "imageUrl",
           "position",
+          "createdAt",
+          "kind",
+          "wallet",
+          "thesisId",
+          "parentId",
+          "pinned",
+          "body",
           "likes",
-          "createdAt"
+          "replyCount"
+        ]
+      },
+      "ThesisThread": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Comment"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "wallet": {
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pinned": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Comment"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "comments",
+          "nextCursor",
+          "id",
+          "wallet",
+          "mint",
+          "positionId",
+          "pinned"
         ]
       }
     },
@@ -1551,7 +1808,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Trader profile; demo profiles have simulated stats, no holdings or trade history",
+            "description": "Trader profile with positions and PnL derived from stored trades",
             "content": {
               "application/json": {
                 "schema": {
@@ -1608,7 +1865,7 @@
         "tags": [
           "traders"
         ],
-        "description": "Public indexed trade history, newest first by executedAt and id. Same UserTrade shape and cursor as /me/trades. Demo traders return an empty history. X-Data-Source: indexed or demo.",
+        "description": "Public stored trade history, newest first by executedAt and id. Same UserTrade shape and cursor as /me/trades. X-Data-Source labels indexed or seeded demo history.",
         "security": [
           {},
           {
@@ -2814,7 +3071,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Top traders by realized + unrealized PnL. X-Data-Source is demo for mock rankings, indexed otherwise.",
+            "description": "Top traders by realized + unrealized PnL. Seeded entries have source=demo. X-Data-Source is demo for an entirely seeded page, indexed otherwise.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2871,7 +3128,7 @@
         "tags": [
           "social"
         ],
-        "description": "Newest first with stable keyset pagination. Feed content remains demo data, independent of indexed leaderboard rankings. Following scope requires a bearer token.",
+        "description": "Stored trades and theses, newest first with stable keyset pagination. Each item identifies demo or indexed provenance. Following scope requires a bearer token.",
         "security": [
           {},
           {
@@ -3018,6 +3275,26 @@
               }
             }
           },
+          "409": {
+            "description": "Follow cap reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Follow rate limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Authentication is not configured",
             "content": {
@@ -3073,6 +3350,26 @@
               }
             }
           },
+          "409": {
+            "description": "Follow cap reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Follow rate limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Authentication is not configured",
             "content": {
@@ -3091,6 +3388,12 @@
         "tags": [
           "social"
         ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3105,10 +3408,18 @@
           },
           {
             "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "default": 50
+              "default": 25
             },
             "required": false,
             "name": "limit",
@@ -3128,17 +3439,708 @@
                       "items": {
                         "$ref": "#/components/schemas/Comment"
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
-                    "comments"
+                    "comments",
+                    "nextCursor"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "404": {
             "description": "Unknown token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Publish a token comment or reply to a thesis on the same token.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "position": {
+                    "type": "string",
+                    "enum": [
+                      "long",
+                      "short",
+                      "none"
+                    ],
+                    "default": "none"
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Published comment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Thesis update window expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Text rejected by moderation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Post rate limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/theses": {
+      "post": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Publish a thesis version for an open position or one closed at most three hours ago. Omit positionId to use the most recent position.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 3000
+                  },
+                  "position": {
+                    "type": "string",
+                    "enum": [
+                      "long",
+                      "short",
+                      "none"
+                    ],
+                    "default": "none"
+                  },
+                  "positionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Published thesis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Thesis update window expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Text rejected by moderation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Post rate limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/{mint}/theses/{thesisId}": {
+      "get": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "thesisId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thesis versions and replies, newest first, with the pinned version returned separately",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThesisThread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/posts/{id}/reaction": {
+      "put": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Post liked (idempotent)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Post unliked (idempotent)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/posts/{id}/pin": {
+      "put": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Thesis version pin updated (author only)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "social"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Thesis version pin updated (author only)"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown token, thesis or post",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
             "content": {
               "application/json": {
                 "schema": {

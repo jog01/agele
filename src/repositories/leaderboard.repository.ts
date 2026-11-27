@@ -22,7 +22,7 @@ export class PgLeaderboardRepository {
   async getUsers(ids: string[]) {
     if (!ids.length) return [];
     return this.db
-      .select({ id: users.id, wallet: users.walletAddress, handle: users.handle })
+      .select({ id: users.id, wallet: users.walletAddress, handle: users.handle, demo: users.demo })
       .from(users)
       .where(inArray(users.id, ids));
   }
@@ -31,5 +31,7 @@ export class PgLeaderboardRepository {
 export interface LeaderboardRepository {
   getTrades(since: Date, userId?: string): Promise<Trade[]>;
   getPositions(userId?: string): Promise<Position[]>;
-  getUsers(ids: string[]): Promise<{ id: string; wallet: string | null; handle: string | null }[]>;
+  getUsers(
+    ids: string[],
+  ): Promise<{ id: string; wallet: string | null; handle: string | null; demo?: boolean }[]>;
 }

@@ -36,6 +36,20 @@
       "when": 1794947400135,
       "tag": "0004_sponsored_swaps",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795805679010,
+      "tag": "0005_persist_social",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795806017511,
+      "tag": "0006_position_theses",
+      "breakpoints": true
     }
   ]
 }

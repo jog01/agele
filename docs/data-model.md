@@ -124,4 +124,4 @@ sequenceDiagram
   Social-->>API: items + nextCursor
 ```
 
-Feed remains deterministic demo content, independent of indexed leaderboard rankings; it does not query persisted trades/comments yet. Mock wallets are valid Solana addresses stable across leaderboard windows. The cursor encodes `(createdAt, id)` in base64url; both keys sort descending, with an exclusive boundary. Timestamps are integer Unix seconds. Anonymous leaderboard entries omit `isFollowing`; verified viewers receive a boolean per wallet for both mock and indexed rankings.
+The [social store](social.md) reads stored trades and thesis versions. The cursor encodes `(createdAt, id)` in base64url; both keys sort descending, with an exclusive boundary. Timestamps are integer Unix seconds. Anonymous leaderboard entries omit `isFollowing`; verified viewers receive a boolean per wallet.

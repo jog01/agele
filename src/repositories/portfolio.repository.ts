@@ -12,7 +12,7 @@ export class PgPortfolioRepository {
 
   getPositions(userId: string) {
     return this.db
-      .select({ position: positions, symbol: tokens.symbol })
+      .select({ position: positions, symbol: tokens.symbol, imageUrl: tokens.imageUrl })
       .from(positions)
       .innerJoin(tokens, eq(tokens.mint, positions.mint))
       .where(eq(positions.userId, userId))
@@ -38,7 +38,7 @@ export class PgPortfolioRepository {
 
   getTrades(userId: string, limit: number, cursor?: TradeCursor) {
     return this.db
-      .select({ trade: trades, symbol: tokens.symbol })
+      .select({ trade: trades, symbol: tokens.symbol, imageUrl: tokens.imageUrl })
       .from(trades)
       .innerJoin(tokens, eq(tokens.mint, trades.mint))
       .where(

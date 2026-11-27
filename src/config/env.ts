@@ -38,7 +38,7 @@ const EnvSchema = z
     SPONSOR_REFERRAL_ACCOUNT: z.string().optional(),
     SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
-    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("live"),
+    MARKET_DATA_PROVIDER: z.enum(["mock", "live"]).default("mock"),
     MARKET_TOKEN_ALLOWLIST: z
       .string()
       .default(MockMarketDataProvider.mints.join(","))

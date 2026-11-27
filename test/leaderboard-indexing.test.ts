@@ -17,7 +17,7 @@ import type { UserService } from "../src/services/user.service";
 import { WsHub } from "../src/ws/hub";
 import { buy, MINT, WALLET } from "./fixtures/helius";
 import { MemoryLeaderboard } from "./fixtures/leaderboard-store";
-import { FIXED_NOW } from "./helpers";
+import { FIXED_NOW, socialDemoFixture } from "./helpers";
 
 describe("indexed leaderboard wiring", () => {
   const sql = postgres(env.DATABASE_URL);
@@ -37,7 +37,9 @@ describe("indexed leaderboard wiring", () => {
     () => FIXED_NOW,
   );
   const indexer = new TradeIndexer(new PgTradeRepository(db), market);
+  const fixture = socialDemoFixture();
   beforeAll(async () => {
+    await fixture.setUp();
     const [user] = await db
       .insert(schema.users)
       .values({ privyDid: `did:privy:${suffix}`, walletAddress: address })
@@ -54,10 +56,11 @@ describe("indexed leaderboard wiring", () => {
       await db.delete(schema.users).where(eq(schema.users.id, userId));
     }
     await db.delete(schema.tokens).where(eq(schema.tokens.mint, mint));
+    await fixture.tearDown();
     await sql.end();
   });
 
-  it("selects demo vs indexed rankings from webhook configuration and keeps comments mock", async () => {
+  it("uses Postgres without a webhook and keeps stored comments with indexing configured", async () => {
     const original = env.HELIUS_WEBHOOK_SECRET;
     try {
       env.HELIUS_WEBHOOK_SECRET = undefined;
@@ -68,10 +71,9 @@ describe("indexed leaderboard wiring", () => {
       env.HELIUS_WEBHOOK_SECRET = "configured";
       const real = createContainer({ market, leaderboardStore: store });
       expect(real.leaderboard).toBeInstanceOf(LeaderboardService);
-      expect(real.social.leaderboardDemo).toBe(false);
       expect(await real.social.leaderboard("24h", 25)).toEqual([]);
       const sol = MockMarketDataProvider.mints[0]!;
-      expect(await real.social.comments(sol, 1)).toHaveLength(1);
+      expect((await real.social.comments(sol, 1)).comments[0]).toMatchObject({ source: "demo" });
     } finally {
       env.HELIUS_WEBHOOK_SECRET = original;
     }
@@ -130,7 +132,7 @@ describe("indexed leaderboard wiring", () => {
     }
   });
 
-  it("adds viewer follow state to indexed ranks without changing anonymous ranks or the demo feed", async () => {
+  it("adds viewer follow state to indexed ranks without changing anonymous ranks or the stored feed", async () => {
     const follows = new InMemoryFollowRepository();
     const app = createApp(
       createContainer({

@@ -157,6 +157,7 @@ describe("portfolio database integration", () => {
         {
           mint,
           symbol: "TEST",
+          imageUrl: null,
           quantity: 6,
           avgCostUsd: 10,
           priceUsd: 15,

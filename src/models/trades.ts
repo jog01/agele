@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, numeric, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { tokens } from "./tokens";
 import { users } from "./users";
@@ -28,6 +29,7 @@ export const trades = pgTable(
     unique("trades_signature_user_id_unique").on(t.signature, t.userId),
     index("trades_user_executed_idx").on(t.userId, t.executedAt),
     index("trades_mint_executed_idx").on(t.mint, t.executedAt),
+    index("trades_feed_idx").on(sql`date_trunc('second', ${t.executedAt} AT TIME ZONE 'UTC')`, t.id),
   ],
 );
 

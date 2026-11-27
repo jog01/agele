@@ -18,7 +18,7 @@ const profile = createRoute({
   request: { params: TraderParam },
   responses: {
     200: {
-      description: "Trader profile; demo profiles have simulated stats, no holdings or trade history",
+      description: "Trader profile with positions and PnL derived from stored trades",
       content: { "application/json": { schema: TraderProfileSchema } },
     },
     400: errorResponse("Invalid wallet"),
@@ -32,7 +32,7 @@ const trades = createRoute({
   path: "/traders/{wallet}/trades",
   tags: ["traders"],
   description:
-    "Public indexed trade history, newest first by executedAt and id. Same UserTrade shape and cursor as /me/trades. Demo traders return an empty history. X-Data-Source: indexed or demo.",
+    "Public stored trade history, newest first by executedAt and id. Same UserTrade shape and cursor as /me/trades. X-Data-Source labels indexed or seeded demo history.",
   security: optionalSecurity,
   middleware: [optionalAuth] as const,
   request: { params: TraderParam, query: UserTradesQuery },

@@ -54,7 +54,7 @@ export class PortfolioService {
     const positions = await Promise.all(
       rows
         .filter(({ position }) => Number(position.quantity) > 0)
-        .map(async ({ position, symbol }) => {
+        .map(async ({ position, symbol, imageUrl }) => {
           const quantity = Number(position.quantity);
           const cost = Number(position.costBasisUsd);
           const avgCostUsd = cost / quantity;
@@ -65,6 +65,7 @@ export class PortfolioService {
           return {
             mint: position.mint,
             symbol,
+            imageUrl,
             quantity,
             avgCostUsd,
             priceUsd,
@@ -110,11 +111,12 @@ export class PortfolioService {
     const page = rows.slice(0, limit);
     const last = page.at(-1)?.trade;
     return {
-      trades: page.map(({ trade, symbol }) => ({
+      trades: page.map(({ trade, symbol, imageUrl }) => ({
         id: trade.id,
         signature: trade.signature,
         mint: trade.mint,
         symbol,
+        imageUrl,
         side: trade.side,
         tokenAmount: Number(trade.tokenAmount),
         priceUsd: Number(trade.priceUsd),

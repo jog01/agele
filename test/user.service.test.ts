@@ -20,6 +20,8 @@ function setup(linked: LinkedWallet[], fails = false, storedWallets: UserWithWal
     handle: null,
     displayName: null,
     avatarUrl: null,
+    bio: null,
+    demo: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     wallets: storedWallets,

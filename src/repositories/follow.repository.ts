@@ -1,6 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, lt } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { follows } from "../models";
+import { AppError } from "../lib/errors";
+import { followActions, follows, trades, users } from "../models";
+
+const FOLLOW_CAP = 100;
+const FOLLOW_RATE = 10;
 
 export interface FollowRepository {
   listWallets(followerId: string): Promise<string[]>;
@@ -20,7 +24,43 @@ export class PgFollowRepository implements FollowRepository {
   }
 
   async follow(followerId: string, followeeWallet: string) {
-    await this.db.insert(follows).values({ followerId, followeeWallet }).onConflictDoNothing();
+    await this.db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, followerId)).for("update");
+      const [added] = await tx
+        .insert(follows)
+        .values({ followerId, followeeWallet })
+        .onConflictDoNothing()
+        .returning({ wallet: follows.followeeWallet });
+      if (!added) return;
+      const [total] = await tx
+        .select({ value: count() })
+        .from(follows)
+        .where(eq(follows.followerId, followerId));
+      if (total!.value > FOLLOW_CAP) {
+        const fills = await tx
+          .select({ id: trades.id })
+          .from(trades)
+          .where(eq(trades.userId, followerId))
+          .limit(3);
+        if (fills.length < 3)
+          throw new AppError(409, "follow_cap", "Trade at least three times to follow more wallets");
+      }
+      await tx
+        .delete(followActions)
+        .where(
+          and(
+            eq(followActions.userId, followerId),
+            lt(followActions.createdAt, new Date(Date.now() - 60_000)),
+          ),
+        );
+      const [recent] = await tx
+        .select({ value: count() })
+        .from(followActions)
+        .where(eq(followActions.userId, followerId));
+      if (recent!.value >= FOLLOW_RATE)
+        throw new AppError(429, "follow_rate_limit", "Too many follows; try again shortly");
+      await tx.insert(followActions).values({ userId: followerId });
+    });
   }
 
   async unfollow(followerId: string, followeeWallet: string) {
