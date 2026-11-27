@@ -75,9 +75,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
             secret: env.FEE_PAYER_SECRET,
             rpc: new HttpSponsorRpc(env.SOLANA_RPC_URL),
             store: new RedisSponsorStore(getRedis(), BigInt(Math.floor(env.DAILY_SPEND_CAP_SOL * 1e9))),
-            market:
-              overrides.market ??
-              (env.MARKET_DATA_PROVIDER === "live" ? createUpstreamMarketDataProvider() : market),
+            market: walletMarket,
             maxCuPrice: BigInt(env.MAX_CU_PRICE_MICROLAMPORTS),
             maxLamports: BigInt(env.MAX_LAMPORTS_PER_TX),
             referralAccount: env.SPONSOR_REFERRAL_ACCOUNT,
