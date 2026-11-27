@@ -75,7 +75,11 @@ describe("persistent discussions and follows", () => {
         imageUrl: null,
       });
     oldPosition = (await fill("buy", 15_000))!.id;
-    await fill("sell", 14_000);
+    const closingFill = (await fill("sell", 15_000))!;
+    await db
+      .update(trades)
+      .set({ id: "00000000-0000-4000-8000-000000000000" })
+      .where(eq(trades.id, closingFill.id));
     closedPosition = (await fill("buy", 200))!.id;
     await fill("sell", 150);
     openPosition = (await fill("buy", 100))!.id;

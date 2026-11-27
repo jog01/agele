@@ -17,7 +17,14 @@ export interface PositionEpisode {
 export function positionEpisodes(trades: Trade[]) {
   const episodes: PositionEpisode[] = [];
   const open = new Map<string, PositionEpisode>();
-  for (const trade of trades) {
+  const ordered = trades.toSorted(
+    (a, b) =>
+      a.executedAt.getTime() - b.executedAt.getTime() ||
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      Number(a.side === "sell") - Number(b.side === "sell") ||
+      a.id.localeCompare(b.id),
+  );
+  for (const trade of ordered) {
     let position = open.get(trade.mint);
     const amount = decimal(trade.tokenAmount);
     const usd = decimal(trade.quoteAmountUsd);
