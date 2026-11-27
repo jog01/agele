@@ -301,7 +301,11 @@ export class PgSocialRepository {
   }
 
   holdings(userId: string) {
-    return this.db.select().from(positions).where(eq(positions.userId, userId));
+    return this.db
+      .select({ mint: positions.mint, quantity: positions.quantity, seeded: users.demo })
+      .from(positions)
+      .innerJoin(users, eq(users.id, positions.userId))
+      .where(eq(positions.userId, userId));
   }
 
   async createPost(input: PostInput, episode?: { wallet: string; positionId: string }) {

@@ -88,6 +88,11 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     return tokenDto(row, await tokenStats(this.db, row, this.seconds()));
   }
 
+  async getIndexedToken(mint: string) {
+    const row = await this.indexedToken(mint);
+    return hasIndexedMarketData(row) ? tokenDto(row, await tokenStats(this.db, row, this.seconds())) : null;
+  }
+
   async getHistoricalPriceUsd(mint: string, minute: number) {
     if (mint === SOL_MINT && this.options.source === "demo") return this.options.solUsd.getSolUsd(minute);
     const token = await this.indexedToken(mint);

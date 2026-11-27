@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { createApp } from "../src/app";
+import { env } from "../src/config/env";
+import { createContainer } from "../src/container";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
@@ -26,6 +29,54 @@ const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
 const fixture = socialDemoFixture();
 beforeAll(fixture.setUp);
 afterAll(fixture.tearDown);
+
+it("prices seeded social positions locally when keyless Jupiter returns 429", async () => {
+  const originalKey = env.JUPITER_API_KEY;
+  env.JUPITER_API_KEY = undefined;
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => new Response(null, { status: 429 }), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+  try {
+    const app = createApp(createContainer());
+    const [feed, leaderboard] = await Promise.all([
+      app.request("/v1/feed?minPortfolioUsd=1"),
+      app.request("/v1/leaderboard?window=30d"),
+    ]);
+    expect([feed.status, leaderboard.status]).toEqual([200, 200]);
+    const { items } = FeedSchema.parse(await feed.json());
+    const trade = items.find((item) => item.kind === "trade" && item.priceSinceFirstBuyPct !== null);
+    expect(trade).toBeDefined();
+    const { entries } = (await leaderboard.json()) as { entries: LeaderboardEntryDto[] };
+    expect(entries.some((entry) => entry.source === "demo" && entry.pnlUsd !== 0)).toBe(true);
+    const { wallet, mint } = trade!;
+    const profile = await app.request(`/v1/traders/${wallet}`);
+    const position = await app.request(`/v1/traders/${wallet}/positions/${mint}`);
+    const traders = await app.request(`/v1/tokens/${mint}/traders`);
+    expect([profile.status, position.status, traders.status]).toEqual([200, 200, 200]);
+    expect(fetch).not.toHaveBeenCalled();
+
+    await getDb().update(users).set({ demo: false }).where(eq(users.walletAddress, wallet));
+    try {
+      const [mixedFeed, mixedRanks] = await Promise.all([
+        app.request(`/v1/feed?wallet=${wallet}`),
+        app.request("/v1/leaderboard?window=30d"),
+      ]);
+      expect([mixedFeed.status, mixedRanks.status]).toEqual([200, 200]);
+      const mixed = FeedSchema.parse(await mixedFeed.json());
+      expect(mixed.items.length).toBeGreaterThan(0);
+      expect(mixed.items.every((item) => item.marketCapUsd === null)).toBe(true);
+      expect(fetch).toHaveBeenCalled();
+    } finally {
+      await getDb().update(users).set({ demo: true }).where(eq(users.walletAddress, wallet));
+    }
+  } finally {
+    env.JUPITER_API_KEY = originalKey;
+    fetch.mockRestore();
+  }
+});
+
 function setup(tokens?: TokenService, id = viewerId) {
   const follows = new InMemoryFollowRepository();
   const app = testApp({

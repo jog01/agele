@@ -17,11 +17,12 @@ export class PgTokenActivityRepository {
   }
 
   async getPosition(userId: string, mint: string) {
-    const [position] = await this.db
-      .select()
+    const [row] = await this.db
+      .select({ position: positions, seeded: users.demo })
       .from(positions)
+      .innerJoin(users, eq(users.id, positions.userId))
       .where(and(eq(positions.userId, userId), eq(positions.mint, mint)));
-    return position;
+    return row;
   }
 
   getTraders(mint: string, limit: number, cursor?: TokenTraderCursor) {
@@ -43,6 +44,7 @@ export class PgTokenActivityRepository {
         userId: totals.userId,
         wallet: users.walletAddress,
         handle: users.handle,
+        seeded: users.demo,
         volumeUsd: totals.volumeUsd,
         buys: totals.buys,
         sells: totals.sells,
