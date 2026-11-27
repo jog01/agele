@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { decimal } from "../lib/decimal";
-import { comments, follows, reactions, theses, tokens, trades, users } from "../models";
+import { comments, follows, portfolioSnapshots, reactions, theses, tokens, trades, users } from "../models";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { USDC_MINT } from "../services/helius-parser";
 import { MockMarketDataProvider } from "../services/market-data/mock.provider";
@@ -118,14 +118,20 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     bio,
     avatarUrl: `https://api.dicebear.com/9.x/notionists/png?seed=${handle}`,
     demo: true,
-    createdAt: new Date(Math.floor(now / 1000) * 1000),
+    createdAt: new Date((Math.floor(now / 1000) - 35 * day) * 1000),
   }));
   await db.insert(users).values(profiles).onConflictDoNothing({ target: users.id });
   const [first] = await db
     .select({ createdAt: users.createdAt })
     .from(users)
     .where(eq(users.id, profiles[0]!.id));
-  const anchor = first!.createdAt.getTime() / 1000;
+  const [baseline] = await db
+    .select({ executedAt: trades.executedAt })
+    .from(trades)
+    .where(and(eq(trades.userId, profiles[0]!.id), eq(trades.signature, "demo:northstar:0")));
+  const anchor = baseline
+    ? baseline.executedAt.getTime() / 1000 + 21 * day
+    : first!.createdAt.getTime() / 1000 + 35 * day;
   const market = new MockMarketDataProvider(() => anchor * 1000);
   const mints = MockMarketDataProvider.mints;
   const metadata = await Promise.all(mints.map((mint) => market.getToken(mint)));
@@ -135,7 +141,7 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     const quantity = 2 * Math.max(2, Math.round((500 + index * 145) / priceUsd));
     const legs = [
       [21 * day, "buy", quantity, 86],
-      [16 * day, "sell", quantity, 93 + (index % 5)],
+      [16 * day, "sell", quantity, index === 11 ? 155 : 93 + (index % 5)],
       [4 * day, "buy", quantity, 95 + index],
       [2 * day, "sell", quantity / 2, 96 + (index % 5)],
       [3600, "buy", quantity, 91 + index],
@@ -157,9 +163,36 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         quoteMint: USDC_MINT,
         side,
         signature: `demo:${profile.handle}:${leg}`,
-        timestamp: anchor - age - index * 60,
+        timestamp: anchor - age - (index % mints.length) * 60,
       });
     }
+    const joinedAt = new Date((anchor - 35 * day) * 1000);
+    if (first!.createdAt > joinedAt)
+      await db.update(users).set({ createdAt: joinedAt }).where(eq(users.id, profile.id));
+    const fills = await db
+      .select()
+      .from(trades)
+      .where(eq(trades.userId, profile.id))
+      .orderBy(asc(trades.executedAt));
+    const midnight = Math.floor(anchor / day) * day;
+    const snapshots = [];
+    for (let i = 20; i >= 0; i--) {
+      const time = midnight - i * day;
+      const held = fills.reduce(
+        (sum, fill) =>
+          fill.executedAt.getTime() <= time * 1000
+            ? sum + Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1)
+            : sum,
+        0,
+      );
+      const past = await new MockMarketDataProvider(() => time * 1000).getToken(mint);
+      snapshots.push({
+        userId: profile.id,
+        day: new Date(time * 1000).toISOString().slice(0, 10),
+        valueUsd: (held * past!.priceUsd).toFixed(2),
+      });
+    }
+    await db.insert(portfolioSnapshots).values(snapshots).onConflictDoNothing();
     const thesisId = seedId(1, index);
     const versionId = seedId(4, index);
     const [entry] = await db

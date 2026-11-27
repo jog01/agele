@@ -3,7 +3,7 @@ import { createApp } from "../src/app";
 import { type Container, createContainer } from "../src/container";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
-import { comments, positions, theses, trades, users } from "../src/models";
+import { comments, portfolioSnapshots, positions, theses, trades, users } from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { TokenService } from "../src/services/token.service";
@@ -27,6 +27,7 @@ export function socialDemoFixture() {
       await db.delete(theses).where(inArray(theses.userId, ids));
       await db.delete(trades).where(inArray(trades.userId, ids));
       await db.delete(positions).where(inArray(positions.userId, ids));
+      await db.delete(portfolioSnapshots).where(inArray(portfolioSnapshots.userId, ids));
       await db.delete(users).where(inArray(users.id, ids));
     },
   };

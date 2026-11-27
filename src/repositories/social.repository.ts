@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { AppError } from "../lib/errors";
-import { comments, reactions, theses, tokens, trades, users } from "../models";
+import { comments, positions, reactions, theses, tokens, trades, users } from "../models";
 import type { CommentDto, FeedItemDto } from "../schemas/social";
 import type { TokenDto } from "../schemas/token";
 import { encodeCursor, type FeedCursor } from "../services/social/cursor";
@@ -14,7 +14,11 @@ type FeedRow = Omit<CommentDto, "kind"> & {
   kind: FeedItemDto["kind"];
   side: "buy" | "sell";
   amountUsd: number;
+  tokenAmount: number;
   positionId: string | null;
+  traderCount: number;
+  realizedPnlUsd: number | null;
+  userId: string;
 };
 
 const wallet = sql`coalesce(u.wallet_address, (
@@ -37,49 +41,113 @@ function pageCursor(rows: { createdAt: number; id: string }[], limit: number) {
   return rows.length > limit ? encodeCursor(rows[limit - 1]!) : null;
 }
 
+function eventId(key: ReturnType<typeof sql>) {
+  const hash = sql`md5(${key})`;
+  return sql`overlay(overlay(${hash} placing '5' from 13) placing '8' from 17)::uuid`;
+}
+
 export class PgSocialRepository {
   constructor(private readonly db: Db) {}
 
-  async feed(input: { wallets?: string[]; cursor?: FeedCursor; limit: number; viewerId?: string }) {
-    const { wallets, cursor, limit, viewerId } = input;
+  async feed(input: {
+    wallets?: string[];
+    wallet?: string;
+    mint?: string;
+    cursor?: FeedCursor;
+    limit: number;
+    viewerId?: string;
+    minSizeUsd?: number;
+    types?: string[];
+  }) {
+    const { wallets, cursor, limit, viewerId, mint, minSizeUsd, types } = input;
     if (wallets?.length === 0) return { items: [], nextCursor: null };
-    const followed = wallets
-      ? sql`and (
-        u.wallet_address = any(${sql.param(wallets)}::text[]) or exists (
+    const matches = (addresses: string[]) => sql`(
+        u.wallet_address = any(${sql.param(addresses)}::text[]) or exists (
           select 1 from wallets w where w.user_id = u.id and w.chain_type = 'solana'
-          and w.address = any(${sql.param(wallets)}::text[])
+          and w.address = any(${sql.param(addresses)}::text[])
         )
-      )`
-      : sql.empty();
+      )`;
+    const followed = sql`
+      ${wallets ? sql`and ${matches(wallets)}` : sql.empty()}
+      ${input.wallet ? sql`and ${matches([input.wallet])}` : sql.empty()}
+    `;
+    const scopedMint = (column: ReturnType<typeof sql>) =>
+      mint ? sql`and ${column} = ${mint}` : sql.empty();
+    const bigEnough = (column: ReturnType<typeof sql>) =>
+      minSizeUsd === undefined ? sql.empty() : sql`and ${column} >= ${minSizeUsd}`;
+    const groupAt = sql`date_bin('5 minutes', t.executed_at, '1970-01-01T00:00:00Z') at time zone 'UTC'`;
+    const eventAt = sql`groups.bucket + interval '5 minutes'`;
+    const groupId = eventId(
+      sql`'trade-group:' || groups.mint || ':' || groups.side || ':' || extract(epoch from groups.bucket)`,
+    );
+    const milestoneId = eventId(sql`'profit-milestone:' || t.id`);
+    const newTraderId = eventId(sql`'new-trader:' || t.user_id`);
+    const enabled = (condition: boolean) => (condition ? sql.empty() : sql`and false`);
     const rows = await this.db.execute<FeedRow>(sql`
-      with page as (
-        (select t.id, t.mint, t.user_id, 'trade' as kind, null::text as body,
+      with groups as (
+        select t.mint, t.side, ${groupAt} as bucket,
+          count(distinct t.user_id)::int as trader_count, sum(t.quote_amount_usd) as amount,
+          (array_agg(t.user_id order by t.executed_at desc, t.id desc))[1] as user_id,
+          bool_and(u.demo) as demo
+        from trades t join users u on u.id = t.user_id
+        where true ${enabled(!input.wallet && (types?.includes("multi-user") ?? false))} ${followed} ${scopedMint(sql`t.mint`)}
+          and ${wallet} is not null and ${groupAt} + interval '5 minutes' <= now() at time zone 'UTC'
+          ${cursor ? sql`and t.executed_at < to_timestamp(${cursor.createdAt})` : sql.empty()}
+        group by 1, 2, 3 having count(distinct t.user_id) > 1
+      ), page as (
+        (select t.id, t.mint, t.user_id as "userId", 'trade' as kind, null::text as body,
           'none' as position, t.side, t.quote_amount_usd::float8 as "amountUsd", ${tradeTime} as at,
-          null::uuid as "thesisId", false as pinned
+          null::uuid as "thesisId", false as pinned, t.token_amount::float8 as "tokenAmount",
+          t.realized_pnl_usd::float8 as "realizedPnlUsd", null::int as "traderCount", null::boolean as demo
          from trades t join users u on u.id = t.user_id
-         where ${wallet} is not null ${followed} ${before(tradeTime, sql`t.id`, cursor)}
+         where ${wallet} is not null ${followed} ${scopedMint(sql`t.mint`)} ${bigEnough(sql`t.quote_amount_usd`)} ${before(tradeTime, sql`t.id`, cursor)}
+           ${enabled(!types || types.some((type) => ["bought", "sold", "closed"].includes(type)))}
          order by at desc, t.id desc limit ${limit + 1})
         union all
         (select p.id, p.mint, p.user_id, 'thesis', p.body,
-          p.position::text, null, null, ${postTime} as at, p.thesis_id, p.pinned
+          p.position::text, null, null, ${postTime} as at, p.thesis_id, p.pinned, null, null, null, null
          from comments p join users u on u.id = p.user_id
-         where p.kind = 'thesis' and ${wallet} is not null ${followed} ${before(postTime, sql`p.id`, cursor)}
+         where p.kind = 'thesis' and ${wallet} is not null ${followed} ${scopedMint(sql`p.mint`)}
+           ${enabled(minSizeUsd === undefined && (!types || types.includes("thesis")))} ${before(postTime, sql`p.id`, cursor)}
          order by at desc, p.id desc limit ${limit + 1})
+        union all
+        (select ${milestoneId}, t.mint, t.user_id, 'milestone', null, 'none', null,
+         t.quote_amount_usd::float8, ${tradeTime} as at, null, false, null, t.realized_pnl_usd::float8, null, null
+         from trades t join users u on u.id = t.user_id
+         where ${wallet} is not null ${followed} and t.side = 'sell' and t.realized_pnl_usd >= 1000
+           ${enabled(types?.includes("milestone") ?? false)}
+           ${scopedMint(sql`t.mint`)} ${bigEnough(sql`t.quote_amount_usd`)} ${before(tradeTime, milestoneId, cursor)}
+         order by at desc, 1 desc limit ${limit + 1})
+        union all
+        (select ${newTraderId}, t.mint, t.user_id, 'new-trader', null, 'none', null,
+         null, ${tradeTime} as at, null, false, null, null, null, null
+         from trades t join users u on u.id = t.user_id
+         where ${wallet} is not null ${followed} ${scopedMint(sql`t.mint`)}
+           ${enabled(minSizeUsd === undefined && (types?.includes("new-trader") ?? false))} ${before(tradeTime, newTraderId, cursor)}
+           and not exists(select 1 from trades first where first.user_id = t.user_id
+             and (first.executed_at, first.id) < (t.executed_at, t.id))
+         order by at desc, 1 desc limit ${limit + 1})
+        union all
+        (select ${groupId}, groups.mint, groups.user_id, 'multi-user', null, 'none', groups.side,
+          groups.amount::float8, ${eventAt} as at, null, false, null, null, groups.trader_count, groups.demo
+         from groups where true ${bigEnough(sql`groups.amount`)} ${before(eventAt, groupId, cursor)}
+         order by at desc, 1 desc limit ${limit + 1})
         order by at desc, id desc limit ${limit + 1}
       )
       select page.*, ${seconds} as "createdAt", ${wallet} as wallet, ${handle} as handle,
-        ${source} as source, u.avatar_url as "avatarUrl", token.symbol, token.image_url as "imageUrl",
+        case when coalesce(page.demo, u.demo) then 'demo' else 'indexed' end as source,
+        u.avatar_url as "avatarUrl", token.symbol, token.image_url as "imageUrl",
         th.position_id as "positionId",
         (select count(*)::int from social_reactions r where r.post_id = page.id and page.kind = 'thesis') as likes,
         (select count(*)::int from comments replies where replies.thesis_id = page."thesisId" and replies.kind = 'comment') as "replyCount"
         ${viewerId ? sql`, exists(select 1 from social_reactions r where r.post_id = page.id and r.user_id = ${viewerId}) as "likedByMe"` : sql.empty()}
-      from page join users u on u.id = page.user_id
+      from page join users u on u.id = page."userId"
       join tokens token on token.mint = page.mint
       left join theses th on th.id = page."thesisId"
       order by page.at desc, page.id desc
     `);
-    const items = rows.slice(0, limit).map((row): FeedItemDto => {
-      const { id, wallet, mint, handle, source, avatarUrl, position, kind, symbol, imageUrl } = row;
+    const items = rows.slice(0, limit).map((row): FeedItemDto & { userId: string } => {
+      const { id, wallet, mint, handle, source, avatarUrl, position, kind, symbol, imageUrl, userId } = row;
       const base = {
         id,
         wallet: wallet!,
@@ -91,9 +159,12 @@ export class PgSocialRepository {
         symbol,
         imageUrl,
         createdAt: row.createdAt,
+        marketCapUsd: null,
+        userId,
       };
-      return kind === "thesis"
-        ? {
+      switch (kind) {
+        case "thesis":
+          return {
             ...base,
             kind,
             body: row.body,
@@ -103,8 +174,42 @@ export class PgSocialRepository {
             thesisId: row.thesisId!,
             positionId: row.positionId!,
             pinned: row.pinned,
-          }
-        : { ...base, kind, side: row.side, amountUsd: row.amountUsd };
+            eventType: kind,
+          };
+        case "trade":
+          return {
+            ...base,
+            kind,
+            side: row.side,
+            amountUsd: row.amountUsd,
+            tokenAmount: row.tokenAmount,
+            eventType: row.side === "buy" ? "bought" : "sold",
+            positionId: null,
+            priceSinceFirstBuyPct: null,
+            realizedPnlUsd: row.side === "sell" ? row.realizedPnlUsd : null,
+          };
+        case "multi-user":
+          return {
+            ...base,
+            kind,
+            eventType: kind,
+            side: row.side,
+            amountUsd: row.amountUsd,
+            traderCount: row.traderCount,
+          };
+        case "milestone":
+          return {
+            ...base,
+            kind,
+            eventType: kind,
+            amountUsd: row.amountUsd,
+            realizedPnlUsd: row.realizedPnlUsd!,
+          };
+        case "new-trader":
+          return { ...base, kind, eventType: kind };
+        default:
+          throw new Error(`Unknown feed item kind: ${kind}`);
+      }
     });
     return { items, nextCursor: pageCursor(rows, limit) };
   }
@@ -152,6 +257,10 @@ export class PgSocialRepository {
       .from(trades)
       .where(and(eq(trades.userId, userId), eq(trades.mint, mint)))
       .orderBy(asc(trades.executedAt), asc(trades.id));
+  }
+
+  holdings(userId: string) {
+    return this.db.select().from(positions).where(eq(positions.userId, userId));
   }
 
   async createPost(input: PostInput, episode?: { wallet: string; positionId: string }) {

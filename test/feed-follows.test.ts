@@ -3,7 +3,7 @@ import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
-import type { FeedPage, LeaderboardEntryDto } from "../src/schemas/social";
+import { FeedEventType, type FeedPage, FeedSchema, type LeaderboardEntryDto } from "../src/schemas/social";
 import { encodeCursor } from "../src/services/social/cursor";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
@@ -67,7 +67,7 @@ describe("feed", () => {
           expect(["buy", "sell"]).toContain(item.side);
           expect(item.amountUsd).toBeNumber();
           expect(item).not.toHaveProperty("body");
-        } else {
+        } else if (item.kind === "thesis") {
           expect(item.body).toBeString();
           expect(item).not.toHaveProperty("side");
           expect(item).not.toHaveProperty("amountUsd");
@@ -98,9 +98,60 @@ describe("feed", () => {
       "limit=0",
       "limit=101",
       "limit=1.5",
+      "types=bought,nope",
+      "minMarketCapUsd=200&maxMarketCapUsd=100",
+      "minSizeUsd=-1",
     ]) {
       expect((await app.request(`/v1/feed?${query}`)).status).toBe(400);
     }
+  });
+
+  it("emits all requested event variants and paginates a filtered result", async () => {
+    const { app } = setup();
+    const types = FeedEventType.options.join(",");
+    const first = FeedSchema.parse(await page(app, `?types=${types}&limit=1`));
+    const events = [...first.items];
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const next = FeedSchema.parse(await page(app, `?types=${types}&limit=100&cursor=${cursor}`));
+      events.push(...next.items);
+      cursor = next.nextCursor;
+    }
+    expect(new Set(events.map((item) => item.eventType))).toEqual(new Set(FeedEventType.options));
+    expect(new Set(events.map((item) => item.id)).size).toBe(events.length);
+    const closed = events.find((item) => item.eventType === "closed");
+    expect(closed).toMatchObject({
+      kind: "trade",
+      side: "sell",
+      positionId: expect.any(String),
+      realizedPnlUsd: expect.any(Number),
+    });
+    const groups = await page(app, "?types=multi-user&limit=1");
+    expect(groups.items[0]).toMatchObject({ kind: "multi-user", traderCount: 2 });
+    const nextGroup = await page(app, `?types=multi-user&limit=1&cursor=${groups.nextCursor}`);
+    expect(nextGroup.items[0]?.id).not.toBe(groups.items[0]?.id);
+  });
+
+  it("combines trade size, portfolio, cap, wallet, mint and first-buy filters", async () => {
+    const { app } = setup();
+    const size = 100;
+    const query = `types=bought&mint=${SOL}&minSizeUsd=${size}&minPortfolioUsd=1&minMarketCapUsd=1&maxMarketCapUsd=1000000000000&minPriceSinceFirstBuyPct=-99`;
+    const result = await page(app, `?${query}`);
+    expect(result.items.length).toBeGreaterThan(1);
+    for (const item of result.items) {
+      expect(item).toMatchObject({ kind: "trade", eventType: "bought", mint: SOL });
+      if (item.kind === "trade") {
+        expect(item.amountUsd).toBeGreaterThanOrEqual(size);
+        expect(item.priceSinceFirstBuyPct).toBeGreaterThanOrEqual(-99);
+      }
+    }
+    const wallet = result.items[0]!.wallet;
+    expect((await page(app, `?${query}&wallet=${wallet}`)).items).toEqual(
+      result.items.filter((item) => item.wallet === wallet),
+    );
+    expect(
+      (await page(app, `?${query.replace("minPortfolioUsd=1", "minPortfolioUsd=100000000000")}`)).items,
+    ).toEqual([]);
   });
 
   it("requires auth for following scope and filters by the viewer's followed wallets", async () => {

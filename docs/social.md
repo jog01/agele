@@ -35,7 +35,10 @@ sequenceDiagram
     A->>A: Validate cursor, verify optional bearer token
     A->>S: Global or following query
     S->>DB: Read matched trades and thesis versions by descending second and UUID
-    DB-->>W: via API: page and nextCursor
+    DB-->>S: Candidate events
+    S->>S: Resolve position episodes, enrich prices, apply filters
+    S-->>A: Page and nextCursor
+    A-->>W: Social activity
     W->>A: POST thesis version or comment (bearer)
     A->>S: Verified author and validated content
     S->>S: Text moderation; validate position window or same-token parent
@@ -66,3 +69,21 @@ sequenceDiagram
   `X-Data-Source`. Seeded leaderboard entries carry `source: demo`. In the
   absence of the webhook/Redis projection, ranking reads derive results from
   PostgreSQL trades and positions using the same window calculations.
+- `GET /v1/feed` defaults to trades and theses. `eventType` distinguishes
+  bought, sold, closed, thesis, milestone, multi-user, and new-trader activity.
+  Use the comma-separated `types` filter to select variants, including the
+  opt-in derived cards: realized profit of at least $1,000 on a sell, two or
+  more distinct traders on the same token and side in a completed five-minute
+  UTC bucket, or a trader's first indexed fill. Reuse the same filters with
+  each cursor. Size applies to signed-side USD volume, portfolio size to the
+  trader's currently priced holdings (the representative trader on a group
+  card), and cap and change since a position's first buy use current market
+  data. Missing prices are excluded when a matching price filter is requested.
+- `GET /v1/traders/{wallet}/positions/{mint}` returns chronological fills,
+  average entry, and realized/unrealized PnL for the most recent position or
+  a specified `positionId`. The profile includes joined date, trade count,
+  average hold across closed positions and, for signed-in viewers, mutual
+  followers (people the viewer follows who follow this trader). The
+  `followers` and `following` routes are individually paginated. The public
+  `portfolio/history` route reads stored daily snapshots without querying
+  private wallet balances; the demo seed includes daily history.

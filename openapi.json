@@ -391,6 +391,57 @@
               "null"
             ]
           },
+          "joinedAt": {
+            "type": "integer"
+          },
+          "tradeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "avgHoldSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "mutuals": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "preview": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "avatarUrl"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "count",
+              "preview"
+            ]
+          },
           "followers": {
             "type": "integer",
             "minimum": 0
@@ -458,6 +509,9 @@
           "displayName",
           "avatarUrl",
           "bio",
+          "joinedAt",
+          "tradeCount",
+          "avgHoldSeconds",
           "followers",
           "following",
           "realizedPnlUsd",
@@ -560,6 +614,169 @@
           "valueUsd",
           "realizedPnlUsd",
           "time"
+        ]
+      },
+      "TraderPosition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "wallet": {
+            "type": "string"
+          },
+          "mint": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openedAt": {
+            "type": "integer"
+          },
+          "closedAt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "avgEntryUsd": {
+            "type": "number"
+          },
+          "avgCostUsd": {
+            "type": "number"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
+          "priceSinceFirstBuyPct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "valueUsd": {
+            "type": "number"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "fills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserTrade"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "wallet",
+          "mint",
+          "symbol",
+          "imageUrl",
+          "openedAt",
+          "closedAt",
+          "quantity",
+          "avgEntryUsd",
+          "avgCostUsd",
+          "priceUsd",
+          "priceSinceFirstBuyPct",
+          "valueUsd",
+          "realizedPnlUsd",
+          "unrealizedPnlUsd",
+          "fills"
+        ]
+      },
+      "TraderConnections": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wallet": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "handle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "avatarUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "integer"
+                },
+                "isFollowing": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "wallet",
+                "handle",
+                "avatarUrl",
+                "createdAt"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "users",
+          "nextCursor"
+        ]
+      },
+      "PortfolioHistory": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "time": {
+                  "type": "integer"
+                },
+                "valueUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "time",
+                "valueUsd"
+              ]
+            }
+          }
+        },
+        "required": [
+          "points"
         ]
       },
       "Me": {
@@ -703,32 +920,6 @@
           "positions"
         ]
       },
-      "PortfolioHistory": {
-        "type": "object",
-        "properties": {
-          "points": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "time": {
-                  "type": "integer"
-                },
-                "valueUsd": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "time",
-                "valueUsd"
-              ]
-            }
-          }
-        },
-        "required": [
-          "points"
-        ]
-      },
       "LeaderboardEntry": {
         "type": "object",
         "properties": {
@@ -849,6 +1040,18 @@
               "pinned": {
                 "type": "boolean"
               },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "thesis"
+                ]
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
               "likes": {
                 "type": "integer",
                 "minimum": 0
@@ -877,6 +1080,8 @@
               "thesisId",
               "positionId",
               "pinned",
+              "eventType",
+              "marketCapUsd",
               "likes",
               "replyCount"
             ]
@@ -946,6 +1151,42 @@
               },
               "amountUsd": {
                 "type": "number"
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "bought",
+                  "sold",
+                  "closed"
+                ]
+              },
+              "tokenAmount": {
+                "type": "number"
+              },
+              "positionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "realizedPnlUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "priceSinceFirstBuyPct": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -961,7 +1202,292 @@
               "kind",
               "wallet",
               "side",
-              "amountUsd"
+              "amountUsd",
+              "eventType",
+              "tokenAmount",
+              "positionId",
+              "realizedPnlUsd",
+              "priceSinceFirstBuyPct",
+              "marketCapUsd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "handle": {
+                "type": "string"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "short",
+                  "none"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "multi-user"
+                ]
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "multi-user"
+                ]
+              },
+              "wallet": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "amountUsd": {
+                "type": "number"
+              },
+              "traderCount": {
+                "type": "integer"
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "handle",
+              "avatarUrl",
+              "source",
+              "id",
+              "mint",
+              "symbol",
+              "imageUrl",
+              "position",
+              "createdAt",
+              "kind",
+              "eventType",
+              "wallet",
+              "side",
+              "amountUsd",
+              "traderCount",
+              "marketCapUsd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "handle": {
+                "type": "string"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "short",
+                  "none"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "milestone"
+                ]
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "milestone"
+                ]
+              },
+              "wallet": {
+                "type": "string"
+              },
+              "amountUsd": {
+                "type": "number"
+              },
+              "realizedPnlUsd": {
+                "type": "number"
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "handle",
+              "avatarUrl",
+              "source",
+              "id",
+              "mint",
+              "symbol",
+              "imageUrl",
+              "position",
+              "createdAt",
+              "kind",
+              "eventType",
+              "wallet",
+              "amountUsd",
+              "realizedPnlUsd",
+              "marketCapUsd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "handle": {
+                "type": "string"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "long",
+                  "short",
+                  "none"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "new-trader"
+                ]
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "new-trader"
+                ]
+              },
+              "wallet": {
+                "type": "string"
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "handle",
+              "avatarUrl",
+              "source",
+              "id",
+              "mint",
+              "symbol",
+              "imageUrl",
+              "position",
+              "createdAt",
+              "kind",
+              "eventType",
+              "wallet",
+              "marketCapUsd"
             ]
           }
         ]
@@ -1954,6 +2480,388 @@
           },
           "404": {
             "description": "Unknown trader",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}/positions/{mint}": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "description": "Public position replay. Returns chronological fills for the selected position episode, or the most recent episode if positionId is omitted.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "example": "So11111111111111111111111111111111111111112"
+            },
+            "required": true,
+            "name": "mint",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "positionId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Position, average entry, PnL and fills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraderPosition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader or position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}/followers": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet connections newest first; viewer follow state is included when authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraderConnections"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader or position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}/following": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet connections newest first; viewer follow state is included when authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraderConnections"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader or position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traders/{wallet}/portfolio/history": {
+      "get": {
+        "tags": [
+          "traders"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44
+            },
+            "required": true,
+            "name": "wallet",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "all"
+              ],
+              "default": "7d"
+            },
+            "required": false,
+            "name": "range",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored daily portfolio value snapshots, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown trader or position",
             "content": {
               "application/json": {
                 "schema": {
@@ -3128,7 +4036,7 @@
         "tags": [
           "social"
         ],
-        "description": "Stored trades and theses, newest first with stable keyset pagination. Each item identifies demo or indexed provenance. Following scope requires a bearer token.",
+        "description": "Social activity newest first with keyset pagination. Defaults to trades and theses; request milestone, multi-user or new-trader via types. Following scope requires a bearer token.",
         "security": [
           {},
           {
@@ -3166,6 +4074,91 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated eventType values: bought,sold,closed,thesis,milestone,multi-user,new-trader"
+            },
+            "required": false,
+            "description": "Comma-separated eventType values: bought,sold,closed,thesis,milestone,multi-user,new-trader",
+            "name": "types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "minSizeUsd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "minPortfolioUsd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "minMarketCapUsd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "maxMarketCapUsd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "minPriceSinceFirstBuyPct",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "wallet",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "mint",
             "in": "query"
           }
         ],

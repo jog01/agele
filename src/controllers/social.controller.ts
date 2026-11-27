@@ -46,7 +46,7 @@ const getFeed = createRoute({
   path: "/feed",
   tags: ["social"],
   description:
-    "Stored trades and theses, newest first with stable keyset pagination. Each item identifies demo or indexed provenance. Following scope requires a bearer token.",
+    "Social activity newest first with keyset pagination. Defaults to trades and theses; request milestone, multi-user or new-trader via types. Following scope requires a bearer token.",
   security: optionalSecurity,
   middleware: [optionalAuth] as const,
   request: { query: FeedQuery },
