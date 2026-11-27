@@ -8,7 +8,16 @@ import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { decimal } from "../src/lib/decimal";
 import { unauthorized } from "../src/lib/errors";
-import { chainTokens, feedDiscussions, positions, tokens, trades, users, wallets } from "../src/models";
+import {
+  chainTokens,
+  chainTrades,
+  feedDiscussions,
+  positions,
+  tokens,
+  trades,
+  users,
+  wallets,
+} from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import {
@@ -79,7 +88,7 @@ it("prices seeded social positions locally when keyless Jupiter returns 429", as
   }
 });
 
-it("values a real wallet's Yellowstone-indexed position without Jupiter", async () => {
+it("uses fresh indexed quotes and refreshes stale Solana quotes through Jupiter", async () => {
   const db = getDb();
   const address = () => getBase58Decoder().decode(crypto.getRandomValues(new Uint8Array(32)));
   const wallet = address();
@@ -88,10 +97,19 @@ it("values a real wallet's Yellowstone-indexed position without Jupiter", async 
     .insert(users)
     .values({ privyDid: `did:privy:${wallet}`, walletAddress: wallet })
     .returning();
+  let jupiterAvailable = true;
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(async () => new Response(null, { status: 429 }), {
-      preconnect: globalThis.fetch.preconnect,
-    }),
+    Object.assign(
+      async (input: Parameters<typeof globalThis.fetch>[0]) => {
+        if (!jupiterAvailable) return new Response(null, { status: 429 });
+        return new URL(String(input)).pathname === "/price/v3"
+          ? Response.json({ [mint]: { usdPrice: 8 } })
+          : Response.json([{ id: mint, symbol: "TEST", name: "Test", decimals: 6, mcap: 800 }]);
+      },
+      {
+        preconnect: globalThis.fetch.preconnect,
+      },
+    ),
   );
   try {
     const timestamp = Math.floor(Date.now() / 1000);
@@ -114,11 +132,13 @@ it("values a real wallet's Yellowstone-indexed position without Jupiter", async 
       side: "buy",
       timestamp,
     });
+    const pool = address();
+    const orderKey = "0:0:1";
     await db.insert(chainTokens).values({
       source: "solana",
       mint,
       venue: "pump.fun",
-      pool: address(),
+      pool,
       creator: wallet,
       name: "Test",
       symbol: "TEST",
@@ -126,6 +146,23 @@ it("values a real wallet's Yellowstone-indexed position without Jupiter", async 
       totalSupplyRaw: "100000000",
       launchedAt: timestamp,
       priceUsd: 5,
+      lastTradeKey: orderKey,
+    });
+    await db.insert(chainTrades).values({
+      source: "solana",
+      signature: address(),
+      mint,
+      eventIndex: 1,
+      trader: wallet,
+      side: "buy",
+      venue: "pump.fun",
+      pool,
+      time: timestamp,
+      orderKey,
+      tokenAmountRaw: "2000000",
+      solAmountLamports: "50000000",
+      priceUsd: 5,
+      amountUsd: 10,
     });
     const container = createContainer();
     const app = createApp(container);
@@ -141,8 +178,27 @@ it("values a real wallet's Yellowstone-indexed position without Jupiter", async 
     expect((await container.portfolio.getPositionSummary(user!.id)).unrealizedPnlUsd).toBe(6);
     expect(fetch).not.toHaveBeenCalled();
 
+    await db
+      .update(chainTrades)
+      .set({ time: timestamp - 600 })
+      .where(eq(chainTrades.mint, mint));
+    const stale = await app.request(`/v1/feed?wallet=${wallet}`);
+    expect(FeedSchema.parse(await stale.json()).items).toMatchObject([
+      { mint, marketCapUsd: 800, priceSinceFirstBuyPct: 300 },
+    ]);
+    expect((await container.portfolio.getPositionSummary(user!.id)).unrealizedPnlUsd).toBe(12);
+
+    jupiterAvailable = false;
+    fetch.mockClear();
+    const unavailableApp = createApp(createContainer());
+    const outage = await unavailableApp.request(`/v1/feed?wallet=${wallet}`);
+    expect(FeedSchema.parse(await outage.json()).items).toMatchObject([
+      { mint, marketCapUsd: 500, priceSinceFirstBuyPct: 150 },
+    ]);
+    expect(fetch).toHaveBeenCalled();
+
     await db.update(chainTokens).set({ priceUsd: 0 }).where(eq(chainTokens.mint, mint));
-    const unpriced = await app.request(`/v1/feed?wallet=${wallet}`);
+    const unpriced = await unavailableApp.request(`/v1/feed?wallet=${wallet}`);
     expect(unpriced.status).toBe(200);
     expect(FeedSchema.parse(await unpriced.json()).items).toMatchObject([{ mint, marketCapUsd: null }]);
     expect(fetch).toHaveBeenCalled();
@@ -152,6 +208,7 @@ it("values a real wallet's Yellowstone-indexed position without Jupiter", async 
     await db.delete(trades).where(eq(trades.userId, user!.id));
     await db.delete(wallets).where(eq(wallets.userId, user!.id));
     await db.delete(users).where(eq(users.id, user!.id));
+    await db.delete(chainTrades).where(eq(chainTrades.mint, mint));
     await db.delete(chainTokens).where(eq(chainTokens.mint, mint));
     await db.delete(tokens).where(eq(tokens.mint, mint));
   }

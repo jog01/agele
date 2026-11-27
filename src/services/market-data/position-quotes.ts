@@ -18,12 +18,16 @@ export function createPositionQuote(
   live: Pick<MarketDataProvider, "getToken">,
   demo: IndexedMarketDataProvider,
 ): PositionQuote {
-  return async (mint, seeded) =>
-    seeded
-      ? demo.getToken(mint)
-      : ((await demo.getIndexedToken(mint, "demo")) ??
-        (await demo.getIndexedToken(mint, "solana")) ??
-        live.getToken(mint));
+  return async (mint, seeded) => {
+    if (seeded) return demo.getToken(mint);
+    const simulated = await demo.getIndexedToken(mint);
+    if (simulated) return simulated;
+    const indexed = await demo.getIndexedSolanaQuote(mint);
+    if (!indexed) return live.getToken(mint);
+    if (indexed.fresh) return indexed.token;
+    const current = await optionalQuote(() => live.getToken(mint));
+    return current && Number.isFinite(current.priceUsd) && current.priceUsd > 0 ? current : indexed.token;
+  };
 }
 
 export function cachePositionQuotes(quote: PositionQuote): PositionQuote {
