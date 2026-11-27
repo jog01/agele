@@ -126,8 +126,8 @@ sequenceDiagram
   includes the number of newer versions in that thread. View counts are
   shared by versions in a thread; record an explicit open with
   `POST /v1/tokens/{mint}/theses/{thesisId}/views`. GETs do not count. Views
-  are deduplicated for 24 hours by signed-in user or by a hash of the peer IP
-  and user agent. Anonymous requests are limited to 30 per minute per peer IP.
+  are deduplicated for 24 hours by signed-in user or by a hash of the peer IP.
+  Anonymous requests are limited to 30 per minute per peer IP.
   The API does not trust forwarded IP headers; clients behind the same proxy
   share its limit.
 - The public `portfolio/history` route excludes cash and linked-wallet

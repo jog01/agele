@@ -24,7 +24,6 @@ import {
 import type { AppEnv } from "../types";
 
 const optionalSecurity: RouteConfig["security"] = [{}, { bearerAuth: [] }];
-const hashClient = (...parts: string[]) => createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 
 const getLeaderboard = createRoute({
   method: "get",
@@ -359,19 +358,20 @@ export const socialController = new OpenAPIHono<AppEnv>()
       const viewer = await users.ensureUser(auth);
       return c.json(await social.recordThesisView(mint, thesisId, `user:${viewer.id}`), 200);
     }
-    const ip = c.env?.clientIp ?? "unknown";
+    const peerKey = createHash("sha256")
+      .update(c.env?.clientIp ?? "unknown")
+      .digest("hex");
     const count = await withRedisDeadline(() =>
       getRedis().eval(
         "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], 60) end; return n",
         1,
-        `thesis-view-rate:${hashClient(ip)}`,
+        `thesis-view-rate:${peerKey}`,
       ),
     ).catch(() => {
       throw new AppError(503, "rate_limit_unavailable", "Thesis view rate limiting unavailable");
     });
     if (Number(count) > 30) throw new AppError(429, "rate_limited", "Anonymous thesis view limit exceeded");
-    const viewerKey = hashClient(ip, c.req.header("user-agent") ?? "");
-    return c.json(await social.recordThesisView(mint, thesisId, `anon:${viewerKey}`), 200);
+    return c.json(await social.recordThesisView(mint, thesisId, `anon:${peerKey}`), 200);
   })
   .openapi(postComment, async (c) => {
     const container = c.get("container");

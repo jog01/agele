@@ -203,6 +203,7 @@ describe("persistent discussions and follows", () => {
         binding,
       );
       expect(result.status).toBe(i === 27 ? 429 : 200);
+      if (result.ok) expect(ThesisViewSchema.parse(await result.json()).viewCount).toBe(2);
     }
     await db
       .update(thesisViewers)
@@ -211,7 +212,7 @@ describe("persistent discussions and follows", () => {
         and(eq(thesisViewers.thesisId, version.thesisId!), eq(thesisViewers.viewerKey, `user:${viewerId}`)),
       );
     const renewed = await app.request(`${threadPath}/views`, { method: "POST", headers });
-    expect(ThesisViewSchema.parse(await renewed.json()).viewCount).toBe(30);
+    expect(ThesisViewSchema.parse(await renewed.json()).viewCount).toBe(3);
     expect((await write("comments", { body: "Rate limited." })).status).toBe(429);
   });
 
