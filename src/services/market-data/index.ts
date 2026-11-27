@@ -1,6 +1,6 @@
 import { env } from "../../config/env";
 import { getDb } from "../../db/client";
-import { DemoSolUsdPrice } from "../chain-ingest/simulator";
+import { createChainIngest } from "../chain-ingest";
 import { IndexedMarketDataProvider } from "./indexed.provider";
 import { LiveMarketDataProvider } from "./live.provider";
 
@@ -16,10 +16,11 @@ export function createUpstreamMarketDataProvider() {
 }
 
 export function createMarketDataProvider(name = env.MARKET_DATA_PROVIDER) {
+  const { solUsd } = createChainIngest(env);
   return new IndexedMarketDataProvider(getDb(), {
     source: env.CHAIN_SOURCE,
     upstream: createUpstreamMarketDataProvider(),
     upstreamTrending: name === "live",
-    solUsd: new DemoSolUsdPrice(),
+    solUsd,
   });
 }

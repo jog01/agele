@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { JupiterSolUsdPrice } from "../src/services/chain-ingest/jupiter-sol-usd-price";
 import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { TokenService } from "../src/services/token.service";
 import priceFixture from "./fixtures/jupiter-prices.json";
@@ -97,7 +98,9 @@ describe("live market data", () => {
     expect((await market.searchTokens(jup)).map((token) => token.mint)).toEqual([jup]);
     expect((await market.searchTokens("sOL")).map((token) => token.mint)).toEqual([sol]);
     expect(await market.searchTokens("piter")).toEqual([]);
-    expect(await market.getSolUsd(0)).toBe(priceFixture[sol as keyof typeof priceFixture]!.usdPrice);
+    expect(await new JupiterSolUsdPrice(market).getSolUsd(0)).toBe(
+      priceFixture[sol as keyof typeof priceFixture]!.usdPrice,
+    );
   });
 
   it("falls back to metadata prices when Price V3 omits a mint", async () => {

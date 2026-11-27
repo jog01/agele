@@ -5,8 +5,8 @@ import { RedisEventPublisher } from "../events/bus";
 import { FeedLock } from "../events/feed-lock";
 import { logger } from "../lib/logger";
 import { closeRedis, getRedis } from "../lib/redis";
+import { createChainIngest } from "../services/chain-ingest";
 import { IngestService } from "../services/chain-ingest/service";
-import { DemoChainSimulator, DemoSolUsdPrice, demoChainFacts } from "../services/chain-ingest/simulator";
 import { createMarketDataProvider } from "../services/market-data";
 import { startPriceFeed } from "../ws/price-feed";
 
@@ -39,9 +39,9 @@ function startOwner() {
       if (live && !signal.aborted) await events.publish(topic, data);
     },
   };
-  const ingest = new IngestService(getDb(), publisher, new DemoSolUsdPrice(), demoChainFacts);
-  const simulator = new DemoChainSimulator();
-  const running = simulator
+  const { source, solUsd, facts } = createChainIngest(env);
+  const ingest = new IngestService(getDb(), publisher, solUsd, facts);
+  const running = source
     .run(
       {
         ingest: async (batch) => {

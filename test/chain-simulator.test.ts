@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { getBase58Encoder } from "@solana/kit";
+import { createChainIngest } from "../src/services/chain-ingest";
 import type { ChainEvent } from "../src/services/chain-ingest/events";
 import { resolveMetadata } from "../src/services/chain-ingest/metadata";
 import { Curve, DemoChainSimulator, DemoSolUsdPrice } from "../src/services/chain-ingest/simulator";
@@ -24,6 +25,13 @@ async function generate(seed: number) {
 }
 
 describe("demo chain simulator", () => {
+  it("selects the simulator, demo price and local chain facts together", async () => {
+    const { source, solUsd, facts } = createChainIngest({ CHAIN_SOURCE: "demo" });
+    expect(source).toBeInstanceOf(DemoChainSimulator);
+    expect(await solUsd.getSolUsd(now() / 1000)).toBe(new DemoSolUsdPrice().getSolUsd(now() / 1000));
+    expect(await facts.blockTime((now() / 1000) * 3)).toBe(now() / 1000);
+  });
+
   it("is deterministic, backfills history, uses shared trader wallets and emits migrations followed by swaps", async () => {
     const events = await generate(73);
     expect(await generate(73)).toEqual(events);

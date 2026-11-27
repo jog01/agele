@@ -170,10 +170,8 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     return this.cached(`prices:${value}`, 5000, () => this.jupiter("/price/v3", { ids: value }, prices));
   }
 
-  async getSolUsd(_time: number) {
-    const price = (await this.priceQuotes([SOL_MINT]))[SOL_MINT]?.usdPrice;
-    if (!price || price < 0) throw new AppError(502, "upstream_error", "SOL price unavailable");
-    return price;
+  async getUsdPrice(mint: string) {
+    return (await this.priceQuotes([mint]))[mint]?.usdPrice;
   }
 
   private async withPrices(tokens: z.infer<typeof metadata>): Promise<TokenDto[]> {
