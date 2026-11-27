@@ -8,6 +8,7 @@ import {
   FINAL_STRETCH_BPS,
   holderPositions,
   readPulseToken,
+  type TokenRow,
   tokenDto,
   tokenStats,
   uiAmount,
@@ -21,6 +22,10 @@ interface Options {
   upstream: MarketDataProvider;
   upstreamTrending?: boolean;
   now?: () => number;
+}
+
+function hasIndexedMarketData(token: TokenRow | undefined): token is TokenRow {
+  return !!token && (token.source === "demo" || token.lastTradeKey !== null || token.priceUsd > 0);
 }
 
 export class IndexedMarketDataProvider implements MarketDataProvider {
@@ -50,7 +55,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
   }
 
   async getExternalToken(mint: string) {
-    if (await this.indexedToken(mint)) return null;
+    if (hasIndexedMarketData(await this.indexedToken(mint))) return null;
     return this.getFallbackToken(mint);
   }
 
@@ -74,7 +79,12 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getToken(mint: string) {
     const row = await this.indexedToken(mint);
-    return row ? tokenDto(row, await tokenStats(this.db, row, this.seconds())) : this.getFallbackToken(mint);
+    if (!row) return this.getFallbackToken(mint);
+    if (!hasIndexedMarketData(row)) {
+      const upstream = await this.getFallbackToken(mint);
+      if (upstream) return upstream;
+    }
+    return tokenDto(row, await tokenStats(this.db, row, this.seconds()));
   }
 
   async listTrending(limit: number) {
@@ -110,8 +120,13 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
         return [];
       })) ?? [];
     const now = this.seconds();
+    const upstreamByMint = new Map(upstream.map((token) => [token.mint, token]));
     const indexed = await Promise.all(
-      rows.map(async (row) => tokenDto(row, await tokenStats(this.db, row, now))),
+      rows.map(async (row) => {
+        const external = upstreamByMint.get(row.mint);
+        if (external && !hasIndexedMarketData(row)) return external;
+        return tokenDto(row, await tokenStats(this.db, row, now));
+      }),
     );
     const tokens = new Map<string, TokenDto>();
     for (const token of [...indexed, ...upstream]) {
@@ -160,7 +175,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getCandles(mint: string, interval: IntervalValue, limit: number) {
     const token = await this.indexedToken(mint);
-    if (!token) return this.options.upstream.getCandles(mint, interval, limit);
+    if (!hasIndexedMarketData(token)) return this.options.upstream.getCandles(mint, interval, limit);
     const seconds = INTERVAL_SECONDS[interval];
     if (interval === "1m") {
       const result = await this.db.execute<CandleDto>(sql`
@@ -181,7 +196,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getRecentTrades(mint: string, limit: number) {
     const token = await this.indexedToken(mint);
-    if (!token) return this.options.upstream.getRecentTrades(mint, limit);
+    if (!hasIndexedMarketData(token)) return this.options.upstream.getRecentTrades(mint, limit);
     const rows = await this.db
       .select()
       .from(chainTrades)
@@ -202,7 +217,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getHolders(mint: string, limit: number): Promise<TokenHoldersDto> {
     const token = await this.indexedToken(mint);
-    if (!token) {
+    if (!hasIndexedMarketData(token)) {
       if (mint === SOL_MINT && this.options.source === "demo") {
         return { mint, totalHolders: 0, top10Pct: 0, holders: [], updatedAt: this.seconds() };
       }

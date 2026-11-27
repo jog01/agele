@@ -277,6 +277,38 @@ describe("chain ingestion and indexed market data", () => {
     expect(byMint.get(clean.mint)).toMatchObject({ name: "Pocket Otter", symbol: "POTR" });
   });
 
+  it("uses upstream pricing and history for a live launch until its first stored SOL trade", async () => {
+    const { sink } = setup();
+    const token = launch(newMint(), "solana");
+    const mock = new MockMarketDataProvider(() => time * 1000);
+    const price = { ...(await mock.getToken(SOL))!, mint: token.mint };
+    const upstream = Object.assign(mock, { searchTokens: async () => [price] });
+    const candles = await upstream.getCandles(SOL, "1m", 1);
+    const trades = (await upstream.getRecentTrades(SOL, 1)).map((fill) => ({ ...fill, mint: token.mint }));
+    const holders = { ...(await upstream.getHolders(SOL, 1)), mint: token.mint };
+    upstream.getToken = async () => price;
+    upstream.getCandles = async () => candles;
+    upstream.getRecentTrades = async () => trades;
+    upstream.getHolders = async () => holders;
+    const indexed = new IndexedMarketDataProvider(db, { source: "solana", upstream, solUsd });
+    const first = trade(token, 1);
+    await sink.ingest([token, { ...first, quote: { ...first.quote, mint: creator } }]);
+    expect(await indexed.getToken(token.mint)).toEqual(price);
+    expect(await indexed.searchTokens(token.mint)).toEqual([price]);
+    expect(await indexed.getExternalToken(token.mint)).toEqual(price);
+    expect(await indexed.getCandles(token.mint, "1m", 1)).toEqual(candles);
+    expect(await indexed.getRecentTrades(token.mint, 1)).toEqual(trades);
+    expect(await indexed.getHolders(token.mint, 1)).toEqual(holders);
+
+    await sink.ingest([first]);
+    expect((await indexed.getToken(token.mint))?.priceUsd).toBe(100);
+    expect((await indexed.searchTokens(token.mint))[0]?.priceUsd).toBe(100);
+    expect(await indexed.getExternalToken(token.mint)).toBeNull();
+    expect((await indexed.getCandles(token.mint, "1m", 1))[0]?.close).toBe(100);
+    expect((await indexed.getRecentTrades(token.mint, 1))[0]?.signature).toBe(first.signature);
+    expect((await indexed.getHolders(token.mint, 1)).holders[0]?.wallet).toBe(creator);
+  });
+
   it("serves the Pulse board and token search routes and validates queries", async () => {
     const { sink, indexed } = setup();
     const token = launch(newMint(), "solana");
