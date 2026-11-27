@@ -11,6 +11,8 @@ import { decodeCursor, encodeCursor } from "./social/cursor";
 import type { TokenService } from "./token.service";
 
 const cursorSchema = z.object({ createdAt: z.number().int().min(0).max(253402300799), id: z.uuid() });
+const usableQuote = (value?: number) =>
+  value !== undefined && Number.isFinite(value) && value > 0 ? value : null;
 function decodeSocialCursor(value: string) {
   const result = cursorSchema.safeParse(decodeCursor(value));
   if (!result.success) throw badRequest("Invalid social cursor");
@@ -78,7 +80,8 @@ export class SocialService {
             .filter((holding) => Number(holding.quantity) > 0)
             .map(async (holding) => {
               const token = await quote(holding.mint);
-              return token ? Number(holding.quantity) * token.priceUsd : null;
+              const price = usableQuote(token?.priceUsd);
+              return price === null ? null : Number(holding.quantity) * price;
             }),
         );
         return values.reduce<number | null>(
@@ -111,7 +114,7 @@ export class SocialService {
       const filtered = await Promise.all(
         batch.items.map(async ({ userId, ...item }) => {
           const token = await quote(item.mint);
-          item.marketCapUsd = token?.marketCapUsd ?? null;
+          item.marketCapUsd = usableQuote(token?.marketCapUsd);
           if (
             input.minMarketCapUsd !== undefined &&
             (item.marketCapUsd === null || item.marketCapUsd < input.minMarketCapUsd)
@@ -129,8 +132,9 @@ export class SocialService {
             if (episode) {
               item.positionId = episode.id;
               const firstPrice = Number(episode.fills[0]!.priceUsd);
+              const price = usableQuote(token?.priceUsd);
               item.priceSinceFirstBuyPct =
-                token && firstPrice > 0 ? (token.priceUsd / firstPrice - 1) * 100 : null;
+                price !== null && firstPrice > 0 ? (price / firstPrice - 1) * 100 : null;
               if (episode.closedAt && episode.fills.at(-1)?.id === item.id) {
                 item.eventType = "closed";
                 item.realizedPnlUsd = Number(formatDecimal(episode.realizedPnl));

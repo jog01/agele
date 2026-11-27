@@ -4,7 +4,9 @@ import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
 import { FeedEventType, type FeedPage, FeedSchema, type LeaderboardEntryDto } from "../src/schemas/social";
+import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { encodeCursor } from "../src/services/social/cursor";
+import { TokenService } from "../src/services/token.service";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
 
@@ -14,10 +16,11 @@ const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
 const fixture = socialDemoFixture();
 beforeAll(fixture.setUp);
 afterAll(fixture.tearDown);
-function setup() {
+function setup(tokens?: TokenService) {
   const follows = new InMemoryFollowRepository();
   const app = testApp({
     follows,
+    ...(tokens ? { tokens } : {}),
     auth: {
       verify: async (token) => {
         if (token !== "good") throw unauthorized("Invalid access token");
@@ -152,6 +155,23 @@ describe("feed", () => {
     expect(
       (await page(app, `?${query.replace("minPortfolioUsd=1", "minPortfolioUsd=100000000000")}`)).items,
     ).toEqual([]);
+  });
+
+  it("does not match absent live quotes represented by zero", async () => {
+    const market = new MockMarketDataProvider();
+    const getToken = market.getToken.bind(market);
+    market.getToken = async (mint) => {
+      const token = await getToken(mint);
+      return token && { ...token, priceUsd: 0, marketCapUsd: 0 };
+    };
+    const { app } = setup(new TokenService(market));
+    const query = `?types=bought&mint=${SOL}`;
+    const unfiltered = await page(app, query);
+    expect(unfiltered.items.length).toBeGreaterThan(0);
+    expect(unfiltered.items[0]).toMatchObject({ marketCapUsd: null, priceSinceFirstBuyPct: null });
+    for (const filter of ["maxMarketCapUsd=100", "minPriceSinceFirstBuyPct=-100", "minPortfolioUsd=0"]) {
+      expect((await page(app, `${query}&${filter}`)).items).toEqual([]);
+    }
   });
 
   it("requires auth for following scope and filters by the viewer's followed wallets", async () => {
