@@ -108,6 +108,7 @@ export class IngestService implements ChainEventSink {
         pool: event.market.address,
         launchedAt: time,
         totalSupplyRaw,
+        metadataUri: event.metadataUri?.includes("\0") ? null : event.metadataUri,
         name: metadata?.name ?? event.mint,
         symbol: metadata?.symbol ?? "Unknown",
         imageUrl: metadata?.imageUrl ?? null,

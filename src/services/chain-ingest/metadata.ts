@@ -4,9 +4,14 @@ import { isIP } from "node:net";
 import { z } from "zod";
 
 const MAX_BYTES = 128 * 1024;
+const displayText = (max: number) =>
+  z
+    .string()
+    .transform((value) => value.replace(/\p{Cc}/gu, "").trim())
+    .pipe(z.string().min(1).max(max));
 const metadata = z.object({
-  name: z.string().trim().min(1).max(100),
-  symbol: z.string().trim().min(1).max(32),
+  name: displayText(100),
+  symbol: displayText(32),
   image: z.string().max(2048).optional(),
 });
 
@@ -85,7 +90,7 @@ async function readHttps(url: URL) {
 }
 
 export async function resolveMetadata(uri: string | undefined, load = readHttps) {
-  if (!uri || uri.length > MAX_BYTES * 3) return null;
+  if (!uri || uri.length > MAX_BYTES * 3 || uri.includes("\0")) return null;
   try {
     const data = /^data:application\/json(;base64)?,(.*)$/s.exec(uri);
     const url = data ? null : httpsUrl(uri);

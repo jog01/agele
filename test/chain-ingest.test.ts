@@ -243,6 +243,40 @@ describe("chain ingestion and indexed market data", () => {
     expect(await indexed.getRecentTrades(existing.mint, 10)).toHaveLength(1);
   });
 
+  it("sanitizes creator-provided metadata and commits the other launches in the batch", async () => {
+    const { sink } = setup();
+    const dirty = launch(newMint(), "solana");
+    const invalid = launch(newMint(), "solana");
+    const oversized = launch(newMint(), "solana");
+    const clean = launch(newMint(), "solana");
+    const dataUri = (name: string, symbol: string) =>
+      `data:application/json,${encodeURIComponent(JSON.stringify({ name, symbol }))}`;
+    await sink.ingest([
+      { ...dirty, metadataUri: dataUri("  Ot\0ter\n Coin  ", "\rO\u0085TR \t") },
+      { ...invalid, metadataUri: "data:application/json,{\0" },
+      { ...oversized, metadataUri: dataUri("Too long", "X".repeat(33)) },
+      clean,
+    ]);
+    const rows = await db
+      .select()
+      .from(chainTokens)
+      .where(inArray(chainTokens.mint, [dirty.mint, invalid.mint, oversized.mint, clean.mint]));
+    const byMint = new Map(rows.map((row) => [row.mint, row]));
+    expect(byMint.get(dirty.mint)).toMatchObject({ name: "Otter Coin", symbol: "OTR" });
+    expect(byMint.get(invalid.mint)).toMatchObject({
+      name: invalid.mint,
+      symbol: "Unknown",
+      imageUrl: null,
+      metadataUri: null,
+    });
+    expect(byMint.get(oversized.mint)).toMatchObject({
+      name: oversized.mint,
+      symbol: "Unknown",
+      imageUrl: null,
+    });
+    expect(byMint.get(clean.mint)).toMatchObject({ name: "Pocket Otter", symbol: "POTR" });
+  });
+
   it("serves the Pulse board and token search routes and validates queries", async () => {
     const { sink, indexed } = setup();
     const token = launch(newMint(), "solana");
