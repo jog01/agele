@@ -15,6 +15,10 @@ jobs:
     strategy:
       matrix:
         target: [api, ws, worker, feed]
+    # Serialize runs for one commit so two runs cannot both see a tag as missing.
+    concurrency:
+      group: publish-${{ matrix.target }}-${{ github.sha }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
@@ -28,10 +32,12 @@ jobs:
       # A rerun must not replace an image that is already published under this tag.
       - id: exists
         run: |
-          if docker buildx imagetools inspect "ghcr.io/${{ github.repository }}-${{ matrix.target }}:${{ steps.tag.outputs.sha }}" >/dev/null 2>&1; then
+          if out=$(docker buildx imagetools inspect "ghcr.io/${{ github.repository }}-${{ matrix.target }}:${{ steps.tag.outputs.sha }}" 2>&1); then
             echo "published=true" >> "$GITHUB_OUTPUT"
-          else
+          elif grep -qiE "not found|denied|forbidden|unauthorized" <<<"$out"; then  # missing tag, or package not created yet (a real auth failure fails the push too)
             echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out"; exit 1
           fi
       # Tags never move; jog01/agele-infra pins image.backendTag to sha-<commit>.
       - uses: docker/build-push-action@v6
