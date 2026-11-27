@@ -125,7 +125,11 @@ sequenceDiagram
   version (newest wins ties) without changing the author's thread pin and
   includes the number of newer versions in that thread. View counts are
   shared by versions in a thread; record an explicit open with
-  `POST /v1/tokens/{mint}/theses/{thesisId}/views`. GETs do not count.
+  `POST /v1/tokens/{mint}/theses/{thesisId}/views`. GETs do not count. Views
+  are deduplicated for 24 hours by signed-in user or by a hash of the peer IP
+  and user agent. Anonymous requests are limited to 30 per minute per peer IP.
+  The API does not trust forwarded IP headers; clients behind the same proxy
+  share its limit.
 - The public `portfolio/history` route excludes cash and linked-wallet
   balances. In `24h` it reads hourly UTC public-position snapshots; `7d`
   and `30d` read daily snapshots. Absolute and percentage change are null

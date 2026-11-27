@@ -8,6 +8,7 @@ import {
   positions,
   reactions,
   theses,
+  thesisViewers,
   tokens,
   trades,
   users,
@@ -389,13 +390,36 @@ export class PgSocialRepository {
     };
   }
 
-  async recordThesisView(mint: string, thesisId: string) {
-    const [row] = await this.db
-      .update(theses)
-      .set({ viewCount: sql`${theses.viewCount} + 1` })
-      .where(and(eq(theses.id, thesisId), eq(theses.mint, mint)))
-      .returning({ viewCount: theses.viewCount });
-    return row;
+  recordThesisView(mint: string, thesisId: string, viewerKey: string) {
+    return this.db.transaction(async (tx) => {
+      const match = and(eq(theses.id, thesisId), eq(theses.mint, mint));
+      const [thesis] = await tx
+        .select({ viewCount: theses.viewCount })
+        .from(theses)
+        .where(match)
+        .for("update");
+      if (!thesis) return undefined;
+      const [counted] = await tx
+        .insert(thesisViewers)
+        .values({ thesisId, viewerKey })
+        .onConflictDoUpdate({
+          target: [thesisViewers.thesisId, thesisViewers.viewerKey],
+          set: { countedAt: sql`now()` },
+          setWhere: sql`${thesisViewers.countedAt} <= now() - interval '24 hours'`,
+        })
+        .returning({ thesisId: thesisViewers.thesisId });
+      if (!counted) return thesis;
+      const [result] = await tx
+        .update(theses)
+        .set({ viewCount: sql`${theses.viewCount} + 1` })
+        .where(match)
+        .returning({ viewCount: theses.viewCount });
+      return result;
+    });
+  }
+
+  async pruneThesisViewers() {
+    await this.db.delete(thesisViewers).where(sql`${thesisViewers.countedAt} <= now() - interval '24 hours'`);
   }
 
   async mostLikedThesis(userId: string, viewerId?: string) {

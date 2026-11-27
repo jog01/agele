@@ -6104,7 +6104,13 @@
         "tags": [
           "social"
         ],
-        "description": "Record a thesis thread open. GET requests do not increment this counter.",
+        "description": "Count a thesis open once per viewer per 24 hours. Anonymous requests are rate-limited.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -6157,8 +6163,38 @@
               }
             }
           },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Unknown thesis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Anonymous thesis view limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or view rate limiting temporarily unavailable",
             "content": {
               "application/json": {
                 "schema": {

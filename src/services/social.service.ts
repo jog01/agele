@@ -247,8 +247,8 @@ export class SocialService {
     await this.repository.setPinned(thesisId, postId, pinned);
   }
 
-  async recordThesisView(mint: string, thesisId: string) {
-    const result = await this.repository.recordThesisView(mint, thesisId);
+  async recordThesisView(mint: string, thesisId: string, viewerKey: string) {
+    const result = await this.repository.recordThesisView(mint, thesisId, viewerKey);
     if (!result) throw notFound("Thesis");
     return result;
   }

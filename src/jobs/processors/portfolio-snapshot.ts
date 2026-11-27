@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import { getDb } from "../../db/client";
 import { logger } from "../../lib/logger";
 import { PgPortfolioRepository } from "../../repositories/portfolio.repository";
+import { PgSocialRepository } from "../../repositories/social.repository";
 import {
   createDemoPortfolioMarketDataProvider,
   createUpstreamMarketDataProvider,
@@ -45,9 +46,11 @@ export async function portfolioSnapshotProcessor(job: Job) {
     Date.now,
     createDemoPortfolioMarketDataProvider(),
   );
-  return job.name === "hourly-public-portfolio-snapshot"
-    ? createHourlyPortfolioSnapshotProcessor(repository, portfolio)(job)
-    : createPortfolioSnapshotProcessor(repository, portfolio)(job);
+  if (job.name === "hourly-public-portfolio-snapshot") {
+    await new PgSocialRepository(getDb()).pruneThesisViewers();
+    return createHourlyPortfolioSnapshotProcessor(repository, portfolio)(job);
+  }
+  return createPortfolioSnapshotProcessor(repository, portfolio)(job);
 }
 
 export function createHourlyPortfolioSnapshotProcessor(
