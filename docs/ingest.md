@@ -8,11 +8,15 @@ are keyed by (source, signature, event index) to prevent replays from
 double-counting trades, volume or candles. Supply and missing block times are
 resolved from Solana RPC for the live source; the simulator supplies both locally.
 
-`createChainIngest` selects the source, SOL/USD quote and chain facts together.
-`CHAIN_SOURCE=demo` uses the simulator, local facts and a repeatable mean-reverting
-walk around $180. When available, register the Yellowstone adapter with
-`JupiterSolUsdPrice` (current wSOL quote from Jupiter Price V3) and `RpcChainFacts`.
-The adapter must deliver launch events before trades for a mint.
+`createChainIngest` uses [the Yellowstone source selector](yellowstone-indexer.md)
+to choose the source, SOL/USD quote and chain facts together. Without both
+Yellowstone credentials it uses the simulator, local facts and a repeatable
+mean-reverting walk around $180. With both, it uses finalized Solana events,
+`JupiterSolUsdPrice` (the current wSOL quote from Jupiter Price V3), and
+`RpcChainFacts`. Live trades and migrations for a mint without an indexed launch
+are ignored until its launch is indexed; unindexed tokens still use upstream
+market data. The feed rejects batches when its lease is lost so Yellowstone
+does not acknowledge writes that did not commit.
 Launch metadata resolves from HTTPS, IPFS via a gateway, or data JSON,
 and is cached on the token row. Remote metadata requests have a 3-second timeout,
 128 KiB limit, public IPv4-only DNS, and no redirects. Missing/invalid metadata

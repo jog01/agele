@@ -1,10 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { getBase58Encoder } from "@solana/kit";
+import { loadEnv } from "../src/config/env";
 import { createChainIngest } from "../src/services/chain-ingest";
+import { RpcChainFacts } from "../src/services/chain-ingest/chain-facts";
 import type { ChainEvent } from "../src/services/chain-ingest/events";
+import { JupiterSolUsdPrice } from "../src/services/chain-ingest/jupiter-sol-usd-price";
 import { resolveMetadata } from "../src/services/chain-ingest/metadata";
 import { Curve, DemoChainSimulator, DemoSolUsdPrice } from "../src/services/chain-ingest/simulator";
 import { ChainEventSchema } from "../src/services/chain-ingest/validation";
+import { YellowstoneSource } from "../src/services/chain-ingest/yellowstone";
 
 const wallet = "11111111111111111111111111111111";
 const now = () => 1_800_000_005_000;
@@ -26,10 +30,24 @@ async function generate(seed: number) {
 
 describe("demo chain simulator", () => {
   it("selects the simulator, demo price and local chain facts together", async () => {
-    const { source, solUsd, facts } = createChainIngest({ CHAIN_SOURCE: "demo" });
+    const settings = loadEnv({ YELLOWSTONE_GRPC_URL: "https://yellowstone.example.com" });
+    expect(settings.CHAIN_SOURCE).toBe("demo");
+    const { source, solUsd, facts } = createChainIngest(settings);
     expect(source).toBeInstanceOf(DemoChainSimulator);
     expect(await solUsd.getSolUsd(now() / 1000)).toBe(new DemoSolUsdPrice().getSolUsd(now() / 1000));
     expect(await facts.blockTime((now() / 1000) * 3)).toBe(now() / 1000);
+  });
+
+  it("selects Yellowstone, Jupiter and RPC together when both credentials are configured", () => {
+    const settings = loadEnv({
+      YELLOWSTONE_GRPC_URL: "https://yellowstone.example.com",
+      YELLOWSTONE_GRPC_TOKEN: "test-key",
+    });
+    expect(settings.CHAIN_SOURCE).toBe("solana");
+    const { source, solUsd, facts } = createChainIngest(settings);
+    expect(source).toBeInstanceOf(YellowstoneSource);
+    expect(solUsd).toBeInstanceOf(JupiterSolUsdPrice);
+    expect(facts).toBeInstanceOf(RpcChainFacts);
   });
 
   it("is deterministic, backfills history, uses shared trader wallets and emits migrations followed by swaps", async () => {

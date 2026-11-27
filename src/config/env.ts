@@ -53,7 +53,6 @@ const EnvSchema = z
     SPONSOR_REFERRAL_FEE_BPS: z.coerce.number().int().min(50).max(255).default(50),
     BIRDEYE_API_KEY: z.string().optional(),
     MARKET_DATA_PROVIDER: z.enum(["indexed", "live"]).default("indexed"),
-    CHAIN_SOURCE: z.literal("demo").default("demo"),
 
     OTEL_SERVICE_NAME: z.string().default("fomo-api"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
@@ -65,7 +64,12 @@ const EnvSchema = z
   .refine((v) => !v.HELIUS_WEBHOOK_SECRET || v.MARKET_DATA_PROVIDER === "live", {
     message: "Helius indexing requires MARKET_DATA_PROVIDER=live",
     path: ["MARKET_DATA_PROVIDER"],
-  });
+  })
+  .transform((v) => ({
+    ...v,
+    CHAIN_SOURCE:
+      v.YELLOWSTONE_GRPC_URL && v.YELLOWSTONE_GRPC_TOKEN ? ("solana" as const) : ("demo" as const),
+  }));
 
 export type Env = z.infer<typeof EnvSchema>;
 

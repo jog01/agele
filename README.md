@@ -53,8 +53,9 @@ bun run db:migrate
 bun run dev                   # all four processes; REST :4000, WebSocket :4001/ws
 ```
 
-The default `CHAIN_SOURCE=demo` runs the chain simulator and needs no live keys.
-The feed backfills Pulse, swaps and candles on boot, and the API seeds fictional
+By default the chain simulator runs without live keys. Set both Yellowstone
+credentials to switch the same feed to finalized Solana events. In demo mode,
+the feed backfills Pulse, swaps and candles on boot, and the API seeds fictional
 traders and their history in PostgreSQL. Set `PRIVY_APP_ID` /
 `PRIVY_VERIFICATION_KEY` to enable authenticated routes. See [social store](docs/social.md).
 

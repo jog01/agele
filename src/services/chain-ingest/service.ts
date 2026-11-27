@@ -50,6 +50,11 @@ export class IngestService implements ChainEventSink {
       const quotes = new Map<number, number>();
       for (const event of events) {
         if (event.kind === "Trade" && event.quote.mint !== SOL_MINT) continue;
+        const [row] =
+          event.kind === "TokenLaunched"
+            ? []
+            : await tx.select().from(chainTokens).where(tokenKey(event)).for("update");
+        if (!row && event.kind !== "TokenLaunched" && event.source === "solana") continue;
         const [receipt] = await tx.insert(chainEvents).values(event).onConflictDoNothing().returning();
         if (!receipt) continue;
         const time = event.blockTime ?? slotTimes.get(event.slot) ?? (await this.facts.blockTime(event.slot));
@@ -59,7 +64,6 @@ export class IngestService implements ChainEventSink {
             result.changes.set(`${event.source}:${event.mint}`, event);
           continue;
         }
-        const [row] = await tx.select().from(chainTokens).where(tokenKey(event)).for("update");
         if (!row) throw new Error(`Missing indexed launch for ${event.mint}`);
         if (event.kind === "Migrated") {
           if (row.migratedAt !== null) continue;

@@ -6,6 +6,7 @@ import { FeedLock } from "../events/feed-lock";
 import { logger } from "../lib/logger";
 import { closeRedis, getRedis } from "../lib/redis";
 import { createChainIngest } from "../services/chain-ingest";
+import type { ChainEventSink } from "../services/chain-ingest/events";
 import { IngestService } from "../services/chain-ingest/service";
 import { createMarketDataProvider } from "../services/market-data";
 import { startPriceFeed } from "../ws/price-feed";
@@ -41,25 +42,20 @@ function startOwner() {
   };
   const { source, solUsd, facts } = createChainIngest(env);
   const ingest = new IngestService(getDb(), publisher, solUsd, facts);
-  const running = source
-    .run(
-      {
-        ingest: async (batch) => {
-          if (signal.aborted) return;
-          if (!(await lock.renew())) {
-            controller.abort();
-            return;
-          }
-          live ||= batch.some((event) => (event.blockTime ?? 0) >= start);
-          await ingest.ingest(batch);
-        },
-      },
-      signal,
-    )
-    .catch((err) => {
-      controller.abort();
-      logger.warn({ err }, "Chain source stopped");
-    });
+  const marketSink: ChainEventSink = {
+    ingest: async (batch) => {
+      signal.throwIfAborted();
+      if (!(await lock.renew())) controller.abort(new Error("Feed lease lost"));
+      signal.throwIfAborted();
+      live ||= batch.some((event) => (event.blockTime ?? 0) >= start);
+      await ingest.ingest(batch);
+    },
+  };
+  const running = source.run(marketSink, signal).catch((err) => {
+    if (signal.aborted) return;
+    controller.abort();
+    logger.warn({ err }, "Chain source stopped");
+  });
   const stopPrices = startPriceFeed(
     {
       activeTopics: () => (signal.aborted ? [] : registry.activeTopics()),

@@ -229,6 +229,20 @@ describe("chain ingestion and indexed market data", () => {
     await expect(indexed.searchTokens("no-result")).rejects.toThrow("upstream unavailable");
   });
 
+  it("commits known launches and trades even when the live stream starts after another mint launched", async () => {
+    const { sink, indexed } = setup();
+    const existing = launch(newMint(), "solana");
+    const fresh = launch(newMint(), "solana");
+    const existingTrade = { ...trade(existing, 1), transactionIndex: 0 };
+    const freshLaunch = { ...fresh, transactionIndex: 1 };
+    const freshTrade = { ...trade(fresh, 1), transactionIndex: 1 };
+    await sink.ingest([existingTrade, freshLaunch, freshTrade]);
+    expect(await indexed.getRecentTrades(fresh.mint, 10)).toHaveLength(1);
+    expect(await indexed.getToken(existing.mint)).toBeNull();
+    await sink.ingest([existing, existingTrade]);
+    expect(await indexed.getRecentTrades(existing.mint, 10)).toHaveLength(1);
+  });
+
   it("serves the Pulse board and token search routes and validates queries", async () => {
     const { sink, indexed } = setup();
     const token = launch(newMint(), "solana");
