@@ -98,13 +98,14 @@ it("uses fresh indexed quotes and refreshes stale Solana quotes through Jupiter"
     .values({ privyDid: `did:privy:${wallet}`, walletAddress: wallet })
     .returning();
   let jupiterAvailable = true;
+  let jupiterMarketCap: number | null = 800;
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: Parameters<typeof globalThis.fetch>[0]) => {
         if (!jupiterAvailable) return new Response(null, { status: 429 });
         return new URL(String(input)).pathname === "/price/v3"
           ? Response.json({ [mint]: { usdPrice: 8 } })
-          : Response.json([{ id: mint, symbol: "TEST", name: "Test", decimals: 6, mcap: 800 }]);
+          : Response.json([{ id: mint, symbol: "TEST", name: "Test", decimals: 6, mcap: jupiterMarketCap }]);
       },
       {
         preconnect: globalThis.fetch.preconnect,
@@ -187,6 +188,14 @@ it("uses fresh indexed quotes and refreshes stale Solana quotes through Jupiter"
       { mint, marketCapUsd: 800, priceSinceFirstBuyPct: 300 },
     ]);
     expect((await container.portfolio.getPositionSummary(user!.id)).unrealizedPnlUsd).toBe(12);
+
+    jupiterMarketCap = null;
+    const partialApp = createApp(createContainer());
+    const partial = await partialApp.request(`/v1/feed?wallet=${wallet}&minMarketCapUsd=500`);
+    expect(partial.status).toBe(200);
+    expect(FeedSchema.parse(await partial.json()).items).toMatchObject([
+      { mint, marketCapUsd: 500, priceSinceFirstBuyPct: 300 },
+    ]);
 
     jupiterAvailable = false;
     fetch.mockClear();

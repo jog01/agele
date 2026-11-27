@@ -1,7 +1,7 @@
 import { AppError } from "../../lib/errors";
 import type { TokenDto } from "../../schemas/token";
 import type { IndexedMarketDataProvider } from "./indexed.provider";
-import type { MarketDataProvider } from "./provider";
+import type { LiveMarketDataProvider } from "./live.provider";
 
 export type PositionQuote = (mint: string, seeded: boolean) => Promise<TokenDto | null>;
 
@@ -15,7 +15,7 @@ export async function optionalQuote(load: () => Promise<TokenDto | null>) {
 }
 
 export function createPositionQuote(
-  live: Pick<MarketDataProvider, "getToken">,
+  live: Pick<LiveMarketDataProvider, "getToken">,
   demo: IndexedMarketDataProvider,
 ): PositionQuote {
   return async (mint, seeded) => {
@@ -25,7 +25,7 @@ export function createPositionQuote(
     const indexed = await demo.getIndexedSolanaQuote(mint);
     if (!indexed) return live.getToken(mint);
     if (indexed.fresh) return indexed.token;
-    const current = await optionalQuote(() => live.getToken(mint));
+    const current = await optionalQuote(() => live.getToken(mint, indexed.token));
     return current && Number.isFinite(current.priceUsd) && current.priceUsd > 0 ? current : indexed.token;
   };
 }
