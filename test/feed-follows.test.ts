@@ -1,11 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { seedSocialDemo } from "../src/db/seed-social";
 import { unauthorized } from "../src/lib/errors";
-import { positions, trades, users } from "../src/models";
+import { feedDiscussions, positions, trades, users } from "../src/models";
 import { InMemoryFollowRepository } from "../src/repositories/follow.repository";
-import { FeedEventType, type FeedPage, FeedSchema, type LeaderboardEntryDto } from "../src/schemas/social";
+import {
+  CommentPage,
+  CommentSchema,
+  FeedEventType,
+  type FeedPage,
+  FeedSchema,
+  type LeaderboardEntryDto,
+} from "../src/schemas/social";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
 import { encodeCursor } from "../src/services/social/cursor";
 import { TokenService } from "../src/services/token.service";
@@ -18,7 +25,7 @@ const viewerId = "1fb40aaa-5ec0-4c2e-9b27-8f7e0d7a10ac";
 const fixture = socialDemoFixture();
 beforeAll(fixture.setUp);
 afterAll(fixture.tearDown);
-function setup(tokens?: TokenService) {
+function setup(tokens?: TokenService, id = viewerId) {
   const follows = new InMemoryFollowRepository();
   const app = testApp({
     follows,
@@ -30,7 +37,7 @@ function setup(tokens?: TokenService) {
       },
     },
     users: {
-      ensureUser: async () => ({ id: viewerId, walletAddress: SOL, wallets: [{ address: secondary }] }),
+      ensureUser: async () => ({ id, walletAddress: SOL, wallets: [{ address: secondary }] }),
     } as unknown as UserService,
   });
   return { app, follows };
@@ -42,6 +49,97 @@ async function page(app: ReturnType<typeof testApp>, query = "", authenticated =
 }
 
 describe("feed", () => {
+  it("persists independent reactions and threaded replies for trades and derived cards", async () => {
+    const db = getDb();
+    const id = crypto.randomUUID();
+    const { app } = setup(undefined, id);
+    const types = FeedEventType.options.filter((type) => type !== "thesis");
+    const cards = await Promise.all(
+      types.map(async (type) => {
+        const [card] = (await page(app, `?types=${type}&limit=1`)).items;
+        if (!card || card.kind === "thesis") throw new Error(`Missing ${type} activity`);
+        return card;
+      }),
+    );
+    const path = (key: string) => `/v1/feed/${encodeURIComponent(key)}`;
+    const reply = (key: string, body: string, parentId?: string) =>
+      app.request(`${path(key)}/comments`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ body, parentId }),
+      });
+    const buy = cards.find((card) => card.eventType === "bought")!;
+    const milestone = cards.find((card) => card.eventType === "milestone")!;
+    const keys = cards.map((card) => card.discussionKey);
+    await db.insert(users).values({ id, privyDid: `privy:engagement:${id}` });
+    try {
+      expect(new Set(keys).size).toBe(types.length);
+      expect((await app.request(`${path(buy.discussionKey)}/reaction`, { method: "PUT" })).status).toBe(401);
+      expect((await app.request(`${path("not-a-key")}/comments`)).status).toBe(400);
+      expect((await app.request(`${path(`milestone:${buy.id}`)}/comments`)).status).toBe(404);
+      expect(
+        (await app.request(`${path(`trade:${crypto.randomUUID()}`)}/reaction`, { method: "PUT", headers }))
+          .status,
+      ).toBe(404);
+      expect((await reply(buy.discussionKey, "Watch discord.gg/invite")).status).toBe(422);
+      expect((await reply(buy.discussionKey, "a".repeat(201))).status).toBe(400);
+      const posted = await reply(buy.discussionKey, "Watching this fill");
+      expect(posted.status).toBe(201);
+      const parent = CommentSchema.parse(await posted.json());
+      expect(parent.discussionKey).toBe(buy.discussionKey);
+      expect((await reply(milestone.discussionKey, "Wrong thread", parent.id)).status).toBe(404);
+      expect((await reply(buy.discussionKey, "Watching this fill")).status).toBe(422);
+      const nested = await reply(buy.discussionKey, "Same here", parent.id);
+      expect(nested.status).toBe(201);
+      expect(CommentSchema.parse(await nested.json()).parentId).toBe(parent.id);
+      for (const card of cards.filter((card) => card.kind !== "trade")) {
+        expect((await reply(card.discussionKey, `Interesting ${card.kind} activity`)).status).toBe(201);
+      }
+      expect((await reply(buy.discussionKey, "Over the limit")).status).toBe(429);
+      const first = await app.request(`${path(buy.discussionKey)}/comments?limit=1`);
+      expect(first.status).toBe(200);
+      const firstPage = CommentPage.parse(await first.json());
+      expect(firstPage.comments).toHaveLength(1);
+      expect(firstPage.nextCursor).toBeString();
+      const next = await app.request(`${path(buy.discussionKey)}/comments?cursor=${firstPage.nextCursor}`);
+      const nextPage = CommentPage.parse(await next.json());
+      expect(new Set([...firstPage.comments, ...nextPage.comments].map((comment) => comment.body))).toEqual(
+        new Set(["Watching this fill", "Same here"]),
+      );
+      for (const card of cards) {
+        const reaction = `${path(card.discussionKey)}/reaction`;
+        for (let i = 0; i < 2; i++) {
+          expect((await app.request(reaction, { method: "PUT", headers })).status).toBe(204);
+        }
+        const query = `?types=${card.eventType}&limit=1`;
+        const replyCount = card === buy ? 2 : card.kind !== "trade" ? 1 : 0;
+        expect((await page(app, query, true)).items[0]).toMatchObject({
+          id: card.id,
+          likeCount: 1,
+          replyCount,
+          viewerLiked: true,
+        });
+        expect((await page(app, query)).items[0]).toMatchObject({
+          id: card.id,
+          likeCount: 1,
+          replyCount,
+          viewerLiked: false,
+        });
+        for (let i = 0; i < 2; i++) {
+          expect((await app.request(reaction, { method: "DELETE", headers })).status).toBe(204);
+        }
+        expect((await page(app, query, true)).items[0]).toMatchObject({
+          likeCount: 0,
+          replyCount,
+          viewerLiked: false,
+        });
+      }
+    } finally {
+      await db.delete(feedDiscussions).where(inArray(feedDiscussions.key, keys));
+      await db.delete(users).where(eq(users.id, id));
+    }
+  });
+
   it("keeps persisted feed identities and dates unchanged when the seed is rerun", async () => {
     const { app } = setup();
     const snapshot = await page(app, "?limit=100");

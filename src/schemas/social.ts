@@ -53,6 +53,7 @@ export const CommentSchema = event
     kind: z.enum(["thesis", "comment"]),
     wallet: z.string().nullable(),
     thesisId: z.uuid().nullable(),
+    discussionKey: z.string().nullable(),
     parentId: z.uuid().nullable(),
     pinned: z.boolean(),
     body: z.string(),
@@ -69,6 +70,52 @@ export const SocialPostBody = z.object({
 export const CommentBody = SocialPostBody.omit({ positionId: true }).extend({
   body: z.string().trim().min(1).max(200),
   parentId: z.uuid().optional(),
+});
+
+const feedEngagement = z.object({
+  likeCount: z.number().int().nonnegative(),
+  replyCount: z.number().int().nonnegative(),
+  viewerLiked: z.boolean(),
+});
+const activity = event.extend({
+  ...feedEngagement.shape,
+  discussionKey: z
+    .string()
+    .openapi({ description: "Opaque key for this card's comments and reaction routes" }),
+});
+
+const DiscussionTarget = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("trade"), id: z.uuid() }),
+  z.object({ kind: z.literal("milestone"), id: z.uuid() }),
+  z.object({ kind: z.literal("new-trader"), id: z.uuid() }),
+  z.object({
+    kind: z.literal("multi-user"),
+    mint: z.string().refine(isAddress),
+    side: z.enum(["buy", "sell"]),
+    bucket: z.int().nonnegative().max(253402300499).multipleOf(300),
+  }),
+]);
+export type FeedDiscussionTarget = z.infer<typeof DiscussionTarget>;
+export const FeedDiscussionParam = z.object({
+  key: z
+    .string()
+    .max(100)
+    .transform((key, ctx) => {
+      const [kind, id, side, bucket, extra] = key.split(":");
+      const result = DiscussionTarget.safeParse(
+        kind === "multi-user" && extra === undefined && /^(0|[1-9]\d*)$/.test(bucket ?? "")
+          ? { kind, mint: id, side, bucket: Number(bucket) }
+          : side === undefined && id === id?.toLowerCase()
+            ? { kind, id }
+            : null,
+      );
+      if (!result.success) {
+        ctx.addIssue({ code: "custom", message: "Invalid feed discussion key" });
+        return z.NEVER;
+      }
+      return { key, target: result.data };
+    })
+    .openapi({ param: { name: "key", in: "path" }, description: "The card's discussionKey" }),
 });
 
 export const LeaderboardQuery = z.object({
@@ -98,8 +145,9 @@ export const FeedItemSchema = z
       eventType: z.literal("thesis"),
       marketCapUsd: z.number().nullable(),
       ...engagement.shape,
+      ...feedEngagement.shape,
     }),
-    event.extend({
+    activity.extend({
       kind: z.literal("trade"),
       wallet: z.string(),
       side: z.enum(["buy", "sell"]),
@@ -111,7 +159,7 @@ export const FeedItemSchema = z
       priceSinceFirstBuyPct: z.number().nullable(),
       marketCapUsd: z.number().nullable(),
     }),
-    event.extend({
+    activity.extend({
       kind: z.literal("multi-user"),
       eventType: z.literal("multi-user"),
       wallet: z.string(),
@@ -120,7 +168,7 @@ export const FeedItemSchema = z
       traderCount: z.number().int(),
       marketCapUsd: z.number().nullable(),
     }),
-    event.extend({
+    activity.extend({
       kind: z.literal("milestone"),
       eventType: z.literal("milestone"),
       wallet: z.string(),
@@ -128,7 +176,7 @@ export const FeedItemSchema = z
       realizedPnlUsd: z.number(),
       marketCapUsd: z.number().nullable(),
     }),
-    event.extend({
+    activity.extend({
       kind: z.literal("new-trader"),
       eventType: z.literal("new-trader"),
       wallet: z.string(),

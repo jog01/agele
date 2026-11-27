@@ -53,6 +53,13 @@ export const theses = pgTable(
   (t) => [unique().on(t.wallet, t.mint, t.positionId)],
 );
 
+export const feedDiscussions = pgTable("feed_discussions", {
+  key: text().primaryKey(),
+  mint: text()
+    .notNull()
+    .references(() => tokens.mint, { onDelete: "cascade" }),
+});
+
 export const comments = pgTable(
   "comments",
   {
@@ -67,6 +74,7 @@ export const comments = pgTable(
     kind: postKind().notNull().default("comment"),
     position: postPosition().notNull().default("none"),
     thesisId: uuid().references(() => theses.id, { onDelete: "cascade" }),
+    discussionKey: text().references(() => feedDiscussions.key, { onDelete: "cascade" }),
     parentId: uuid().references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
     pinned: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -74,6 +82,7 @@ export const comments = pgTable(
   (t) => [
     index("comments_mint_created_idx").on(t.mint, t.createdAt),
     index("comments_thesis_idx").on(t.thesisId),
+    index("comments_discussion_idx").on(t.discussionKey),
     index("comments_parent_idx").on(t.parentId),
     uniqueIndex("comments_pinned_thesis_idx").on(t.thesisId).where(sql`${t.pinned}`),
     index("comments_user_created_idx").on(t.userId, t.createdAt),
@@ -85,6 +94,10 @@ export const comments = pgTable(
       sql`${t.kind} <> 'thesis' OR (${t.parentId} IS NULL AND ${t.thesisId} IS NOT NULL)`,
     ),
     check("comments_pin_shape", sql`not ${t.pinned} OR ${t.kind} = 'thesis'`),
+    check(
+      "comments_discussion_shape",
+      sql`${t.discussionKey} IS NULL OR (${t.thesisId} IS NULL AND ${t.kind} = 'comment')`,
+    ),
   ],
 );
 
@@ -111,4 +124,17 @@ export const reactions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.postId, t.userId] })],
+);
+
+export const feedReactions = pgTable(
+  "feed_reactions",
+  {
+    discussionKey: text()
+      .notNull()
+      .references(() => feedDiscussions.key, { onDelete: "cascade" }),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.discussionKey, t.userId] })],
 );

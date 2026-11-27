@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import { env } from "../config/env";
 import { closeDb, getDb } from "../db/client";
+import { assertLiveDatabase } from "../db/live-data-guard";
 import { RedisEventPublisher } from "../events/bus";
 import { portfolioSnapshotProcessor } from "../jobs/processors/portfolio-snapshot";
 import { createTradeIndexProcessor } from "../jobs/processors/trade-index";
@@ -15,6 +16,7 @@ import { createMarketDataProvider, createTradeMarketDataProvider } from "../serv
 import { RedisLeaderboard } from "../services/social/leaderboard-store";
 import { TradeIndexer } from "../services/trade-indexer";
 
+if (env.MARKET_DATA_PROVIDER === "live") await assertLiveDatabase(getDb());
 initTelemetry("fomo-worker");
 const events = new RedisEventPublisher();
 const market = createMarketDataProvider();
