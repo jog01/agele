@@ -15,6 +15,7 @@ import { PgUserRepository } from "./repositories/user.repository";
 import { type AuthVerifier, createAuthVerifier } from "./services/auth.service";
 import { LeaderboardService } from "./services/leaderboard.service";
 import {
+  createDemoPortfolioMarketDataProvider,
   createMarketDataProvider,
   createUpstreamMarketDataProvider,
   type MarketDataProvider,
@@ -102,7 +103,14 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb());
   const portfolio =
-    overrides.portfolio ?? new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances);
+    overrides.portfolio ??
+    new PortfolioService(
+      new PgPortfolioRepository(getDb()),
+      walletMarket,
+      balances,
+      Date.now,
+      overrides.market ?? createDemoPortfolioMarketDataProvider(),
+    );
   return {
     feeSponsor,
     swapRateLimiter: overrides.swapRateLimiter ?? new RedisSwapRateLimiter(getRedis()),

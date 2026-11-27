@@ -5,7 +5,10 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { env } from "../src/config/env";
 import { createContainer } from "../src/container";
-import { createPortfolioSnapshotProcessor } from "../src/jobs/processors/portfolio-snapshot";
+import {
+  createPortfolioSnapshotProcessor,
+  portfolioSnapshotProcessor,
+} from "../src/jobs/processors/portfolio-snapshot";
 import * as schema from "../src/models";
 import { PgPortfolioRepository } from "../src/repositories/portfolio.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
@@ -352,6 +355,70 @@ describe("portfolio database integration", () => {
       expect((await repository.history(recovered![0])).some(({ day }) => day === "2026-01-02")).toBe(true);
     } finally {
       lookup.mockRestore();
+    }
+  });
+
+  it("snapshots seeded and simulated positions at demo prices without repricing real assets", async () => {
+    const sharedMint = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    const demoMint = `demo-${suffix}`;
+    const simulated = (await new MockMarketDataProvider().getToken(sharedMint))!;
+    const [seeded, real] = await db
+      .insert(schema.users)
+      .values([{ privyDid: `seed-${suffix}`, demo: true }, { privyDid: `real-${suffix}` }])
+      .returning();
+    const ids = [seeded!.id, real!.id];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+          const path = new URL(String(input)).pathname;
+          if (path === "/price/v3") return Response.json(prices);
+          if (path === "/tokens/v2/search") return Response.json(tokens);
+          const method = JSON.parse(String(init?.body)).method;
+          return Response.json({ result: { value: method === "getBalance" ? 0 : [] } });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    try {
+      await db
+        .insert(schema.tokens)
+        .values([
+          { mint: sharedMint, symbol: simulated.symbol, name: simulated.name, decimals: simulated.decimals },
+          { mint: demoMint, symbol: "TEST", name: "Test", decimals: 6 },
+        ])
+        .onConflictDoNothing();
+      await db.insert(schema.chainTokens).values({
+        source: "demo",
+        mint: demoMint,
+        venue: "pump.fun",
+        pool: demoMint,
+        creator: WALLET,
+        name: "Test",
+        symbol: "TEST",
+        decimals: 6,
+        totalSupplyRaw: "1000000000",
+        launchedAt: 1,
+        priceUsd: 7,
+      });
+      await db.insert(schema.positions).values(
+        [
+          { userId: seeded!.id, mint: sharedMint },
+          { userId: real!.id, mint: sharedMint },
+          { userId: real!.id, mint: demoMint },
+        ].map((position) => ({ ...position, quantity: "1", costBasisUsd: "3", realizedPnlUsd: "0" })),
+      );
+      await portfolioSnapshotProcessor({} as Job);
+      const [seedRow] = await repository.history(seeded!.id);
+      const [realRow] = await repository.history(real!.id);
+      expect(Number(seedRow?.positionsValueUsd)).toBeCloseTo(simulated.priceUsd, 2);
+      expect(Number(realRow?.positionsValueUsd)).toBeCloseTo(7 + prices[sharedMint].usdPrice, 8);
+    } finally {
+      fetch.mockRestore();
+      await db.delete(schema.portfolioSnapshots).where(inArray(schema.portfolioSnapshots.userId, ids));
+      await db.delete(schema.positions).where(inArray(schema.positions.userId, ids));
+      await db.delete(schema.users).where(inArray(schema.users.id, ids));
+      await db.delete(schema.chainTokens).where(eq(schema.chainTokens.mint, demoMint));
+      await db.delete(schema.tokens).where(eq(schema.tokens.mint, demoMint));
     }
   });
 });

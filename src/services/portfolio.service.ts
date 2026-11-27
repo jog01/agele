@@ -26,6 +26,7 @@ export class PortfolioService {
     private readonly market: MarketDataProvider,
     private readonly balances: WalletBalanceProvider,
     private readonly now: () => number = Date.now,
+    private readonly demoMarket?: Pick<MarketDataProvider, "getToken">,
   ) {}
 
   async getPortfolio(userId: string) {
@@ -54,11 +55,12 @@ export class PortfolioService {
     const positions = await Promise.all(
       rows
         .filter(({ position }) => Number(position.quantity) > 0)
-        .map(async ({ position, symbol, imageUrl }) => {
+        .map(async ({ position, symbol, imageUrl, seeded, demoMint }) => {
           const quantity = Number(position.quantity);
           const cost = Number(position.costBasisUsd);
           const avgCostUsd = cost / quantity;
-          const token = await this.market.getToken(position.mint);
+          const market = seeded || demoMint !== null ? (this.demoMarket ?? this.market) : this.market;
+          const token = await market.getToken(position.mint);
           const hasPrice = token && Number.isFinite(token.priceUsd) && token.priceUsd > 0;
           const priceUsd = hasPrice ? token.priceUsd : avgCostUsd;
           const valueUsd = hasPrice ? quantity * priceUsd : cost;
