@@ -200,15 +200,23 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     for (const token of [...indexed, ...upstream]) {
       if (!tokens.has(token.mint)) tokens.set(token.mint, token);
     }
-    if (matchesSol && !rows.some((row) => row.mint === SOL_MINT)) {
-      const external = tokens.get(SOL_MINT);
-      let sol = external ?? solToken(0);
-      try {
-        sol = (await this.getFallbackToken(SOL_MINT, external ?? null)) ?? sol;
-      } catch {
-        tokensUnavailable = true;
+    const solMatch = tokens.get(SOL_MINT);
+    if (matchesSol || solMatch) {
+      const row = rows.find(({ mint }) => mint === SOL_MINT) ?? (await this.indexedToken(SOL_MINT));
+      let sol = solMatch ?? solToken(0);
+      if (hasIndexedMarketData(row)) {
+        sol = solMatch
+          ? { ...solMatch, priceUsd: row.priceUsd }
+          : tokenDto(row, await tokenStats(this.db, row, now));
+      } else {
+        try {
+          sol = (await this.getFallbackToken(SOL_MINT, upstreamByMint.get(SOL_MINT) ?? null)) ?? sol;
+        } catch {
+          tokensUnavailable = true;
+        }
       }
-      tokens.set(SOL_MINT, { ...sol, symbol: SOL_SYMBOL, name: SOL_NAME });
+      if (matchesSol) tokens.set(SOL_MINT, { ...sol, symbol: SOL_SYMBOL, name: SOL_NAME });
+      else if (solMatch) tokens.set(SOL_MINT, { ...solMatch, priceUsd: sol.priceUsd });
     }
     const exact = tokens.get(query);
     tokens.delete(query);

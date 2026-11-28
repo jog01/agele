@@ -4,7 +4,7 @@ import { asc, inArray, like } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { AppError } from "../src/lib/errors";
 import { chainCandles, chainEvents, chainTokens, chainTrades } from "../src/models/chain";
-import { PulseEventSchema, PulseSchema } from "../src/schemas/token";
+import { PulseEventSchema, PulseSchema, TokenSchema } from "../src/schemas/token";
 import { demoMetadataUri, demoTokenImage } from "../src/services/chain-ingest/demo-metadata";
 import { readDemoState } from "../src/services/chain-ingest/demo-state";
 import type { ChainEvent, EventRef } from "../src/services/chain-ingest/events";
@@ -353,11 +353,20 @@ describe("chain ingestion and indexed market data", () => {
     });
     const indexed = new IndexedMarketDataProvider(db, { source: "demo", upstream, solUsd });
     const app = testApp({ tokens: new TokenService(indexed) });
+    const detail = await app.request(`/v1/tokens/${SOL}`);
+    expect(detail.status).toBe(200);
+    const { priceUsd } = TokenSchema.parse(await detail.json());
+    expect(priceUsd).toBe(200);
     for (const path of ["/v1/search", "/v1/tokens/search"]) {
       const response = await app.request(`${path}?q=wRaPpEd`);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
-        tokens: [expect.objectContaining({ mint: SOL, name: "Wrapped SOL", symbol: "SOL" })],
+        tokens: [expect.objectContaining({ mint: SOL, name: "Wrapped SOL", symbol: "SOL", priceUsd })],
+      });
+      const canonical = await app.request(`${path}?q=Solana`);
+      expect(canonical.status).toBe(200);
+      expect(await canonical.json()).toMatchObject({
+        tokens: expect.arrayContaining([expect.objectContaining({ mint: SOL, priceUsd })]),
       });
     }
   });
