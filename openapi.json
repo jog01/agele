@@ -3,7 +3,7 @@
   "info": {
     "title": "fomo API",
     "version": "0.1.0",
-    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"pulse\"}. Events use {type:\"event\",topic,data}. Topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds."
+    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"pulse\"}. Events use {type:\"event\",topic,data}. Public topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Private topic user:<wallet>:notifications sends data {\"type\":\"changed\"} (NotificationUpdate). Send {\"op\":\"authenticate\",\"token\":\"<Privy access token>\"} and wait for an authenticated acknowledgement before subscribing to your primary or first linked Solana wallet. The socket closes when the token expires. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds."
   },
   "components": {
     "securitySchemes": {
@@ -269,6 +269,20 @@
           "amountUsd",
           "priceUsd",
           "time"
+        ]
+      },
+      "NotificationUpdate": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "changed"
+            ]
+          }
+        },
+        "required": [
+          "type"
         ]
       },
       "Health": {
@@ -1421,6 +1435,628 @@
           "walletAddress",
           "handle",
           "wallets"
+        ]
+      },
+      "NotificationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "indexed",
+              "demo"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "source"
+        ]
+      },
+      "Notification": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable notification or group ID"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "Unix seconds; time of the latest event in the group"
+              },
+              "readAt": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Unix seconds, or null if any event in this item is unread"
+              },
+              "actors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "handle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "displayName",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 3
+              },
+              "actorCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "trader_trade"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "wallet": {
+                    "type": "string"
+                  },
+                  "positionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "sizeUsd": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "buy",
+                      "sell"
+                    ]
+                  },
+                  "mint": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "wallet",
+                  "positionId",
+                  "sizeUsd",
+                  "side",
+                  "mint",
+                  "symbol",
+                  "imageUrl"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "readAt",
+              "actors",
+              "actorCount",
+              "kind",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable notification or group ID"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "Unix seconds; time of the latest event in the group"
+              },
+              "readAt": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Unix seconds, or null if any event in this item is unread"
+              },
+              "actors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "handle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "displayName",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 3
+              },
+              "actorCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "thesis_like"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "wallet": {
+                    "type": "string"
+                  },
+                  "positionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "thesisId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "commentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mint": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "wallet",
+                  "positionId",
+                  "thesisId",
+                  "commentId",
+                  "mint",
+                  "symbol",
+                  "imageUrl"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "readAt",
+              "actors",
+              "actorCount",
+              "kind",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable notification or group ID"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "Unix seconds; time of the latest event in the group"
+              },
+              "readAt": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Unix seconds, or null if any event in this item is unread"
+              },
+              "actors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "handle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "displayName",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 3
+              },
+              "actorCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "thesis_comment"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "wallet": {
+                    "type": "string"
+                  },
+                  "positionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "thesisId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "commentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mint": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "imageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "wallet",
+                  "positionId",
+                  "thesisId",
+                  "commentId",
+                  "mint",
+                  "symbol",
+                  "imageUrl"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "readAt",
+              "actors",
+              "actorCount",
+              "kind",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable notification or group ID"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "Unix seconds; time of the latest event in the group"
+              },
+              "readAt": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Unix seconds, or null if any event in this item is unread"
+              },
+              "actors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "handle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "displayName",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 3
+              },
+              "actorCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "follow"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "wallet": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "wallet"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "readAt",
+              "actors",
+              "actorCount",
+              "kind",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable notification or group ID"
+              },
+              "createdAt": {
+                "type": "number",
+                "description": "Unix seconds; time of the latest event in the group"
+              },
+              "readAt": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Unix seconds, or null if any event in this item is unread"
+              },
+              "actors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "handle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "displayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "displayName",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 3
+              },
+              "actorCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "leaderboard"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "window": {
+                    "type": "string",
+                    "enum": [
+                      "24h",
+                      "7d",
+                      "30d"
+                    ]
+                  },
+                  "rank": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "previousRank": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "window",
+                  "rank",
+                  "previousRank"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "readAt",
+              "actors",
+              "actorCount",
+              "kind",
+              "target"
+            ]
+          }
+        ]
+      },
+      "NotificationUnreadCount": {
+        "type": "object",
+        "properties": {
+          "unreadCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "unreadCount"
+        ]
+      },
+      "AlertSettings": {
+        "type": "object",
+        "properties": {
+          "traderActivity": {
+            "type": "boolean"
+          },
+          "sound": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "traderActivity",
+          "sound"
         ]
       },
       "Portfolio": {
@@ -3756,6 +4392,353 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Newest notifications first, including seeded data for the signed-in user in demo mode.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notifications/unread-count": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread inbox item count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadCount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notifications/{id}/read": {
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread inbox item count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadCount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Notification not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notifications/read-all": {
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread inbox item count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadCount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notifications/settings": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

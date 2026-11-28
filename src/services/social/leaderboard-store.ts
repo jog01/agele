@@ -20,6 +20,7 @@ export interface LeaderboardStore {
   update(window: LeaderboardWindowValue, userId: string, row: LeaderboardRow | null): Promise<void>;
   top(window: LeaderboardWindowValue, limit: number): Promise<LeaderboardRow[]>;
   rank(window: LeaderboardWindowValue, userId: string): Promise<number | null>;
+  rankOrder(window: LeaderboardWindowValue): Promise<string[]>;
 }
 
 const key = (window: LeaderboardWindowValue) => `leaderboard:${window}`;
@@ -32,6 +33,10 @@ export class RedisLeaderboard implements LeaderboardStore {
   async rank(window: LeaderboardWindowValue, userId: string) {
     const rank = await this.redis.zrevrank(key(window), userId);
     return rank === null ? null : rank + 1;
+  }
+
+  rankOrder(window: LeaderboardWindowValue) {
+    return this.redis.zrevrange(key(window), 0, -1);
   }
 
   private check(result: [Error | null, unknown][] | null) {
