@@ -97,6 +97,16 @@ describe("demo chain simulator", () => {
     );
   });
 
+  it("gives every deterministic historical mint a distinct name and ticker", async () => {
+    const launches = (await generate(73))
+      .filter((event) => event.kind === "TokenLaunched")
+      .filter((event) => event.blockTime !== now() / 1000);
+    const labels = await Promise.all(launches.map((event) => resolveMetadata(event.metadataUri)));
+    expect(labels.every((label) => label !== null)).toBe(true);
+    expect(new Set(labels.map((label) => label?.name.toLowerCase())).size).toBe(launches.length);
+    expect(new Set(labels.map((label) => label?.symbol.toLowerCase())).size).toBe(launches.length);
+  });
+
   it("continues a persisted live mint from its last reserves, market and transaction index", async () => {
     const mint = "4vbX11omHkUZLmpw2GyAYAp4AGZPB47VPh39VgphgQRU";
     const time = now() / 1000;
@@ -105,6 +115,7 @@ describe("demo chain simulator", () => {
     used.migrate();
     const prior = used.buy(40_000_000_000n)!;
     const loadState = async () => ({
+      labels: [],
       tip: { time, nextTransactionIndex: 20 },
       markets: [
         {

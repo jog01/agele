@@ -5,6 +5,7 @@ import type { CandleDto, IntervalValue } from "../../schemas/token";
 import { SOL_MINT } from "../helius-parser";
 import { INTERVAL_SECONDS } from "../market-data/provider";
 import type { ChainFacts, SolUsdPrice } from "./chain-facts";
+import { DemoTokenLabels, demoMetadataUri, demoTokenImage } from "./demo-metadata";
 import { DEMO_ACTIVE_MARKETS, type DemoState } from "./demo-state";
 import type { ChainEvent, ChainEventSink, ChainEventSource, Market } from "./events";
 
@@ -167,6 +168,7 @@ class Simulation {
   private readonly random: () => number;
   private readonly traders: readonly string[];
   private readonly tokens: DemoToken[] = [];
+  private labels = new DemoTokenLabels();
   private lastTime = -1;
   private tx = 0;
   private launches = 0;
@@ -188,7 +190,8 @@ class Simulation {
     this.live = true;
   }
 
-  restore({ markets, tip }: DemoState) {
+  restore({ labels, markets, tip }: DemoState) {
+    this.labels = new DemoTokenLabels(labels);
     this.lastTime = tip.time;
     this.tx = tip.nextTransactionIndex;
     for (const { mint, pool, migrated, trades } of markets) {
@@ -252,18 +255,17 @@ class Simulation {
     if (this.tokens.length > DEMO_ACTIVE_MARKETS) this.tokens.shift();
     const prefix = this.pick(prefixes);
     const mascot = this.pick(mascots);
-    const metadata = {
+    const label = this.labels.claim(mint, {
       name: `${prefix} ${mascot}`,
       symbol: `${prefix.slice(0, 2)}${mascot.slice(0, 4)}`.toUpperCase(),
-      image: `https://api.dicebear.com/9.x/bottts-neutral/png?seed=${mint}`,
-    };
+    });
     return {
       ...this.ref(mint, time),
       kind: "TokenLaunched",
       market,
       creator: this.pick(this.traders),
       decimals: DECIMALS,
-      metadataUri: `data:application/json,${encodeURIComponent(JSON.stringify(metadata))}`,
+      metadataUri: demoMetadataUri(label, demoTokenImage(mint)),
     };
   }
 

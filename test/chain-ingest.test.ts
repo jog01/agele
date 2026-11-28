@@ -1,11 +1,14 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
-import { inArray, like } from "drizzle-orm";
+import { asc, inArray, like } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { AppError } from "../src/lib/errors";
 import { chainCandles, chainEvents, chainTokens, chainTrades } from "../src/models/chain";
 import { PulseEventSchema, PulseSchema } from "../src/schemas/token";
+import { demoMetadataUri, demoTokenImage } from "../src/services/chain-ingest/demo-metadata";
+import { readDemoState } from "../src/services/chain-ingest/demo-state";
 import type { ChainEvent, EventRef } from "../src/services/chain-ingest/events";
+import { resolveMetadata } from "../src/services/chain-ingest/metadata";
 import { IngestService } from "../src/services/chain-ingest/service";
 import { DemoSolUsdPrice } from "../src/services/chain-ingest/simulator";
 import { IndexedMarketDataProvider } from "../src/services/market-data/indexed.provider";
@@ -114,6 +117,41 @@ afterAll(async () => {
 });
 
 describe("chain ingestion and indexed market data", () => {
+  it("repairs duplicate simulator metadata without renaming the first mint or touching live rows", async () => {
+    const { sink } = setup();
+    const label = { name: `Cloud Duck ${prefix}`, symbol: "CLOUDDUCKTEST" };
+    const first = newMint();
+    const second = newMint();
+    const live = newMint();
+    const token = (mint: string, offset: number, source: EventRef["source"]) => ({
+      ...launch(mint, source),
+      slot: 1 + offset,
+      blockTime: time + offset,
+      metadataUri: demoMetadataUri(label, demoTokenImage(mint)),
+    });
+    await sink.ingest([token(first, 0, "demo"), token(second, 1, "demo"), token(live, 2, "solana")]);
+    const rows = () =>
+      db
+        .select()
+        .from(chainTokens)
+        .where(inArray(chainTokens.mint, [first, second, live]))
+        .orderBy(asc(chainTokens.launchedAt));
+
+    const state = await readDemoState(db);
+    const repaired = await rows();
+    const [original, renamed, unchangedLive] = repaired;
+    expect(original).toMatchObject({ mint: first, ...label });
+    expect(unchangedLive).toMatchObject({ mint: live, ...label });
+    const tag = second.slice(0, 5).toUpperCase();
+    const changed = { name: `${label.name} · ${tag}`, symbol: `${label.symbol}-${tag}` };
+    expect(renamed).toMatchObject({ mint: second, ...changed, imageUrl: demoTokenImage(second) });
+    expect(await resolveMetadata(renamed?.metadataUri ?? undefined)).toMatchObject(changed);
+    expect(state?.labels).toContainEqual(label);
+    expect(state?.labels).toContainEqual(changed);
+    await readDemoState(db);
+    expect(await rows()).toEqual(repaired);
+  });
+
   it("stores stages, exact and prefix search, 24h statistics, net holders, and own OHLCV without double counting", async () => {
     const { sent, sink, indexed, advance } = setup();
     const token = launch(newMint(), "solana");
