@@ -44,7 +44,10 @@ export class PgNotificationRepository {
       from page p
       left join tokens t on t.mint = p.mint
       cross join lateral (
-        select coalesce(jsonb_agg(jsonb_build_object('wallet', u.wallet_address, 'handle', u.handle,
+        select coalesce(jsonb_agg(jsonb_build_object('wallet', coalesce(u.wallet_address, (
+          select w.address from wallets w where w.user_id = u.id and w.chain_type = 'solana'
+          order by w.is_primary desc, w.address limit 1
+        )), 'handle', u.handle,
           'displayName', u.display_name, 'avatarUrl', u.avatar_url) order by g.newest), '[]'::jsonb) as actors
         from grouped g join users u on u.id = g.actor_id
         where g.item_key = p.item_key and g.newest <= 3

@@ -5,7 +5,7 @@ import { env } from "../src/config/env";
 import { getDb } from "../src/db/client";
 import { decimal } from "../src/lib/decimal";
 import { unauthorized } from "../src/lib/errors";
-import { comments, follows, notifications, positions, theses, trades, users } from "../src/models";
+import { comments, follows, notifications, positions, theses, trades, users, wallets } from "../src/models";
 import { PgFollowRepository } from "../src/repositories/follow.repository";
 import { PgLeaderboardRepository } from "../src/repositories/leaderboard.repository";
 import {
@@ -156,7 +156,13 @@ describe("account notifications", () => {
   };
 
   beforeAll(async () => {
-    await db.insert(users).values(accounts);
+    await db.insert(users).values([author, { ...follower, walletAddress: null }, quiet]);
+    await db.insert(wallets).values({
+      userId: follower.id,
+      address: follower.walletAddress,
+      chainType: "solana",
+      walletClientType: "external",
+    });
   });
   afterAll(async () => {
     await db.delete(comments).where(eq(comments.userId, author.id));
