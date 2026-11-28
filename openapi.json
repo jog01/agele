@@ -1546,6 +1546,182 @@
           "winRatePct"
         ]
       },
+      "PositionsLeaderboard": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "enum": [
+              "24h",
+              "7d",
+              "30d",
+              "all"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PositionsLeaderboardEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "window",
+          "entries",
+          "nextCursor"
+        ]
+      },
+      "PositionsLeaderboardEntry": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "Rank among positions matching the filters"
+          },
+          "positionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Opening fill ID; pass as positionId to position replay"
+          },
+          "trader": {
+            "type": "object",
+            "properties": {
+              "wallet": {
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "wallet",
+              "handle",
+              "displayName",
+              "avatarUrl"
+            ]
+          },
+          "token": {
+            "type": "object",
+            "properties": {
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "mint",
+              "symbol",
+              "name",
+              "imageUrl"
+            ]
+          },
+          "totalInvestedUsd": {
+            "type": "number",
+            "description": "Sum of the position's buys in USD"
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "pnlPct": {
+            "type": "number",
+            "description": "realizedPnlUsd / totalInvestedUsd x 100"
+          },
+          "avgEntryMarketCapUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "holdSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "openedAt": {
+            "type": "integer"
+          },
+          "closedAt": {
+            "type": "integer"
+          },
+          "thesis": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "body": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds of the latest version"
+              }
+            },
+            "required": [
+              "id",
+              "body",
+              "createdAt"
+            ],
+            "description": "Latest version of the position's thesis"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo"
+            ]
+          },
+          "isFollowing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rank",
+          "positionId",
+          "trader",
+          "token",
+          "totalInvestedUsd",
+          "realizedPnlUsd",
+          "pnlPct",
+          "avgEntryMarketCapUsd",
+          "holdSeconds",
+          "openedAt",
+          "closedAt",
+          "thesis"
+        ]
+      },
       "FeedItem": {
         "oneOf": [
           {
@@ -4860,6 +5036,149 @@
                     "window",
                     "entries"
                   ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/leaderboard/positions": {
+      "get": {
+        "tags": [
+          "social"
+        ],
+        "description": "Closed positions (first buy until holdings return to zero) ranked by realized USD PnL. Window keeps positions closed in it; invested buckets total bought USD (lower bound inclusive); hold time runs from first buy to close. Filters apply before ranking and rank counts matching positions. Optional auth adds isFollowing. Rankings are cached for up to 30 seconds. X-Data-Source is demo for an entirely seeded page, indexed otherwise.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "all"
+              ],
+              "default": "24h",
+              "description": "Positions closed in the window; all includes every closed position"
+            },
+            "required": false,
+            "description": "Positions closed in the window; all includes every closed position",
+            "name": "window",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "lt100",
+                "100-1k",
+                "1k-10k",
+                "10k-100k",
+                "gt100k"
+              ],
+              "description": "Total bought USD bucket, lower bound inclusive (100-1k is $100 to <$1K); omit for all sizes"
+            },
+            "required": false,
+            "description": "Total bought USD bucket, lower bound inclusive (100-1k is $100 to <$1K); omit for all sizes",
+            "name": "invested",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Inclusive minimum hold time from first buy to close"
+            },
+            "required": false,
+            "description": "Inclusive minimum hold time from first buy to close",
+            "name": "minHoldSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Inclusive maximum hold time; omit for Any"
+            },
+            "required": false,
+            "description": "Inclusive maximum hold time; omit for Any",
+            "name": "maxHoldSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "nextCursor from the previous page"
+            },
+            "required": false,
+            "description": "nextCursor from the previous page",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked closed positions with trader, token, latest thesis, average entry market cap and PnL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionsLeaderboard"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid window, bucket, hold-time range or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

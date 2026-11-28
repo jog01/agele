@@ -114,6 +114,31 @@ const replies = [
   "Same read on liquidity. I'm waiting for the close before adding.",
 ];
 const day = 86_400;
+/**
+ * One closed position per trader on a second token, spread across the positions leaderboard's
+ * invested buckets and hold times: [invested USD, opened age, closed age, exit % of entry].
+ */
+const SIZED_POSITIONS = [
+  [45, 9000, 7200, 112],
+  [450, 5 * 3600, 2 * 3600, 94],
+  [25_000, 3 * day, day, 98],
+  [180_000, 20 * day, 6 * day, 99],
+  [70, 70 * day, 25 * day, 88],
+  [640, 120 * day, 10 * day, 131],
+] as const;
+const sizedTheses = [
+  "scalp into the open: in for the first impulse, out before the half-hour.",
+  "intraday range play. Take the move back to the mid and step aside.",
+  "event trade sized up for the unlock. Out after two sessions either way.",
+  "core swing. Sized for a two-week trend, cut if the weekly level breaks.",
+  "small starter while the chart bases. Will size up only on a reclaim.",
+  "long-term hold through the cycle. Trimming only into strength.",
+] as const;
+const swingTheses = [
+  "swing from the range low. Plan is to sell into the first retest of the highs.",
+  "rotation trade while volume moves back into majors. Out within the week.",
+  "reclaim of the weekly open. Full exit if momentum fades into resistance.",
+] as const;
 const seedId = (group: number, index: number) =>
   `ade10000-0000-4000-800${group}-${index.toString(16).padStart(12, "0")}`;
 const demoWallet = (handle: string) =>
@@ -243,13 +268,41 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
           );
       }
     }
+    const sized = metadata[(index + 3) % mints.length]!;
+    const [investedUsd, openedAge, closedAge, exitPercent] = SIZED_POSITIONS[index % SIZED_POSITIONS.length]!;
+    const sizedAmount = (investedUsd * (index < SIZED_POSITIONS.length ? 1 : 1.7)) / sized.priceUsd;
+    for (const [leg, [age, side, percent]] of (
+      [
+        [openedAge, "buy", 100],
+        [closedAge, "sell", exitPercent],
+      ] as const
+    ).entries()) {
+      const usd = decimal(((sized.priceUsd * sizedAmount * percent) / 100).toFixed(2));
+      await repository.record({
+        userId: profile.id,
+        wallet: profile.walletAddress,
+        mint: sized.mint,
+        symbol: sized.symbol,
+        name: sized.name,
+        imageUrl: sized.imageUrl,
+        decimals: sized.decimals,
+        amount: decimal(sizedAmount.toFixed(sized.decimals)),
+        usd,
+        marketCapUsd: (sized.marketCapUsd * percent) / 100,
+        quoteAmount: usd,
+        quoteMint: USDC_MINT,
+        side,
+        signature: `demo:${profile.handle}:sized:${leg}`,
+        timestamp: anchor - age - index * 60,
+      });
+    }
     const joinedAt = new Date((anchor - 35 * day) * 1000);
     if (first!.createdAt > joinedAt)
       await db.update(users).set({ createdAt: joinedAt }).where(eq(users.id, profile.id));
     const fills = await db
       .select()
       .from(trades)
-      .where(eq(trades.userId, profile.id))
+      .where(and(eq(trades.userId, profile.id), eq(trades.mint, mint)))
       .orderBy(asc(trades.executedAt));
     const valueAt = async (time: number) => {
       let held = 0;
@@ -364,6 +417,44 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         })),
       )
       .onConflictDoNothing();
+    for (const [group, token, signature, body] of [
+      [5, sized, `demo:${profile.handle}:sized:0`, sizedTheses[index % sizedTheses.length]!],
+      [
+        7,
+        metadata[index % mints.length]!,
+        `demo:${profile.handle}:0`,
+        swingTheses[index % swingTheses.length]!,
+      ],
+    ] as const) {
+      const [opening] = await db
+        .select({ id: trades.id, executedAt: trades.executedAt })
+        .from(trades)
+        .where(and(eq(trades.userId, profile.id), eq(trades.signature, signature)));
+      await db
+        .insert(theses)
+        .values({
+          id: seedId(group, index),
+          userId: profile.id,
+          mint: token.mint,
+          wallet: profile.walletAddress,
+          positionId: opening!.id,
+          viewCount: 31 + index * 7,
+        })
+        .onConflictDoNothing();
+      await db
+        .insert(comments)
+        .values({
+          id: seedId(group + 1, index),
+          thesisId: seedId(group, index),
+          userId: profile.id,
+          mint: token.mint,
+          kind: "thesis",
+          position: "long",
+          body: `${token.symbol} ${body}`,
+          createdAt: new Date(opening!.executedAt.getTime() + 60_000),
+        })
+        .onConflictDoNothing();
+    }
   }
   await db
     .insert(follows)

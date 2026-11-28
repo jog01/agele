@@ -9,25 +9,13 @@ import type { LeaderboardService } from "./leaderboard.service";
 import type { MarketDataProvider } from "./market-data";
 import { optionalQuote, type PositionQuote } from "./market-data/position-quotes";
 import type { PortfolioService } from "./portfolio.service";
-import { type PositionEpisode, positionEpisodes } from "./position-episodes";
+import { type PositionEpisode, positionEpisodes, weightedCap } from "./position-episodes";
 import { decodeCursor, encodeCursor } from "./social/cursor";
 
 const unix = (date: Date) => Math.floor(date.getTime() / 1000);
 const number = (value: bigint) => Number(formatDecimal(value));
 const invested = (episode: PositionEpisode) => number(episode.invested);
 const percent = (pnl: number, basis: number) => (basis > 0 ? (100 * pnl) / basis : 0);
-const weightedCap = (fills: Trade[], side: Trade["side"]) => {
-  let total = 0;
-  let amount = 0;
-  for (const fill of fills) {
-    if (fill.side !== side) continue;
-    if (fill.marketCapUsd === null) return null;
-    const size = Number(fill.tokenAmount);
-    total += size * Number(fill.marketCapUsd);
-    amount += size;
-  }
-  return amount > 0 ? total / amount : null;
-};
 const transaction = (fill: Trade, token: { symbol: string; imageUrl: string | null }) => ({
   id: fill.id,
   signature: fill.signature,

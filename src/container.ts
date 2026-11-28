@@ -6,6 +6,7 @@ import { getRedis } from "./lib/redis";
 import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
 import { PgPortfolioRepository } from "./repositories/portfolio.repository";
+import { PgPositionLeaderboardRepository } from "./repositories/position-leaderboard.repository";
 import { PgSocialRepository } from "./repositories/social.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
 import { PgTokenActivityRepository } from "./repositories/token-activity.repository";
@@ -22,6 +23,7 @@ import {
 } from "./services/market-data";
 import { createPositionQuote, type PositionQuote } from "./services/market-data/position-quotes";
 import { PortfolioService } from "./services/portfolio.service";
+import { PositionLeaderboardService } from "./services/position-leaderboard.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
 import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
 import { SocialService } from "./services/social.service";
@@ -46,6 +48,7 @@ export interface Container {
   tradeQueue: TradeQueue;
   leaderboardStore: LeaderboardStore;
   leaderboard?: LeaderboardService;
+  positionLeaderboard: PositionLeaderboardService;
   balances: WalletBalanceProvider;
   portfolio: PortfolioService;
   tradeIndexer: TradeIndexer;
@@ -140,6 +143,9 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     tradeQueue: overrides.tradeQueue ?? { enqueue: enqueueTrades },
     leaderboardStore,
     leaderboard,
+    positionLeaderboard:
+      overrides.positionLeaderboard ??
+      new PositionLeaderboardService(new PgPositionLeaderboardRepository(getDb()), follows),
     balances,
     portfolio,
     traders:
