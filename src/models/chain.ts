@@ -94,5 +94,6 @@ export const chainCandles = pgTable(
   (t) => [
     primaryKey({ columns: [t.source, t.mint, t.time] }),
     foreignKey({ columns: [t.source, t.mint], foreignColumns: [chainTokens.source, chainTokens.mint] }),
+    index("chain_candles_time_idx").on(t.source, t.time),
   ],
 );

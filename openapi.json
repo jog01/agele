@@ -2575,9 +2575,11 @@
                 "type": "string",
                 "enum": [
                   "bought",
+                  "increased",
                   "sold",
                   "closed"
-                ]
+                ],
+                "description": "increased: a buy into a position that is already open"
               },
               "tokenAmount": {
                 "type": "number"
@@ -2724,6 +2726,33 @@
               "traderCount": {
                 "type": "integer"
               },
+              "members": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": "string"
+                    },
+                    "handle": {
+                      "type": "string"
+                    },
+                    "avatarUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "wallet",
+                    "handle",
+                    "avatarUrl"
+                  ]
+                },
+                "maxItems": 5,
+                "description": "Up to five traders in the group, latest first"
+              },
               "marketCapUsd": {
                 "type": [
                   "number",
@@ -2751,6 +2780,7 @@
               "side",
               "amountUsd",
               "traderCount",
+              "members",
               "marketCapUsd"
             ]
           },
@@ -2837,6 +2867,13 @@
               "realizedPnlUsd": {
                 "type": "number"
               },
+              "positionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
               "marketCapUsd": {
                 "type": [
                   "number",
@@ -2863,6 +2900,7 @@
               "wallet",
               "amountUsd",
               "realizedPnlUsd",
+              "positionId",
               "marketCapUsd"
             ]
           },
@@ -2943,6 +2981,12 @@
               "wallet": {
                 "type": "string"
               },
+              "bio": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "marketCapUsd": {
                 "type": [
                   "number",
@@ -2967,7 +3011,155 @@
               "kind",
               "eventType",
               "wallet",
+              "bio",
               "marketCapUsd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "price-spike"
+                ]
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "price-spike"
+                ]
+              },
+              "priceChangePct": {
+                "type": "number",
+                "description": "Close of the window over its open, in percent"
+              },
+              "windowSeconds": {
+                "type": "integer"
+              },
+              "priceUsd": {
+                "type": "number"
+              },
+              "volumeUsd": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "mint",
+              "symbol",
+              "imageUrl",
+              "createdAt",
+              "source",
+              "marketCapUsd",
+              "kind",
+              "eventType",
+              "priceChangePct",
+              "windowSeconds",
+              "priceUsd",
+              "volumeUsd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mint": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "description": "Unix seconds"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "demo",
+                  "indexed"
+                ]
+              },
+              "marketCapUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "new-listing"
+                ]
+              },
+              "eventType": {
+                "type": "string",
+                "enum": [
+                  "new-listing"
+                ]
+              },
+              "venue": {
+                "type": "string"
+              },
+              "creator": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "mint",
+              "symbol",
+              "imageUrl",
+              "createdAt",
+              "source",
+              "marketCapUsd",
+              "kind",
+              "eventType",
+              "venue",
+              "creator"
             ]
           }
         ]
@@ -6237,10 +6429,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "Comma-separated eventType values: bought,sold,closed,thesis,milestone,multi-user,new-trader"
+              "description": "Comma-separated eventType values: bought,increased,sold,closed,thesis,milestone,multi-user,new-trader,price-spike,new-listing. Default is trades and theses; system rows are opt-in"
             },
             "required": false,
-            "description": "Comma-separated eventType values: bought,sold,closed,thesis,milestone,multi-user,new-trader",
+            "description": "Comma-separated eventType values: bought,increased,sold,closed,thesis,milestone,multi-user,new-trader,price-spike,new-listing. Default is trades and theses; system rows are opt-in",
             "name": "types",
             "in": "query"
           },

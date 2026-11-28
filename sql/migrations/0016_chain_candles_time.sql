@@ -1,0 +1,1 @@
+CREATE INDEX "chain_candles_time_idx" ON "chain_candles_1m" USING btree ("source","time");

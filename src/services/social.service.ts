@@ -14,7 +14,7 @@ import type {
 } from "../schemas/social";
 import { cachePositionQuotes, type PositionQuote } from "./market-data/position-quotes";
 import { positionEpisodes } from "./position-episodes";
-import { decodeCursor, encodeCursor } from "./social/cursor";
+import { decodeCursor, encodeCursor, type FeedCursor } from "./social/cursor";
 import type { TokenService } from "./token.service";
 
 const cursorSchema = z.object({ createdAt: z.number().int().min(0).max(253402300799), id: z.uuid() });
@@ -100,31 +100,79 @@ export class SocialService {
       episodes.set(key, result);
       return result;
     };
+    const systemTypes =
+      types?.filter((type): type is SystemType => type === "price-spike" || type === "new-listing") ?? [];
+    const withSystem =
+      systemTypes.length > 0 &&
+      input.scope === "global" &&
+      !input.wallet &&
+      input.minSizeUsd === undefined &&
+      input.minPortfolioUsd === undefined &&
+      input.minPriceSinceFirstBuyPct === undefined;
+    const withSocial = !types || types.some((type) => !(systemTypes as string[]).includes(type));
+    const inMarketCap = (marketCapUsd: number | null) =>
+      !(
+        (input.minMarketCapUsd !== undefined &&
+          (marketCapUsd === null || marketCapUsd < input.minMarketCapUsd)) ||
+        (input.maxMarketCapUsd !== undefined &&
+          (marketCapUsd === null || marketCapUsd > input.maxMarketCapUsd))
+      );
     const items: FeedItemDto[] = [];
-    for (;;) {
-      const batch = await this.repository.feed({
-        ...input,
-        wallets,
-        cursor,
-        limit: input.limit,
-        viewerId,
-        types,
+    const fetch = Math.max(input.limit, minFeedBatch);
+    for (let batches = 1; ; batches++) {
+      const empty = { items: [], nextCursor: null };
+      const [batch, system] = await Promise.all([
+        withSocial
+          ? this.repository.feed({ ...input, wallets, cursor, limit: fetch, viewerId, types })
+          : empty,
+        withSystem
+          ? this.repository.systemFeed({ cursor, limit: fetch, mint: input.mint, types: systemTypes })
+          : { ...empty, source: "demo" as const },
+      ]);
+      const boundary = [batch, system]
+        .filter((stream) => stream.nextCursor)
+        .map((stream) => decodeCursor(stream.nextCursor!))
+        .reduce<FeedCursor | null>(
+          (max, key) => (max === null || compareKeys(key, max) > 0 ? key : max),
+          null,
+        );
+      const fresh = (key: FeedCursor) => boundary === null || compareKeys(key, boundary) >= 0;
+      const systemItems = system.items.filter(fresh).map(({ kind, ...row }): FeedItemDto | null => {
+        if (!inMarketCap(row.marketCapUsd)) return null;
+        const base = {
+          id: row.id,
+          mint: row.mint,
+          symbol: row.symbol,
+          imageUrl: row.imageUrl,
+          createdAt: row.createdAt,
+          source: system.source === "demo" ? ("demo" as const) : ("indexed" as const),
+          marketCapUsd: row.marketCapUsd,
+        };
+        return kind === "price-spike"
+          ? {
+              ...base,
+              kind,
+              eventType: kind,
+              priceChangePct: row.priceChangePct,
+              windowSeconds: 15 * 60,
+              priceUsd: row.priceUsd,
+              volumeUsd: row.volumeUsd,
+            }
+          : { ...base, kind, eventType: kind, venue: row.venue, creator: row.creator };
       });
-      const filtered = await Promise.all(
-        batch.items.map(async ({ userId, ...item }) => {
+      const socialItems = await Promise.all(
+        batch.items.filter(fresh).map(async ({ userId, ...item }) => {
           const seeded = item.source === "demo";
           const token = await quote(item.mint, seeded);
           item.marketCapUsd = usableQuote(token?.marketCapUsd);
-          if (
-            input.minMarketCapUsd !== undefined &&
-            (item.marketCapUsd === null || item.marketCapUsd < input.minMarketCapUsd)
-          )
-            return null;
-          if (
-            input.maxMarketCapUsd !== undefined &&
-            (item.marketCapUsd === null || item.marketCapUsd > input.maxMarketCapUsd)
-          )
-            return null;
+          if (!inMarketCap(item.marketCapUsd)) return null;
+          if (item.kind === "milestone") {
+            const tradeId = item.discussionKey.slice("milestone:".length);
+            item.positionId =
+              (await getEpisodes(userId, item.mint)).find((entry) =>
+                entry.fills.some((fill) => fill.id === tradeId),
+              )?.id ?? null;
+          }
           if (item.kind === "trade") {
             const episode = (await getEpisodes(userId, item.mint)).find((entry) =>
               entry.fills.some((fill) => fill.id === item.id),
@@ -135,6 +183,7 @@ export class SocialService {
               const price = usableQuote(token?.priceUsd);
               item.priceSinceFirstBuyPct =
                 price !== null && firstPrice > 0 ? (price / firstPrice - 1) * 100 : null;
+              if (item.side === "buy" && episode.fills[0]?.id !== item.id) item.eventType = "increased";
               if (episode.closedAt && episode.fills.at(-1)?.id === item.id) {
                 item.eventType = "closed";
                 item.realizedPnlUsd = Number(formatDecimal(episode.realizedPnl));
@@ -156,13 +205,16 @@ export class SocialService {
           return item;
         }),
       );
-      for (const item of filtered) {
-        if (!item) continue;
+      const merged = [...socialItems, ...systemItems]
+        .filter((item): item is FeedItemDto => item !== null)
+        .sort((a, b) => compareKeys(b, a));
+      for (const item of merged) {
         if (items.length === input.limit) return { items, nextCursor: encodeCursor(items.at(-1)!) };
         items.push(item);
       }
-      if (!batch.nextCursor) return { items, nextCursor: null };
-      cursor = decodeSocialCursor(batch.nextCursor);
+      if (!boundary) return { items, nextCursor: null };
+      cursor = { createdAt: boundary.createdAt, id: boundary.id };
+      if (batches === maxFeedBatches) return { items, nextCursor: encodeCursor(cursor) };
     }
   }
 
@@ -276,3 +328,12 @@ export class SocialService {
     await this.repository.setFeedReaction(await this.feedDiscussion(discussion), userId, liked);
   }
 }
+
+function compareKeys(a: FeedCursor, b: FeedCursor) {
+  return a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+const maxFeedBatches = 8;
+const minFeedBatch = 50;
+
+type SystemType = "price-spike" | "new-listing";

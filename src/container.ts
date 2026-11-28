@@ -126,7 +126,9 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     positionQuote,
   );
   const follows = overrides.follows ?? new PgFollowRepository(getDb(), notifications.inboxChanged);
-  const socialRepository = new PgSocialRepository(getDb(), notifications.inboxChanged);
+  const socialRepository = new PgSocialRepository(getDb(), notifications.inboxChanged, {
+    chainSource: env.CHAIN_SOURCE,
+  });
   const portfolio =
     overrides.portfolio ??
     new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances, Date.now, positionQuote);
