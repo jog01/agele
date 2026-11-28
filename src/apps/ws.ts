@@ -6,6 +6,7 @@ import { ActiveTopicRegistry } from "../events/active-topics";
 import { subscribeEvents } from "../events/bus";
 import { logger } from "../lib/logger";
 import { closeRedis, getRedis } from "../lib/redis";
+import { PgNotificationRepository } from "../repositories/notification.repository";
 import { PgUserRepository } from "../repositories/user.repository";
 import { createAuthVerifier } from "../services/auth.service";
 import { WsHub } from "../ws/hub";
@@ -17,6 +18,7 @@ const hub = new WsHub();
 const registry = new ActiveTopicRegistry(getRedis());
 const verifier = createAuthVerifier();
 const users = new PgUserRepository(getDb());
+const notifications = new PgNotificationRepository(getDb());
 app.get("/health", (c) => c.json({ ok: true }));
 app.get(
   "/ws",
@@ -26,7 +28,10 @@ app.get(
       async (token) => {
         const session = await verifier.verifySession(token);
         const user = await users.findByPrivyDid(session.privyDid);
-        if (user && !user.demo) return { userId: user.id, expiresAt: session.expiresAt };
+        if (user && !user.demo) {
+          const wallet = await notifications.walletFor(user.id);
+          if (wallet) return { wallet, expiresAt: session.expiresAt };
+        }
       },
       () => close?.(),
     );

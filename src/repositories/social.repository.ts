@@ -317,8 +317,8 @@ export class PgSocialRepository {
   }
 
   async createPost(input: PostInput, episode?: { wallet: string; positionId: string }) {
-    const id = await this.db.transaction(async (tx) => {
-      await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
+    const { id, recipientId } = await this.db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("no key update");
       const recent = await tx
         .select({ body: comments.body })
         .from(comments)
@@ -370,9 +370,35 @@ export class PgSocialRepository {
       const [row] = await tx
         .insert(comments)
         .values({ ...input, mint, thesisId })
-        .returning({ id: comments.id });
-      return row!.id;
+        .returning({ id: comments.id, createdAt: comments.createdAt });
+      let recipientId: string | undefined;
+      if (this.deliver && input.kind === "comment" && thesisId) {
+        const [thesis] = await tx.select().from(theses).where(eq(theses.id, thesisId));
+        if (thesis && thesis.userId !== input.userId) {
+          const [notification] = await insertNotifications(tx, [
+            {
+              recipientId: thesis.userId,
+              actorId: input.userId,
+              mint,
+              createdAt: row!.createdAt,
+              eventKey: `thesis-comment:${row!.id}`,
+              details: {
+                kind: "thesis_comment",
+                target: {
+                  wallet: thesis.wallet,
+                  positionId: thesis.positionId,
+                  thesisId,
+                  commentId: row!.id,
+                },
+              },
+            },
+          ]);
+          recipientId = notification?.recipientId;
+        }
+      }
+      return { id: row!.id, recipientId };
     });
+    if (recipientId) await this.deliver?.(recipientId);
     return (await this.getPost(id, input.userId))!;
   }
 
@@ -495,17 +521,31 @@ export class PgSocialRepository {
           kind: comments.kind,
           mint: comments.mint,
           userId: comments.userId,
+          wallet: theses.wallet,
+          positionId: theses.positionId,
         })
         .from(comments)
+        .innerJoin(theses, eq(theses.id, comments.thesisId))
         .where(eq(comments.id, postId));
       if (post?.kind !== "thesis" || !post.thesisId || post.userId === userId) return;
+      const createdAt = new Date();
       const [notification] = await insertNotifications(tx, [
         {
           recipientId: post.userId,
           actorId: userId,
           mint: post.mint,
+          createdAt,
+          groupKey: `thesis-like:${postId}:${createdAt.toISOString().slice(0, 10)}`,
           eventKey: `thesis-like:${postId}:${userId}`,
-          details: { kind: "thesis_like", thesisId: post.thesisId, postId },
+          details: {
+            kind: "thesis_like",
+            target: {
+              wallet: post.wallet,
+              positionId: post.positionId,
+              thesisId: post.thesisId,
+              commentId: postId,
+            },
+          },
         },
       ]);
       return notification?.recipientId;

@@ -51,11 +51,11 @@ describe("WsHub", () => {
   it("allows only the authenticated account's notification topic", async () => {
     const hub = new WsHub();
     const socket = fakeSocket();
-    const userId = crypto.randomUUID();
-    const own = notificationTopic(userId);
-    const other = notificationTopic(crypto.randomUUID());
+    const wallet = SOL;
+    const own = notificationTopic(wallet);
+    const other = notificationTopic("11111111111111111111111111111111");
     const session = new NotificationSocketSession(
-      async (token) => (token === "valid" ? { userId, expiresAt: Date.now() + 1000 } : undefined),
+      async (token) => (token === "valid" ? { wallet, expiresAt: Date.now() + 1000 } : undefined),
       () => {},
     );
     const authenticate = (token: string) => session.handle(JSON.stringify({ op: "authenticate", token }));
@@ -77,7 +77,7 @@ describe("WsHub", () => {
   it("closes the authenticated socket when its access token expires", async () => {
     const closed = Promise.withResolvers<void>();
     const session = new NotificationSocketSession(
-      async () => ({ userId: crypto.randomUUID(), expiresAt: Date.now() + 25 }),
+      async () => ({ wallet: SOL, expiresAt: Date.now() + 25 }),
       closed.resolve,
     );
     try {

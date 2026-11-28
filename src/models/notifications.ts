@@ -16,6 +16,7 @@ export const notifications = pgTable(
     groupKey: text(),
     demo: boolean().notNull().default(false),
     details: jsonb().$type<NotificationDetails>().notNull(),
+    readAt: timestamp({ withTimezone: true, precision: 3 }),
     createdAt: timestamp({ withTimezone: true, precision: 3 }).notNull().defaultNow(),
   },
   (t) => [

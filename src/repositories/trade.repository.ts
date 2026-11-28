@@ -14,6 +14,7 @@ import {
   wallets,
 } from "../models";
 import type { ParsedTrade } from "../services/helius-parser";
+import { positionEpisodes } from "../services/position-episodes";
 import {
   DEFAULT_ALERT_SETTINGS,
   insertNotifications,
@@ -164,7 +165,6 @@ export class PgTradeRepository implements TradeRepository {
       const subscribers = await tx
         .selectDistinct({
           recipientId: follows.followerId,
-          sound: sql<boolean>`coalesce(${notificationSettings.sound}, ${DEFAULT_ALERT_SETTINGS.sound})`,
         })
         .from(follows)
         .leftJoin(notificationSettings, eq(notificationSettings.userId, follows.followerId))
@@ -178,6 +178,14 @@ export class PgTradeRepository implements TradeRepository {
             sql`coalesce(${notificationSettings.traderActivity}, ${DEFAULT_ALERT_SETTINGS.traderActivity})`,
           ),
         );
+      if (!subscribers.length) return { trade: updated!, recipients: [] };
+      const history = await tx
+        .select()
+        .from(trades)
+        .where(and(eq(trades.userId, trade.userId), eq(trades.mint, trade.mint)));
+      const episode = positionEpisodes(history).find(({ fills }) =>
+        fills.some(({ id }) => id === inserted.id),
+      );
       const rows = await insertNotifications(
         tx,
         subscribers.map(({ recipientId }) => ({
@@ -187,21 +195,20 @@ export class PgTradeRepository implements TradeRepository {
           eventKey: `trader-activity:${inserted.id}`,
           createdAt: inserted.executedAt,
           details: {
-            kind: "trader_activity",
-            tradeId: inserted.id,
-            signature: trade.signature,
-            side: trade.side,
+            kind: "trader_trade",
+            target: {
+              wallet: trade.wallet,
+              positionId: episode?.id ?? null,
+              side: trade.side,
+              sizeUsd: Number(inserted.quoteAmountUsd),
+            },
           },
         })),
       );
-      const sounds = new Map(subscribers.map(({ recipientId, sound }) => [recipientId, sound]));
-      return {
-        trade: updated!,
-        recipients: rows.map(({ recipientId }) => ({ recipientId, sound: sounds.get(recipientId) })),
-      };
+      return { trade: updated!, recipients: rows };
     });
     if (!result) return null;
-    await Promise.all(result.recipients.map(({ recipientId, sound }) => this.deliver?.(recipientId, sound)));
+    await Promise.all(result.recipients.map(({ recipientId }) => this.deliver?.(recipientId)));
     return result.trade;
   }
 }

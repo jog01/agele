@@ -52,7 +52,7 @@ export function createApp(container: Container) {
       title: "fomo API",
       version: "0.1.0",
       description:
-        'WebSocket /ws: subscribe with {"op":"subscribe","topic":"pulse"}. Events use {type:"event",topic,data}. Public topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Private topic user:<your user UUID>:alerts (NotificationUpdate) requires {"op":"authenticate","token":"<Privy access token>"} and an authenticated acknowledgement before subscribing. The socket closes when the token expires. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds.',
+        'WebSocket /ws: subscribe with {"op":"subscribe","topic":"pulse"}. Events use {type:"event",topic,data}. Public topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Private topic user:<wallet>:notifications sends data {"type":"changed"} (NotificationUpdate). Send {"op":"authenticate","token":"<Privy access token>"} and wait for an authenticated acknowledgement before subscribing to your primary or first linked Solana wallet. The socket closes when the token expires. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds.',
     },
   });
   app.get("/docs", Scalar({ url: "/openapi.json" }));

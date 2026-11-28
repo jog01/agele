@@ -6,12 +6,12 @@ import { z } from "zod";
  *   token:<mint>:price    price ticks for a token
  *   leaderboard:global    leaderboard updates
  *   pulse                launch, curve and migration updates
- *   user:<id>:alerts      private inbox and settings updates
+ *   user:<wallet>:notifications private inbox and settings updates
  */
 export const TOPIC_RE =
-  /^(token:[1-9A-HJ-NP-Za-km-z]{32,44}:(trades|price)|leaderboard:global|pulse|user:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}:alerts)$/;
+  /^(token:[1-9A-HJ-NP-Za-km-z]{32,44}:(trades|price)|leaderboard:global|pulse|user:[1-9A-HJ-NP-Za-km-z]{32,44}:notifications)$/;
 export const PRICE_TOPIC_RE = /^token:([1-9A-HJ-NP-Za-km-z]{32,44}):price$/;
-export const notificationTopic = (userId: string) => `user:${userId}:alerts`;
+export const notificationTopic = (wallet: string) => `user:${wallet}:notifications`;
 export const isPrivateTopic = (topic: string) => topic.startsWith("user:");
 
 export const AuthenticateFrame = z.object({

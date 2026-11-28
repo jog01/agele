@@ -9,7 +9,7 @@ export class NotificationSocketSession {
   constructor(
     private readonly authenticate: (
       token: string,
-    ) => Promise<{ userId: string; expiresAt: number } | undefined>,
+    ) => Promise<{ wallet: string; expiresAt: number } | undefined>,
     private readonly closeSocket: () => void,
   ) {}
 
@@ -36,7 +36,7 @@ export class NotificationSocketSession {
       const session = await this.authenticate(auth.data.token);
       if (this.closed || !session || session.expiresAt <= Date.now())
         return { type: "error", message: "authentication failed" };
-      this.authorization = { topic: notificationTopic(session.userId), expiresAt: session.expiresAt };
+      this.authorization = { topic: notificationTopic(session.wallet), expiresAt: session.expiresAt };
       this.timer = setTimeout(this.closeSocket, Math.min(session.expiresAt - Date.now(), 2 ** 31 - 1));
       return { type: "authenticated" };
     } catch {

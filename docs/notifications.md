@@ -4,21 +4,27 @@
 
 | Method | Route | Behavior |
 | --- | --- | --- |
-| GET | `/v1/notifications?limit=30&cursor=…` | Newest first; returns `items`, `nextCursor`, and `source`. Omit the cursor for the newest page. |
-| GET | `/v1/notifications/settings` | Get the signed-in account's `{traderActivity, sound}` settings. Defaults are `true` and `false`, respectively. |
-| PUT | `/v1/notifications/settings` | Replace both boolean settings and notify the account's connected devices. |
+| GET | `/v1/me/notifications?limit=25&cursor=…` | Newest first; returns `items`, `nextCursor`, and `source`. Omit the cursor or pass an empty one for the newest page. |
+| GET | `/v1/me/notifications/unread-count` | Returns `{unreadCount}`, counting each group as one item. |
+| PUT | `/v1/me/notifications/{id}/read` | Marks the item (or its whole group) read and returns `{unreadCount}`. Retrying is safe. |
+| PUT | `/v1/me/notifications/read-all` | Marks the signed-in account's inbox read and returns `{unreadCount}`. |
+| GET | `/v1/me/notifications/settings` | Get the signed-in account's `{traderActivity, sound}` settings. Defaults are `true` and `false`, respectively. |
+| PUT | `/v1/me/notifications/settings` | Replace both boolean settings and notify the account's connected devices. |
 
-The inbox uses the signed-in account mapped from its Privy DID, never a recipient supplied by a client. A keyless startup (`CHAIN_SOURCE=demo` and `MARKET_DATA_PROVIDER=indexed`) serves the seeded Postgres inbox to unauthenticated callers with `source: "demo"`. Signed-in requests still use their own inbox; sending an invalid bearer never falls back to demo. Demo requests cannot read live inbox records, change alert settings, or subscribe to the demo persona. In live mode every request needs a Privy bearer token.
+Every route requires a valid Privy bearer token. The API matches the signed-in DID to its account; it never accepts a client-supplied recipient. With the demo chain source and indexed market provider, a signed-in account receives its own copy of the Postgres seed (`source: "demo"`) so read state stays private. Demo mode needs sign-in for this feature; it removes the need for live market and chain keys, not the need for authentication.
 
-- `thesis_like`: open `/v1/tokens/{token.mint}/theses/{details.thesisId}`. `postId` identifies the liked version. Self-likes and retries do not notify.
-- `follow`: grouped by UTC day, with the total count and up to three newest actors. Re-following the same account during that day does not add another event.
-- `trader_activity`: an indexed buy or sell in a followed wallet or the primary wallet's linked account, if trader activity is enabled. Includes trade ID, signature and side.
-- `leaderboard`: an indexed trade changed the account's own rank in the given window. The background leaderboard rebuild is not a notification producer.
-- `clan_invite` and `send`: supported timeline shapes with seeded examples. Agele does not yet have clan invitation or social send workflows; those workflows must write these events when they ship.
+Each item includes `id`, `kind`, `createdAt`, nullable `readAt`, `actors` (up to three), `actorCount`, and a kind-specific `target`. A group stays unread as long as any event in it is unread.
+
+- `thesis_like`: grouped by liked version and UTC day. Open `/v1/tokens/{target.mint}/theses/{target.thesisId}`; `target.commentId` identifies the liked version. Self-likes and retries do not notify.
+- `thesis_comment`: a reply in a thesis thread. `target.commentId` identifies the exact reply.
+- `follow`: grouped by UTC day, with the total actor count and up to three newest actors. Re-following the same account that day does not add another event.
+- `trader_trade`: a buy or sell in a followed wallet or the primary wallet's linked account, if trader activity is enabled. `target.positionId` is the opening fill ID for that position, or null when no position can be resolved.
+- `leaderboard`: the account's rank changed in a window, including displacement by another account and changes first detected during a scheduled rebuild.
 
 ```mermaid
 flowchart LR
   Like[Thesis like] --> PG[(Postgres inbox)]
+  Comment[Thesis reply] --> PG
   Follow[New follow] --> PG
   Fill[Indexed trade] --> PG
   Fill --> Rank[Leaderboard rank change] --> PG
@@ -30,9 +36,9 @@ flowchart LR
 
 ## Realtime
 
-1. Call an authenticated REST endpoint such as `GET /v1/me` to establish the account and get its user UUID.
-2. On `/ws`, send `{"op":"authenticate","token":"<Privy access token>"}`. Wait for `{"type":"authenticated"}`, then subscribe with `{"op":"subscribe","topic":"user:<your user UUID>:alerts"}`.
-3. An event with `data: {"kind":"inbox","sound":true}` tells clients to refresh the inbox and play the configured sound; other inbox updates use `sound:false`. A `{"kind":"settings"}` event tells every device to refresh settings. Clients play sound themselves and refetch on reconnect; Redis messages are not durable. Reconnect with a fresh token after the server closes the authenticated socket at expiration.
+1. Call `GET /v1/me` to establish the account. Use `walletAddress` or, if absent, the linked Solana address (primary first, then address order).
+2. On `/ws`, send `{"op":"authenticate","token":"<Privy access token>"}`. Wait for `{"type":"authenticated"}`, then subscribe with `{"op":"subscribe","topic":"user:<wallet>:notifications"}`. The gateway only authorizes the account's own topic.
+3. The event's `data` is exactly `{"type":"changed"}`. Refresh inbox, unread count, and settings as needed. Clients play sound for new `trader_trade` items if the account's persisted `sound` setting is enabled; the event itself does not carry a sound flag. Refetch on reconnect, since Redis invalidations are not durable. Reconnect with a fresh token after the server closes the authenticated socket at expiration.
 
 ```mermaid
 sequenceDiagram
@@ -46,12 +52,12 @@ sequenceDiagram
   A->>API: PUT notification settings
   API->>DB: Persist settings
   API-->>WS: Publish settings invalidation
-  WS-->>B: settings event
+  WS-->>B: changed
   B->>API: GET notification settings
   API-->>B: Persisted settings
   API->>DB: Commit new activity notification
-  API-->>WS: Publish inbox invalidation and sound flag
-  WS-->>B: inbox event
+  API-->>WS: Publish inbox invalidation
+  WS-->>B: changed
   B->>API: GET notifications
   API-->>B: Persisted inbox
 ```

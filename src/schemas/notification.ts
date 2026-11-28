@@ -2,34 +2,13 @@ import { z } from "@hono/zod-openapi";
 import { LeaderboardWindow } from "./social";
 
 export const NotificationQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(30),
-  cursor: z.string().min(1).max(256).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  cursor: z.string().max(256).optional(),
 });
 
 export const AlertSettingsSchema = z
   .object({ traderActivity: z.boolean(), sound: z.boolean() })
   .openapi("AlertSettings");
-
-const details = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("thesis_like"), thesisId: z.uuid(), postId: z.uuid() }),
-  z.object({ kind: z.literal("follow") }),
-  z.object({ kind: z.literal("clan_invite"), clanId: z.string(), clanName: z.string() }),
-  z.object({ kind: z.literal("send"), signature: z.string(), amount: z.string() }),
-  z.object({
-    kind: z.literal("leaderboard"),
-    window: LeaderboardWindow,
-    rank: z.number().int().positive(),
-    previousRank: z.number().int().positive().nullable(),
-  }),
-  z.object({
-    kind: z.literal("trader_activity"),
-    tradeId: z.uuid(),
-    signature: z.string(),
-    side: z.enum(["buy", "sell"]),
-  }),
-]);
-
-export type NotificationDetails = z.infer<typeof details>;
 
 const actor = z.object({
   wallet: z.string().nullable(),
@@ -38,20 +17,63 @@ const actor = z.object({
   avatarUrl: z.string().nullable(),
 });
 
-const token = z.object({ mint: z.string(), symbol: z.string(), imageUrl: z.url().nullable() });
+const base = z.object({
+  id: z.string().describe("Stable notification or group ID"),
+  createdAt: z.number().describe("Unix seconds; time of the latest event in the group"),
+  readAt: z.number().nullable().describe("Unix seconds, or null if any event in this item is unread"),
+  actors: z.array(actor).max(3),
+  actorCount: z.number().int().nonnegative(),
+});
+
+const token = z.object({ mint: z.string(), symbol: z.string(), imageUrl: z.string().nullable() });
+const thesisTarget = z.object({
+  wallet: z.string(),
+  positionId: z.uuid(),
+  thesisId: z.uuid(),
+  commentId: z.uuid(),
+});
+const tradeTarget = z.object({
+  wallet: z.string(),
+  positionId: z.uuid().nullable(),
+  sizeUsd: z.number().nonnegative(),
+  side: z.enum(["buy", "sell"]),
+});
+const leaderboardTarget = z.object({
+  window: LeaderboardWindow,
+  rank: z.number().int().positive(),
+  previousRank: z.number().int().positive().nullable(),
+});
+
+const thesisLike = base.extend({ kind: z.literal("thesis_like"), target: thesisTarget.extend(token.shape) });
+const thesisComment = base.extend({
+  kind: z.literal("thesis_comment"),
+  target: thesisTarget.extend(token.shape),
+});
+const trade = base.extend({ kind: z.literal("trader_trade"), target: tradeTarget.extend(token.shape) });
+const follow = base.extend({
+  kind: z.literal("follow"),
+  target: z.object({ wallet: z.string().nullable() }),
+});
+const leaderboard = base.extend({ kind: z.literal("leaderboard"), target: leaderboardTarget });
+
+export const NotificationSchema = z
+  .discriminatedUnion("kind", [trade, thesisLike, thesisComment, follow, leaderboard])
+  .openapi("Notification");
+
+export type NotificationDetails =
+  | { kind: "trader_trade"; target: z.infer<typeof tradeTarget> }
+  | { kind: "thesis_like"; target: z.infer<typeof thesisTarget> }
+  | { kind: "thesis_comment"; target: z.infer<typeof thesisTarget> }
+  | { kind: "follow" }
+  | { kind: "leaderboard"; target: z.infer<typeof leaderboardTarget> };
+
+export const UnreadCountSchema = z
+  .object({ unreadCount: z.number().int().nonnegative() })
+  .openapi("NotificationUnreadCount");
 
 export const NotificationPageSchema = z
   .object({
-    items: z.array(
-      z.object({
-        id: z.string().describe("Stable notification or follow group ID"),
-        createdAt: z.number().describe("Unix seconds; time of the latest event in the group"),
-        actors: z.array(actor).max(3),
-        count: z.number().int().positive().describe("Events represented by this item"),
-        token: token.nullable(),
-        details,
-      }),
-    ),
+    items: z.array(NotificationSchema),
     nextCursor: z.string().nullable(),
     source: z.enum(["indexed", "demo"]),
   })
@@ -61,8 +83,5 @@ export type NotificationPage = z.infer<typeof NotificationPageSchema>;
 export type AlertSettings = z.infer<typeof AlertSettingsSchema>;
 
 export const NotificationUpdateSchema = z
-  .discriminatedUnion("kind", [
-    z.object({ kind: z.literal("inbox"), sound: z.boolean() }),
-    z.object({ kind: z.literal("settings") }),
-  ])
+  .object({ type: z.literal("changed") })
   .openapi("NotificationUpdate");

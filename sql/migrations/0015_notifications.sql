@@ -13,6 +13,7 @@ CREATE TABLE "notifications" (
 	"group_key" text,
 	"demo" boolean DEFAULT false NOT NULL,
 	"details" jsonb NOT NULL,
+	"read_at" timestamp (3) with time zone,
 	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "notifications_recipient_event_unique" UNIQUE("recipient_id","event_key")
 );
