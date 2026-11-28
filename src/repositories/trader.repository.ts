@@ -53,12 +53,14 @@ export class PgTraderRepository {
       handle: string;
       displayName: string | null;
       avatarUrl: string | null;
+      source: "demo" | "indexed";
     }>(sql`
       select result.wallet, result.handle,
-        result.display_name as "displayName", result.avatar_url as "avatarUrl"
+        result.display_name as "displayName", result.avatar_url as "avatarUrl",
+        case when result.demo then 'demo' else 'indexed' end as source
       from (
         select ${resultWallet} as wallet, coalesce(u.handle, left(${resultWallet}, 8)) as handle,
-          u.display_name, u.avatar_url, ${exact} as exact
+          u.display_name, u.avatar_url, u.demo, ${exact} as exact
         from users u
         left join lateral (
           select w.address from wallets w

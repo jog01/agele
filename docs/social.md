@@ -136,8 +136,5 @@ sequenceDiagram
   when a window endpoint is missing; percent is also null from a zero
   baseline. `all` keeps the points-only response. Legacy equity-only snapshots
   are omitted.
-- `GET /v1/search?q=...` returns `tokens` and public `traders` in one
-  response. Trader matches include exact Solana wallet aliases and
-  case-insensitive handle or display-name prefixes. If the token provider
-  is unavailable, trader results and any indexed token matches still return
-  and `tokensUnavailable` is true.
+- [Trader search](./trader-search.md) returns tokens and public traders in one
+  response, including seeded trader profiles in keyless demo mode.

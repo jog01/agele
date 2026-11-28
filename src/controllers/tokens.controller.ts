@@ -13,6 +13,7 @@ import {
   TradeSchema,
 } from "../schemas/token";
 import { TokenHolderListSchema, TokenHoldersQuery } from "../schemas/token-activity";
+import { TraderSearchResultSchema } from "../schemas/trader";
 import type { AppEnv } from "../types";
 
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -47,6 +48,8 @@ const search = createRoute({
   method: "get",
   path: "/search",
   tags: ["tokens", "traders"],
+  description:
+    "Search tokens by exact mint or symbol/name prefix, and public traders by exact Solana wallet (including linked wallets) or case-insensitive handle/display name prefix. A leading @ is optional for trader names. Up to 30 traders are returned, with exact wallet matches first.",
   request: { query: TokenSearchQuery },
   responses: {
     200: json(
@@ -55,14 +58,7 @@ const search = createRoute({
         tokensUnavailable: z
           .boolean()
           .describe("Token provider unavailable; indexed token matches may still be returned."),
-        traders: z.array(
-          z.object({
-            wallet: z.string(),
-            handle: z.string(),
-            displayName: z.string().nullable(),
-            avatarUrl: z.string().nullable(),
-          }),
-        ),
+        traders: z.array(TraderSearchResultSchema).max(30),
       }),
       "Token and public trader matches",
     ),

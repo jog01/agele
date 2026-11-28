@@ -1,8 +1,11 @@
 import { setTimeout } from "node:timers/promises";
 import { getBase58Decoder } from "@solana/kit";
 import { hash, mulberry32 } from "../../lib/prng";
+import type { CandleDto, IntervalValue } from "../../schemas/token";
 import { SOL_MINT } from "../helius-parser";
+import { INTERVAL_SECONDS } from "../market-data/provider";
 import type { ChainFacts, SolUsdPrice } from "./chain-facts";
+import { DemoTokenLabels, demoMetadataUri, demoTokenImage } from "./demo-metadata";
 import { DEMO_ACTIVE_MARKETS, type DemoState } from "./demo-state";
 import type { ChainEvent, ChainEventSink, ChainEventSource, Market } from "./events";
 
@@ -93,13 +96,63 @@ function min(a: bigint, b: bigint) {
 
 /** A time-addressable, mean-reverting walk is consistent across API and feed processes. */
 export class DemoSolUsdPrice implements SolUsdPrice {
+  private static readonly decay = 0.94;
+  private static readonly window = 48;
+  private static readonly historySeconds = 30 * 86_400;
+  private readonly candlesByInterval = new Map<IntervalValue, { minute: number; candles: CandleDto[] }>();
+
+  private change(minute: number) {
+    return (mulberry32(hash(`demo-sol:${minute}`))() - 0.5) * 2;
+  }
+
   getSolUsd(time: number) {
     const minute = Math.floor(time / 60);
     let delta = 0;
-    for (let offset = 47; offset >= 0; offset--) {
-      delta = 0.94 * delta + (mulberry32(hash(`demo-sol:${minute - offset}`))() - 0.5) * 2;
+    for (let offset = DemoSolUsdPrice.window - 1; offset >= 0; offset--) {
+      delta = DemoSolUsdPrice.decay * delta + this.change(minute - offset);
     }
     return 180 + delta;
+  }
+
+  getCandles(interval: IntervalValue, limit: number, now: number) {
+    const step = INTERVAL_SECONDS[interval];
+    const minute = Math.floor(now / 60);
+    const count = Math.min(limit, Math.floor(DemoSolUsdPrice.historySeconds / step));
+    if (count <= 0) return [];
+    const cached = this.candlesByInterval.get(interval);
+    const existing = cached?.minute === minute ? cached.candles : [];
+    if (count <= existing.length) return existing.slice(-count);
+    const end = Math.floor(now / step) * step;
+    const start = end - (count - 1) * step;
+    const candles = [...this.buildCandles(step, start, end - existing.length * step, now), ...existing];
+    this.candlesByInterval.set(interval, { minute, candles });
+    return candles.slice();
+  }
+
+  private buildCandles(step: number, start: number, end: number, now: number) {
+    const { decay, window } = DemoSolUsdPrice;
+    const expiredWeight = decay ** window;
+    const firstMinute = start / 60;
+    const changes = Array.from({ length: window }, (_, i) => this.change(firstMinute - window + i));
+    let delta = changes.reduce((previous, change) => decay * previous + change, 0);
+    let oldest = 0;
+    const candles: CandleDto[] = [];
+    for (let time = start; time <= end; time += step) {
+      const candle = { time, open: 0, high: 0, low: Infinity, close: 0, volume: 0 };
+      for (let second = time; second < time + step && second <= now; second += 60) {
+        const change = this.change(second / 60);
+        delta = decay * delta + change - expiredWeight * changes[oldest]!;
+        changes[oldest] = change;
+        oldest = (oldest + 1) % window;
+        const price = 180 + delta;
+        if (second === time) candle.open = price;
+        candle.high = Math.max(candle.high, price);
+        candle.low = Math.min(candle.low, price);
+        candle.close = price;
+      }
+      candles.push(candle);
+    }
+    return candles;
   }
 }
 
@@ -129,6 +182,7 @@ class Simulation {
   private readonly random: () => number;
   private readonly traders: readonly string[];
   private readonly tokens: DemoToken[] = [];
+  private labels = new DemoTokenLabels();
   private lastTime = -1;
   private tx = 0;
   private launches = 0;
@@ -150,7 +204,8 @@ class Simulation {
     this.live = true;
   }
 
-  restore({ markets, tip }: DemoState) {
+  restore({ labels, markets, tip }: DemoState) {
+    this.labels = new DemoTokenLabels(labels);
     this.lastTime = tip.time;
     this.tx = tip.nextTransactionIndex;
     for (const { mint, pool, migrated, trades } of markets) {
@@ -214,18 +269,17 @@ class Simulation {
     if (this.tokens.length > DEMO_ACTIVE_MARKETS) this.tokens.shift();
     const prefix = this.pick(prefixes);
     const mascot = this.pick(mascots);
-    const metadata = {
+    const label = this.labels.claim(mint, {
       name: `${prefix} ${mascot}`,
       symbol: `${prefix.slice(0, 2)}${mascot.slice(0, 4)}`.toUpperCase(),
-      image: `https://api.dicebear.com/9.x/bottts-neutral/png?seed=${mint}`,
-    };
+    });
     return {
       ...this.ref(mint, time),
       kind: "TokenLaunched",
       market,
       creator: this.pick(this.traders),
       decimals: DECIMALS,
-      metadataUri: `data:application/json,${encodeURIComponent(JSON.stringify(metadata))}`,
+      metadataUri: demoMetadataUri(label, demoTokenImage(mint)),
     };
   }
 

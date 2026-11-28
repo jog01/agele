@@ -1,12 +1,16 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { getBase58Decoder } from "@solana/kit";
-import { inArray, like } from "drizzle-orm";
+import { asc, inArray, like } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { AppError } from "../src/lib/errors";
 import { chainCandles, chainEvents, chainTokens, chainTrades } from "../src/models/chain";
-import { PulseEventSchema, PulseSchema } from "../src/schemas/token";
+import { PulseEventSchema, PulseSchema, TokenSchema } from "../src/schemas/token";
+import { demoMetadataUri, demoTokenImage } from "../src/services/chain-ingest/demo-metadata";
+import { readDemoState } from "../src/services/chain-ingest/demo-state";
 import type { ChainEvent, EventRef } from "../src/services/chain-ingest/events";
+import { resolveMetadata } from "../src/services/chain-ingest/metadata";
 import { IngestService } from "../src/services/chain-ingest/service";
+import { DemoSolUsdPrice } from "../src/services/chain-ingest/simulator";
 import { IndexedMarketDataProvider } from "../src/services/market-data/indexed.provider";
 import { LiveMarketDataProvider } from "../src/services/market-data/live.provider";
 import { MockMarketDataProvider } from "../src/services/market-data/mock.provider";
@@ -113,6 +117,41 @@ afterAll(async () => {
 });
 
 describe("chain ingestion and indexed market data", () => {
+  it("repairs duplicate simulator metadata without renaming the first mint or touching live rows", async () => {
+    const { sink } = setup();
+    const label = { name: `Cloud Duck ${prefix}`, symbol: "CLOUDDUCKTEST" };
+    const first = newMint();
+    const second = newMint();
+    const live = newMint();
+    const token = (mint: string, offset: number, source: EventRef["source"]) => ({
+      ...launch(mint, source),
+      slot: 1 + offset,
+      blockTime: time + offset,
+      metadataUri: demoMetadataUri(label, demoTokenImage(mint)),
+    });
+    await sink.ingest([token(first, 0, "demo"), token(second, 1, "demo"), token(live, 2, "solana")]);
+    const rows = () =>
+      db
+        .select()
+        .from(chainTokens)
+        .where(inArray(chainTokens.mint, [first, second, live]))
+        .orderBy(asc(chainTokens.launchedAt));
+
+    const state = await readDemoState(db);
+    const repaired = await rows();
+    const [original, renamed, unchangedLive] = repaired;
+    expect(original).toMatchObject({ mint: first, ...label });
+    expect(unchangedLive).toMatchObject({ mint: live, ...label });
+    const tag = second.slice(0, 5).toUpperCase();
+    const changed = { name: `${label.name} · ${tag}`, symbol: `${label.symbol}-${tag}` };
+    expect(renamed).toMatchObject({ mint: second, ...changed, imageUrl: demoTokenImage(second) });
+    expect(await resolveMetadata(renamed?.metadataUri ?? undefined)).toMatchObject(changed);
+    expect(state?.labels).toContainEqual(label);
+    expect(state?.labels).toContainEqual(changed);
+    await readDemoState(db);
+    expect(await rows()).toEqual(repaired);
+  });
+
   it("stores stages, exact and prefix search, 24h statistics, net holders, and own OHLCV without double counting", async () => {
     const { sent, sink, indexed, advance } = setup();
     const token = launch(newMint(), "solana");
@@ -239,6 +278,121 @@ describe("chain ingestion and indexed market data", () => {
       tokensUnavailable: true,
     });
     await expect(indexed.searchTokens("no-result")).rejects.toThrow("upstream unavailable");
+  });
+
+  it.each(["demo", "solana"] as const)("finds native SOL by name, symbol and mint for %s", async (source) => {
+    let unavailable = false;
+    const upstream = new LiveMarketDataProvider({
+      fetch: async (url) => {
+        expect(new URL(url).pathname).toBe("/tokens/v2/search");
+        return unavailable ? new Response(null, { status: 503 }) : Response.json([]);
+      },
+    });
+    const indexed = new IndexedMarketDataProvider(db, { source, solUsd, upstream });
+    const app = testApp({ tokens: new TokenService(indexed) });
+    for (const q of ["sOL", "Solana", SOL]) {
+      const response = await app.request(`/v1/search?q=${q}`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        tokens: expect.arrayContaining([
+          expect.objectContaining({ mint: SOL, name: "Solana", symbol: "SOL", priceUsd: 200 }),
+        ]),
+        tokensUnavailable: false,
+      });
+    }
+    unavailable = true;
+    const response = await app.request("/v1/search?q=solan");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      tokens: expect.arrayContaining([expect.objectContaining({ mint: SOL })]),
+      tokensUnavailable: true,
+    });
+  });
+
+  it("serves native SOL candles from the simulator's SOL/USD history without an upstream key", async () => {
+    const solUsd = new DemoSolUsdPrice();
+    const now = () => (time + 65) * 1000;
+    const upstream = new LiveMarketDataProvider({
+      fetch: async () => {
+        throw new Error("Native SOL candles should not require a remote request");
+      },
+    });
+    const indexed = new IndexedMarketDataProvider(db, { source: "demo", solUsd, upstream, now });
+    const app = testApp({ tokens: new TokenService(indexed) });
+    const response = await app.request(`/v1/tokens/${SOL}/candles?interval=5m&limit=2`);
+    expect(response.status).toBe(200);
+    const prices = Array.from({ length: 5 }, (_, i) => solUsd.getSolUsd(time - 300 + i * 60));
+    expect(await response.json()).toEqual({
+      candles: [
+        {
+          time: time - 300,
+          open: expect.closeTo(prices[0]!, 10),
+          high: expect.closeTo(Math.max(...prices), 10),
+          low: expect.closeTo(Math.min(...prices), 10),
+          close: expect.closeTo(prices[4]!, 10),
+          volume: 0,
+        },
+        {
+          time,
+          open: expect.closeTo(solUsd.getSolUsd(time), 10),
+          high: expect.closeTo(Math.max(solUsd.getSolUsd(time), solUsd.getSolUsd(time + 60)), 10),
+          low: expect.closeTo(Math.min(solUsd.getSolUsd(time), solUsd.getSolUsd(time + 60)), 10),
+          close: expect.closeTo(solUsd.getSolUsd(time + 60), 10),
+          volume: 0,
+        },
+      ],
+    });
+  });
+
+  it("preserves the upstream name when searching for the Wrapped SOL prefix", async () => {
+    const upstream = new LiveMarketDataProvider({
+      fetch: async (url) =>
+        new URL(url).pathname === "/tokens/v2/search"
+          ? Response.json([{ id: SOL, name: "Wrapped SOL", symbol: "SOL", decimals: 9 }])
+          : Response.json({ [SOL]: { usdPrice: 201 } }),
+    });
+    const indexed = new IndexedMarketDataProvider(db, { source: "demo", upstream, solUsd });
+    const app = testApp({ tokens: new TokenService(indexed) });
+    const detail = await app.request(`/v1/tokens/${SOL}`);
+    expect(detail.status).toBe(200);
+    const { priceUsd } = TokenSchema.parse(await detail.json());
+    expect(priceUsd).toBe(200);
+    for (const path of ["/v1/search", "/v1/tokens/search"]) {
+      const response = await app.request(`${path}?q=wRaPpEd`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        tokens: [expect.objectContaining({ mint: SOL, name: "Wrapped SOL", symbol: "SOL", priceUsd })],
+      });
+      const canonical = await app.request(`${path}?q=Solana`);
+      expect(canonical.status).toBe(200);
+      expect(await canonical.json()).toMatchObject({
+        tokens: expect.arrayContaining([expect.objectContaining({ mint: SOL, priceUsd })]),
+      });
+    }
+  });
+
+  it("uses upstream OHLCV for native SOL when the source does not provide local history", async () => {
+    const upstream = new LiveMarketDataProvider({
+      now: () => (time + 60) * 1000,
+      birdeyeApiKey: "test-key",
+      fetch: async (url) => {
+        const { pathname, searchParams } = new URL(url);
+        if (pathname === "/tokens/v2/search") return Response.json([]);
+        expect(pathname).toBe("/defi/v3/ohlcv");
+        expect(searchParams.get("address")).toBe(SOL);
+        return Response.json({
+          success: true,
+          data: { items: [{ unix_time: time, o: 100, h: 105, l: 95, c: 102, v_usd: 250 }] },
+        });
+      },
+    });
+    const indexed = new IndexedMarketDataProvider(db, { source: "solana", upstream, solUsd });
+    const app = testApp({ tokens: new TokenService(indexed) });
+    const response = await app.request(`/v1/tokens/${SOL}/candles?interval=1m&limit=1`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      candles: [{ time, open: 100, high: 105, low: 95, close: 102, volume: 250 }],
+    });
   });
 
   it("commits known launches and trades even when the live stream starts after another mint launched", async () => {
