@@ -116,7 +116,8 @@ sequenceDiagram
   `indexed` accordingly. A new-listing row is a token launch. A price-spike
   row is a completed 15-minute UTC window whose last close is at least 25%
   above its first open on at least $1,000 of volume, dated at the window's
-  end; each page scans the 24 hours before its cursor. Their market cap is
+  end; each page scans whole windows in the 24 hours before its cursor and
+  steps back while older candles exist. Their market cap is
   the token's current indexed price times its supply. They appear only in the
   global scope and are left out whenever a trader filter is set (`wallet`,
   `minSizeUsd`, `minPortfolioUsd`, `minPriceSinceFirstBuyPct`).

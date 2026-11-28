@@ -90,6 +90,7 @@ export class PgSocialRepository {
   constructor(
     private readonly db: Db,
     private readonly chainSource: EventRef["source"] = "demo",
+    private readonly spikeLookbackSeconds = spikeLookback,
   ) {}
 
   async systemFeed(input: { cursor?: FeedCursor; limit: number; mint?: string; types: string[] }) {
@@ -98,7 +99,9 @@ export class PgSocialRepository {
     const window = sql.raw(String(spikeWindow));
     const scopedMint = mint ? sql`and c.mint = ${mint}` : sql.empty();
     const bucket = sql`(c.time / ${window}) * ${window}`;
-    const end = cursor ? sql`${cursor.createdAt}::bigint` : sql`extract(epoch from now())::bigint`;
+    const endSeconds = cursor?.createdAt ?? Math.floor(Date.now() / 1000);
+    const scanStart = Math.floor((endSeconds - this.spikeLookbackSeconds) / spikeWindow) * spikeWindow;
+    const end = sql`${endSeconds}::bigint`;
     const spikeId = eventId(sql`'price-spike:' || ${source} || ':' || s.mint || ':' || s.bucket`);
     const listingId = eventId(sql`'new-listing:' || ${source} || ':' || c.mint`);
     const cap = sql`case when c.price_usd > 0 then c.price_usd * c.total_supply_raw::float8 / 10 ^ c.decimals end`;
@@ -112,7 +115,7 @@ export class PgSocialRepository {
           (array_agg(c.close order by c.time desc))[1] as close, sum(c.volume) as volume
         from chain_candles_1m c
         where c.source = ${source} ${scopedMint} ${enabled("price-spike")}
-          and c.time >= ${end} - ${spikeLookback + spikeWindow}::bigint and c.time < ${end}
+          and c.time >= ${scanStart}::bigint and c.time < ${end}
         group by 1, 2
         having (array_agg(c.close order by c.time desc))[1] >= (array_agg(c.open order by c.time))[1] * ${1 + spikeMinPct / 100}::float8
           and (array_agg(c.open order by c.time))[1] > 0 and sum(c.volume) >= ${spikeMinVolumeUsd}::float8
@@ -132,7 +135,27 @@ export class PgSocialRepository {
        order by 6 desc, 1 desc limit ${limit + 1})
       order by "createdAt" desc, id desc limit ${limit + 1}
     `);
-    return { items: rows.slice(0, limit), nextCursor: pageCursor(rows, limit), source: this.chainSource };
+    const [older] = types.includes("price-spike")
+      ? await this.db.execute<{ found: boolean }>(sql`
+          select exists(select 1 from chain_candles_1m c
+            where c.source = ${source} ${scopedMint} and c.time < ${scanStart}::bigint) as found`)
+      : [];
+    const keys = [
+      rows.length > limit ? rows[limit - 1]! : null,
+      older?.found ? { createdAt: scanStart, id: "ffffffff-ffff-ffff-ffff-ffffffffffff" } : null,
+    ].filter((key): key is FeedCursor => key !== null);
+    const next = keys.sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))[0];
+    const items = rows
+      .slice(0, limit)
+      .filter(
+        (row) =>
+          !next || row.createdAt > next.createdAt || (row.createdAt === next.createdAt && row.id >= next.id),
+      );
+    return {
+      items,
+      nextCursor: next ? encodeCursor({ createdAt: next.createdAt, id: next.id }) : null,
+      source: this.chainSource,
+    };
   }
 
   async feed(input: {

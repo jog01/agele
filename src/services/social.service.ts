@@ -130,7 +130,7 @@ export class SocialService {
       ]);
       const boundary = [batch, system]
         .filter((stream) => stream.nextCursor)
-        .map((stream) => stream.items.at(-1)!)
+        .map((stream) => decodeCursor(stream.nextCursor!))
         .reduce<FeedCursor | null>(
           (max, key) => (max === null || compareKeys(key, max) > 0 ? key : max),
           null,

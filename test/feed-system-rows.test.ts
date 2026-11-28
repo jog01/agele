@@ -2,10 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { inArray } from "drizzle-orm";
 import { getDb } from "../src/db/client";
 import { chainCandles, chainEvents, chainTokens, chainTrades, users } from "../src/models";
+import { PgSocialRepository } from "../src/repositories/social.repository";
 import { type FeedItemDto, FeedSchema } from "../src/schemas/social";
 import type { ChainEvent } from "../src/services/chain-ingest/events";
 import { IngestService } from "../src/services/chain-ingest/service";
 import { DemoChainSimulator, DemoSolUsdPrice, demoChainFacts } from "../src/services/chain-ingest/simulator";
+import { decodeCursor } from "../src/services/social/cursor";
 import { socialDemoFixture, testApp } from "./helpers";
 
 const db = getDb();
@@ -92,6 +94,27 @@ describe("feed system rows", () => {
       expect(spike.createdAt % 900).toBe(0);
       expect(spike.createdAt * 1000).toBeLessThanOrEqual(Date.now());
     }
+  });
+
+  it("pages spikes past the scan window and only counts whole 15-minute windows", async () => {
+    const page = async (repository: PgSocialRepository) => {
+      const rows = [];
+      let cursor: string | null = null;
+      do {
+        const batch: Awaited<ReturnType<PgSocialRepository["systemFeed"]>> = await repository.systemFeed({
+          cursor: cursor ? decodeCursor(cursor) : undefined,
+          limit: 2,
+          types: ["price-spike"],
+        });
+        rows.push(...batch.items);
+        cursor = batch.nextCursor;
+      } while (cursor);
+      return rows.map((row) => row.id);
+    };
+    const narrow = await page(new PgSocialRepository(db, "demo", 1200));
+    const wide = await page(new PgSocialRepository(db, "demo", 30 * 24 * 3600));
+    expect(wide.length).toBeGreaterThan(0);
+    expect(narrow).toEqual(wide);
   });
 
   it("merges system and trader rows into one ordered stream without gaps or duplicates", async () => {
