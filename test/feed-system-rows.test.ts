@@ -111,8 +111,8 @@ describe("feed system rows", () => {
       } while (cursor);
       return rows.map((row) => row.id);
     };
-    const narrow = await page(new PgSocialRepository(db, "demo", 1200));
-    const wide = await page(new PgSocialRepository(db, "demo", 30 * 24 * 3600));
+    const narrow = await page(new PgSocialRepository(db, undefined, { spikeLookbackSeconds: 1200 }));
+    const wide = await page(new PgSocialRepository(db, undefined, { spikeLookbackSeconds: 30 * 24 * 3600 }));
     expect(wide.length).toBeGreaterThan(0);
     expect(narrow).toEqual(wide);
   });

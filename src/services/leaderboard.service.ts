@@ -3,6 +3,7 @@ import type { LeaderboardRepository } from "../repositories/leaderboard.reposito
 import type { LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
 import type { MarketDataProvider } from "./market-data";
 import { cachePositionQuotes, type PositionQuote } from "./market-data/position-quotes";
+import type { NotificationService } from "./notification.service";
 import {
   LEADERBOARD_WINDOWS,
   type LeaderboardSnapshot,
@@ -21,6 +22,7 @@ export class LeaderboardService {
     private readonly hub: EventPublisher,
     private readonly now: () => number = Date.now,
     private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
+    private readonly onRankChanged?: NotificationService["rankChanged"],
   ) {}
 
   private serialize(callback: () => Promise<void>) {
@@ -108,12 +110,14 @@ export class LeaderboardService {
     return { "24h": day, "7d": week, "30d": month };
   }
 
-  updateUser(userId: string) {
+  updateUser(userId: string, tradeId?: string) {
     return this.serialize(async () => {
       const now = this.now();
       const snapshot = await this.compute(now, userId);
       for (const window of LEADERBOARD_WINDOWS) {
+        const before = tradeId && this.onRankChanged ? await this.store.rankOrder(window) : undefined;
         await this.store.update(window, userId, snapshot[window][0] ?? null);
+        if (before && tradeId) await this.notifyRankChanges(window, before, tradeId);
         await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
       }
     });
@@ -122,10 +126,27 @@ export class LeaderboardService {
   rebuild() {
     return this.serialize(async () => {
       const now = this.now();
-      await this.store.replace(await this.compute(now));
-      for (const window of LEADERBOARD_WINDOWS)
+      const snapshot = await this.compute(now);
+      const before = this.onRankChanged
+        ? await Promise.all(LEADERBOARD_WINDOWS.map((window) => this.store.rankOrder(window)))
+        : undefined;
+      await this.store.replace(snapshot);
+      const rebuildId = crypto.randomUUID();
+      for (const [index, window] of LEADERBOARD_WINDOWS.entries()) {
+        if (before) await this.notifyRankChanges(window, before[index]!, rebuildId);
         await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
+      }
     });
+  }
+
+  private async notifyRankChanges(window: LeaderboardWindowValue, before: string[], eventId: string) {
+    const previous = new Map(before.map((id, index) => [id, index + 1]));
+    const after = await this.store.rankOrder(window);
+    for (const [index, userId] of after.entries()) {
+      const rank = index + 1;
+      const previousRank = previous.get(userId) ?? null;
+      if (rank !== previousRank) await this.onRankChanged?.(userId, window, rank, previousRank, eventId);
+    }
   }
 
   async leaderboard(window: LeaderboardWindowValue, limit: number): Promise<LeaderboardEntryDto[]> {

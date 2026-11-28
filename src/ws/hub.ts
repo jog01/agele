@@ -1,5 +1,5 @@
 import type { Server } from "bun";
-import { ClientMessage, type ServerMessage } from "./topics";
+import { ClientMessage, isPrivateTopic, type ServerMessage } from "./topics";
 
 /** Per-gateway subscriptions and Bun native pub/sub fan-out. */
 export class WsHub {
@@ -24,6 +24,7 @@ export class WsHub {
   handle(
     raw: string,
     socket: { subscribe(t: string): void; unsubscribe(t: string): void; isSubscribed(t: string): boolean },
+    authorizedTopic?: string,
   ): ServerMessage {
     let parsed: ReturnType<typeof ClientMessage.safeParse>;
     try {
@@ -33,6 +34,8 @@ export class WsHub {
     }
     if (!parsed.success) return { type: "error", message: "invalid message" };
     const msg = parsed.data;
+    if ("topic" in msg && isPrivateTopic(msg.topic) && msg.topic !== authorizedTopic)
+      return { type: "error", message: "forbidden topic" };
     switch (msg.op) {
       case "ping":
         return { type: "pong" };

@@ -110,8 +110,15 @@
     {
       "idx": 15,
       "version": "7",
-      "when": 1795828609462,
-      "tag": "0015_chain_candles_time",
+      "when": 1795828902907,
+      "tag": "0015_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795829634969,
+      "tag": "0016_chain_candles_time",
       "breakpoints": true
     }
   ]

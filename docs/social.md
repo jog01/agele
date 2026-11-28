@@ -169,5 +169,42 @@ flowchart TD
   when a window endpoint is missing; percent is also null from a zero
   baseline. `all` keeps the points-only response. Legacy equity-only snapshots
   are omitted.
+- `GET /v1/leaderboard/positions` ranks closed positions (first buy until
+  holdings return to zero) by realized USD PnL. `window` (`24h`, `7d`, `30d`,
+  `all`, default `24h`) keeps positions closed in it. `invested` buckets the
+  position's total buys: `lt100`, `100-1k`, `1k-10k`, `10k-100k`, `gt100k`,
+  lower bound inclusive; omit it for all sizes. `minHoldSeconds` and
+  `maxHoldSeconds` bound the first-buy-to-close hold inclusively (omit max for
+  Any). Filters apply before ranking, so `rank` counts matching positions, and
+  the opaque `nextCursor` pages by realized PnL then position ID. Rows carry
+  the trader, token, `positionId` (the replay ID), `totalInvestedUsd`,
+  `realizedPnlUsd`, `pnlPct`, token-weighted `avgEntryMarketCapUsd`,
+  `holdSeconds`, open/close times and the latest thesis version, or null.
+  Signed-in viewers also get `isFollowing`. Each window's ranking is rebuilt
+  from PostgreSQL fills at most every 30 seconds per API process. The demo seed
+  gives every trader a second closed position sized across the buckets with
+  holds from 30 minutes to over three months, and a thesis on each closed
+  position.
+
+```mermaid
+sequenceDiagram
+    participant W as Client
+    participant A as Hono API
+    participant P as PositionLeaderboardService
+    participant DB as PostgreSQL
+    W->>A: GET /v1/leaderboard/positions?window&invested&minHoldSeconds&maxHoldSeconds&cursor
+    A->>A: Validate query, verify optional bearer token
+    A->>P: Filter and optional viewer
+    alt window ranking older than 30s
+        P->>DB: Fills of every user and token pair with a fill in the window
+        P->>P: Rebuild episodes, keep those closed in the window
+        P->>DB: Traders, tokens and latest thesis versions by opening fill
+        P->>P: Sort by realized PnL, then position ID
+    end
+    P->>P: Apply invested and hold filters, number ranks, page after cursor
+    P-->>A: Entries and nextCursor (isFollowing when signed in)
+    A-->>W: X-Data-Source demo or indexed
+```
+
 - [Trader search](./trader-search.md) returns tokens and public traders in one
   response, including seeded trader profiles in keyless demo mode.

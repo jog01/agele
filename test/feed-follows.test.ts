@@ -408,12 +408,19 @@ describe("feed", () => {
 
   it("keeps persisted feed identities and dates unchanged when the seed is rerun", async () => {
     const { app } = setup();
-    const snapshot = await page(app, "?limit=100");
+    const all = async (query: string) => {
+      let result = await page(app, query);
+      const items = [...result.items];
+      while (result.nextCursor) {
+        result = await page(app, `?limit=100&cursor=${result.nextCursor}`);
+        items.push(...result.items);
+      }
+      return items;
+    };
+    const snapshot = await all("?limit=100");
     const first = await page(app, "?limit=1");
     await seedSocialDemo(getDb(), Date.now() + 15 * 60 * 1000);
-    const next = await page(app, `?limit=100&cursor=${first.nextCursor}`);
-    expect(next.items).toEqual(snapshot.items.slice(1));
-    expect(next.nextCursor).toBeNull();
+    expect(await all(`?limit=100&cursor=${first.nextCursor}`)).toEqual(snapshot.slice(1));
 
     const fresh = await page(setup().app, "?limit=1");
     expect(fresh).toEqual(first);
@@ -447,7 +454,7 @@ describe("feed", () => {
       if (!result.nextCursor) break;
       result = await page(app, `?limit=7&cursor=${result.nextCursor}`);
     }
-    expect(ids).toHaveLength(96);
+    expect(ids).toHaveLength(144);
     expect(new Set(ids).size).toBe(ids.length);
     expect(await page(app, `?cursor=${encodeCursor({ createdAt: 0, id: viewerId })}`)).toEqual({
       items: [],
@@ -601,7 +608,7 @@ describe("feed", () => {
     const result = await page(app, "?scope=following&limit=2", true);
     expect(result.items).toHaveLength(2);
     expect(result.items.every((item) => item.wallet === wallet)).toBe(true);
-    expect((await page(app, `?scope=following&cursor=${result.nextCursor}`, true)).items).toHaveLength(6);
+    expect((await page(app, `?scope=following&cursor=${result.nextCursor}`, true)).items).toHaveLength(10);
   });
 });
 

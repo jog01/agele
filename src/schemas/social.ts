@@ -143,7 +143,96 @@ export const LeaderboardQuery = z.object({
     .openapi({ param: { name: "limit", in: "query" } }),
 });
 
+export const PositionsLeaderboardWindow = z.enum(["24h", "7d", "30d", "all"]);
+export const InvestedBucket = z.enum(["lt100", "100-1k", "1k-10k", "10k-100k", "gt100k"]);
+const holdSeconds = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+export const PositionsLeaderboardQuery = z
+  .object({
+    window: PositionsLeaderboardWindow.default("24h").openapi({
+      param: { name: "window", in: "query" },
+      description: "Positions closed in the window; all includes every closed position",
+    }),
+    invested: InvestedBucket.optional().openapi({
+      param: { name: "invested", in: "query" },
+      description:
+        "Total bought USD bucket, lower bound inclusive (100-1k is $100 to <$1K); omit for all sizes",
+    }),
+    minHoldSeconds: holdSeconds.optional().openapi({
+      param: { name: "minHoldSeconds", in: "query" },
+      description: "Inclusive minimum hold time from first buy to close",
+    }),
+    maxHoldSeconds: holdSeconds.optional().openapi({
+      param: { name: "maxHoldSeconds", in: "query" },
+      description: "Inclusive maximum hold time; omit for Any",
+    }),
+    cursor: z
+      .string()
+      .optional()
+      .openapi({ param: { name: "cursor", in: "query" }, description: "nextCursor from the previous page" }),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(25)
+      .openapi({ param: { name: "limit", in: "query" } }),
+  })
+  .refine(
+    (query) =>
+      query.minHoldSeconds === undefined ||
+      query.maxHoldSeconds === undefined ||
+      query.minHoldSeconds <= query.maxHoldSeconds,
+    { message: "minHoldSeconds must not exceed maxHoldSeconds", path: ["minHoldSeconds"] },
+  );
+
+export const PositionsLeaderboardEntrySchema = z
+  .object({
+    rank: z.number().int().positive().openapi({ description: "Rank among positions matching the filters" }),
+    positionId: z.uuid().openapi({ description: "Opening fill ID; pass as positionId to position replay" }),
+    trader: z.object({
+      wallet: z.string(),
+      handle: z.string(),
+      displayName: z.string().nullable(),
+      avatarUrl: z.string().nullable(),
+    }),
+    token: z.object({
+      mint: z.string(),
+      symbol: z.string(),
+      name: z.string(),
+      imageUrl: z.string().nullable(),
+    }),
+    totalInvestedUsd: z.number().openapi({ description: "Sum of the position's buys in USD" }),
+    realizedPnlUsd: z.number(),
+    pnlPct: z.number().openapi({ description: "realizedPnlUsd / totalInvestedUsd x 100" }),
+    avgEntryMarketCapUsd: z.number().nullable(),
+    holdSeconds: z.number().int().nonnegative(),
+    openedAt: z.number().int(),
+    closedAt: z.number().int(),
+    thesis: z
+      .object({
+        id: z.uuid(),
+        body: z.string(),
+        createdAt: z.number().int().openapi({ description: "Unix seconds of the latest version" }),
+      })
+      .nullable()
+      .openapi({ description: "Latest version of the position's thesis" }),
+    source: z.literal("demo").optional(),
+    isFollowing: z.boolean().optional(),
+  })
+  .openapi("PositionsLeaderboardEntry");
+
+export const PositionsLeaderboardSchema = z
+  .object({
+    window: PositionsLeaderboardWindow,
+    entries: z.array(PositionsLeaderboardEntrySchema),
+    nextCursor: z.string().nullable(),
+  })
+  .openapi("PositionsLeaderboard");
+
 export type LeaderboardWindowValue = z.infer<typeof LeaderboardWindow>;
+export type PositionsLeaderboardWindowValue = z.infer<typeof PositionsLeaderboardWindow>;
+export type InvestedBucketValue = z.infer<typeof InvestedBucket>;
+export type PositionsLeaderboardEntryDto = z.infer<typeof PositionsLeaderboardEntrySchema>;
 export type LeaderboardEntryDto = z.infer<typeof LeaderboardEntrySchema>;
 export type CommentDto = z.infer<typeof CommentSchema>;
 
