@@ -3,7 +3,7 @@ import { env } from "../config/env";
 import { createContainer } from "../container";
 import { closeDb, getDb } from "../db/client";
 import { guardLiveStartup } from "../db/live-data-guard";
-import { seedSocialDemo } from "../db/seed-social";
+import { seedDemoActivity, seedSocialDemo } from "../db/seed-social";
 import { RedisEventPublisher } from "../events/bus";
 import { closeQueues } from "../jobs/queues";
 import { logger } from "../lib/logger";
@@ -14,7 +14,17 @@ await guardLiveStartup();
 initTelemetry();
 const container = createContainer();
 await container.feeSponsor.ready?.();
-if (env.CHAIN_SOURCE === "demo" && env.MARKET_DATA_PROVIDER === "indexed") await seedSocialDemo(getDb());
+const demoSocial = env.CHAIN_SOURCE === "demo" && env.MARKET_DATA_PROVIDER === "indexed";
+if (demoSocial) {
+  await seedSocialDemo(getDb());
+  await seedDemoActivity(getDb());
+}
+const demoActivity = demoSocial
+  ? setInterval(
+      () => seedDemoActivity(getDb()).catch((error) => logger.error({ err: error }, "demo activity failed")),
+      15 * 60_000,
+    )
+  : undefined;
 const app = createApp(container);
 const server = Bun.serve({
   port: env.PORT,
@@ -22,6 +32,7 @@ const server = Bun.serve({
 });
 logger.info({ port: server.port }, "api listening");
 async function shutdown() {
+  clearInterval(demoActivity);
   await server.stop();
   await closeQueues();
   if (container.events instanceof RedisEventPublisher) await container.events.close();
