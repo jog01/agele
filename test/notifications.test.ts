@@ -284,4 +284,29 @@ describe("account notifications", () => {
       Array.from({ length: 3 }, () => ({ userId: author.id, rank: 1 })),
     );
   });
+
+  it("notifies the account displaced by a newly ranked trader", async () => {
+    const trade = await fill(new PgTradeRepository(db));
+    const store = new MemoryLeaderboard();
+    await store.update("7d", quiet.id, {
+      userId: quiet.id,
+      pnlUsd: -1,
+      pnlPct: 0,
+      volumeUsd: 1,
+      trades: 1,
+      winRatePct: 0,
+    });
+    const leaderboard = new LeaderboardService(
+      new PgLeaderboardRepository(db),
+      store,
+      market,
+      events,
+      Date.now,
+      undefined,
+      delivery.rankChanged,
+    );
+    await leaderboard.updateUser(author.id, trade!.id);
+    const rank = (await read(quiet)).items.find(({ details }) => details.kind === "leaderboard");
+    expect(rank?.details).toMatchObject({ window: "7d", rank: 2, previousRank: 1 });
+  });
 });

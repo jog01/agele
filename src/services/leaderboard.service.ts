@@ -115,14 +115,9 @@ export class LeaderboardService {
       const now = this.now();
       const snapshot = await this.compute(now, userId);
       for (const window of LEADERBOARD_WINDOWS) {
-        const notify = tradeId !== undefined && this.onRankChanged !== undefined;
-        const previousRank = notify ? await this.store.rank(window, userId) : null;
+        const before = tradeId && this.onRankChanged ? await this.store.rankOrder(window) : undefined;
         await this.store.update(window, userId, snapshot[window][0] ?? null);
-        if (notify) {
-          const rank = await this.store.rank(window, userId);
-          if (rank !== null && rank !== previousRank)
-            await this.onRankChanged?.(userId, window, rank, previousRank, tradeId);
-        }
+        if (before && tradeId) await this.notifyRankChanges(window, before, tradeId);
         await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
       }
     });
