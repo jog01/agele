@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { decimal, divide, formatDecimal } from "../lib/decimal";
 import {
   comments,
@@ -302,16 +302,22 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
     const fills = await db
       .select()
       .from(trades)
-      .where(and(eq(trades.userId, profile.id), eq(trades.mint, mint)))
+      .where(and(eq(trades.userId, profile.id), inArray(trades.mint, [mint, sized.mint])))
       .orderBy(asc(trades.executedAt));
     const valueAt = async (time: number) => {
-      let held = 0;
+      const held = new Map<string, number>();
       for (const fill of fills) {
         if (fill.executedAt.getTime() > time * 1000) break;
-        held += Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1);
+        held.set(
+          fill.mint,
+          (held.get(fill.mint) ?? 0) + Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1),
+        );
       }
       const historical = new MockMarketDataProvider(() => time * 1000);
-      return (Math.max(0, held) * (await historical.getToken(mint))!.priceUsd).toFixed(2);
+      let value = 0;
+      for (const [heldMint, amount] of held)
+        if (amount > 0) value += amount * (await historical.getToken(heldMint))!.priceUsd;
+      return value.toFixed(2);
     };
     const nowSeconds = Math.floor(now / 1000);
     const midnight = Math.floor(nowSeconds / day) * day;
