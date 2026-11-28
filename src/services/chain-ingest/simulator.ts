@@ -98,6 +98,8 @@ function min(a: bigint, b: bigint) {
 export class DemoSolUsdPrice implements SolUsdPrice {
   private static readonly decay = 0.94;
   private static readonly window = 48;
+  private static readonly historySeconds = 30 * 86_400;
+  private readonly candlesByInterval = new Map<IntervalValue, { minute: number; candles: CandleDto[] }>();
 
   private change(minute: number) {
     return (mulberry32(hash(`demo-sol:${minute}`))() - 0.5) * 2;
@@ -114,8 +116,20 @@ export class DemoSolUsdPrice implements SolUsdPrice {
 
   getCandles(interval: IntervalValue, limit: number, now: number) {
     const step = INTERVAL_SECONDS[interval];
+    const minute = Math.floor(now / 60);
+    const count = Math.min(limit, Math.floor(DemoSolUsdPrice.historySeconds / step));
+    if (count <= 0) return [];
+    const cached = this.candlesByInterval.get(interval);
+    const existing = cached?.minute === minute ? cached.candles : [];
+    if (count <= existing.length) return existing.slice(-count);
     const end = Math.floor(now / step) * step;
-    const start = end - (limit - 1) * step;
+    const start = end - (count - 1) * step;
+    const candles = [...this.buildCandles(step, start, end - existing.length * step, now), ...existing];
+    this.candlesByInterval.set(interval, { minute, candles });
+    return candles.slice();
+  }
+
+  private buildCandles(step: number, start: number, end: number, now: number) {
     const { decay, window } = DemoSolUsdPrice;
     const expiredWeight = decay ** window;
     const firstMinute = start / 60;

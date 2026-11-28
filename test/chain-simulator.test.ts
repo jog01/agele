@@ -197,6 +197,18 @@ describe("demo chain simulator", () => {
     expect(quote).not.toBe(walk.getSolUsd(now() / 1000 + 120));
   });
 
+  it("bounds SOL candle history and refreshes the forming candle when the minute changes", () => {
+    const prices = new DemoSolUsdPrice();
+    const day = Math.floor(now() / 1000 / 86_400) * 86_400;
+    const history = prices.getCandles("1d", 1000, day + 60);
+    expect(history).toHaveLength(30);
+    expect(history[0]?.time).toBe(day - 29 * 86_400);
+    expect(prices.getCandles("1d", 2, day + 61)).toEqual(history.slice(-2));
+    const refreshed = prices.getCandles("1d", 1, day + 120)[0];
+    expect(refreshed?.close).toBeCloseTo(prices.getSolUsd(day + 120), 10);
+    expect(refreshed?.close).not.toBe(history.at(-1)?.close);
+  });
+
   it("accepts IPFS and data metadata, rejects unsafe schemes and discards invalid or oversized data", async () => {
     const payload = JSON.stringify({ name: "Cloud Otter", symbol: "COTR", image: "ipfs://image" });
     expect(
