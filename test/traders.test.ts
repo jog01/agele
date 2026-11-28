@@ -347,7 +347,7 @@ describe("public trader profiles", () => {
       tokens: [],
       tokensUnavailable: true,
       traders: expect.arrayContaining([
-        expect.objectContaining({ wallet: wallets[0], handle: `trader-${mint}` }),
+        expect.objectContaining({ wallet: wallets[0], handle: `trader-${mint}`, source: "indexed" }),
       ]),
     });
     expect(await (await app.request(`/v1/search?q=${wallets[4]}`)).json()).toMatchObject({

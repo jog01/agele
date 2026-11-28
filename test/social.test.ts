@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { z } from "@hono/zod-openapi";
 import { getBase58Decoder } from "@solana/kit";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../src/db/client";
@@ -7,6 +8,7 @@ import { comments, positions, theses, thesisViewers, trades, users } from "../sr
 import { PgFollowRepository } from "../src/repositories/follow.repository";
 import { PgTradeRepository } from "../src/repositories/trade.repository";
 import { CommentSchema, FeedSchema, ThesisThreadSchema, ThesisViewSchema } from "../src/schemas/social";
+import { TraderSearchResultSchema } from "../src/schemas/trader";
 import { USDC_MINT } from "../src/services/helius-parser";
 import type { UserService } from "../src/services/user.service";
 import { SOL, socialDemoFixture, testApp } from "./helpers";
@@ -31,6 +33,33 @@ describe("social controller", () => {
   it("returns comments for a known token and 404s otherwise", async () => {
     expect((await app.request(`/v1/tokens/${SOL}/comments`)).status).toBe(200);
     expect((await app.request("/v1/tokens/11111111111111111111111111111111/comments")).status).toBe(404);
+  });
+
+  it("finds a seeded trader by handle, display name, or wallet and links to their public profile", async () => {
+    const byHandle = await app.request("/v1/search?q=%40NORTH");
+    expect(byHandle.status).toBe(200);
+    const { traders } = z
+      .object({ traders: z.array(TraderSearchResultSchema.strict()) })
+      .parse(await byHandle.json());
+    expect(traders).toEqual([
+      {
+        wallet: expect.any(String),
+        handle: "northstar",
+        displayName: "Nora",
+        avatarUrl: "https://api.dicebear.com/9.x/notionists/png?seed=northstar",
+        source: "demo",
+      },
+    ]);
+    const trader = traders[0]!;
+    for (const q of ["nORa", trader.wallet]) {
+      const result = await app.request(`/v1/search?q=${q}`);
+      expect(result.status).toBe(200);
+      expect(await result.json()).toMatchObject({ traders });
+    }
+    const profile = await app.request(`/v1/traders/${trader.wallet}`);
+    expect(profile.status).toBe(200);
+    expect(profile.headers.get("X-Data-Source")).toBe("demo");
+    expect(await profile.json()).toMatchObject({ wallet: trader.wallet, handle: trader.handle });
   });
 
   it("documents that a thesis thread can have no pinned version", async () => {

@@ -438,6 +438,44 @@
           "holders"
         ]
       },
+      "TraderSearchResult": {
+        "type": "object",
+        "properties": {
+          "wallet": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "indexed"
+            ],
+            "description": "Whether the result is a seeded demo trader."
+          }
+        },
+        "required": [
+          "wallet",
+          "handle",
+          "displayName",
+          "avatarUrl",
+          "source"
+        ]
+      },
       "Pulse": {
         "type": "object",
         "properties": {
@@ -2724,6 +2762,7 @@
           "tokens",
           "traders"
         ],
+        "description": "Search tokens by exact mint or symbol/name prefix, and public traders by exact Solana wallet (including linked wallets) or case-insensitive handle/display name prefix. A leading @ is optional for trader names. Up to 30 traders are returned, with exact wallet matches first.",
         "parameters": [
           {
             "schema": {
@@ -2757,34 +2796,9 @@
                     "traders": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "wallet": {
-                            "type": "string"
-                          },
-                          "handle": {
-                            "type": "string"
-                          },
-                          "displayName": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "avatarUrl": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "wallet",
-                          "handle",
-                          "displayName",
-                          "avatarUrl"
-                        ]
-                      }
+                        "$ref": "#/components/schemas/TraderSearchResult"
+                      },
+                      "maxItems": 30
                     }
                   },
                   "required": [

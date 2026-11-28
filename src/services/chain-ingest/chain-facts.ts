@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CandleDto, IntervalValue } from "../../schemas/token";
 
 export interface ChainFacts {
   tokenSupply(mint: string): Promise<string>;
@@ -7,6 +8,7 @@ export interface ChainFacts {
 
 export interface SolUsdPrice {
   getSolUsd(time: number): number | Promise<number>;
+  getCandles?(interval: IntervalValue, limit: number, now: number): CandleDto[] | Promise<CandleDto[]>;
 }
 
 const supply = z.object({ value: z.object({ amount: z.string().regex(/^\d+$/) }) });
