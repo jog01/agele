@@ -76,7 +76,8 @@ export function positionEpisodes(trades: Trade[]) {
   return episodes;
 }
 
-export function weightedCap(fills: Trade[], side: Trade["side"]) {
+/** Token-weighted average market cap of one side's fills, or null when any fill lacks cap data. */
+export const weightedCap = (fills: Trade[], side: Trade["side"]) => {
   let total = 0;
   let amount = 0;
   for (const fill of fills) {
@@ -87,4 +88,4 @@ export function weightedCap(fills: Trade[], side: Trade["side"]) {
     amount += size;
   }
   return amount > 0 ? total / amount : null;
-}
+};

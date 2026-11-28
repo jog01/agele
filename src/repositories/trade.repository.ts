@@ -1,9 +1,25 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { decimal, divide, formatDecimal } from "../lib/decimal";
 import { AppError } from "../lib/errors";
-import { pendingTradeFills, positions, type Trade, tokens, trades, users, wallets } from "../models";
+import {
+  follows,
+  notificationSettings,
+  pendingTradeFills,
+  positions,
+  type Trade,
+  tokens,
+  trades,
+  users,
+  wallets,
+} from "../models";
 import type { ParsedTrade } from "../services/helius-parser";
+import { positionEpisodes } from "../services/position-episodes";
+import {
+  DEFAULT_ALERT_SETTINGS,
+  insertNotifications,
+  type NotificationDelivery,
+} from "./notification.repository";
 
 export interface IndexedTrade extends ParsedTrade {
   userId: string;
@@ -24,7 +40,10 @@ export interface TradeRepository {
 }
 
 export class PgTradeRepository implements TradeRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly deliver?: NotificationDelivery,
+  ) {}
 
   async linkedWallets(addresses: string[]) {
     if (!addresses.length) return [];
@@ -62,9 +81,13 @@ export class PgTradeRepository implements TradeRepository {
   }
 
   async record(trade: IndexedTrade): Promise<Trade | null> {
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       // Serialize a user's position updates, including the first insert.
-      await tx.select({ id: users.id }).from(users).where(eq(users.id, trade.userId)).for("update");
+      const [trader] = await tx
+        .select({ wallet: users.walletAddress })
+        .from(users)
+        .where(eq(users.id, trade.userId))
+        .for("no key update");
       const [pending] = await tx
         .select({ signature: pendingTradeFills.signature })
         .from(pendingTradeFills)
@@ -138,7 +161,54 @@ export class PgTradeRepository implements TradeRepository {
         .where(
           and(eq(pendingTradeFills.userId, trade.userId), eq(pendingTradeFills.signature, trade.signature)),
         );
-      return updated!;
+      if (!this.deliver) return { trade: updated!, recipients: [] };
+      const subscribers = await tx
+        .selectDistinct({
+          recipientId: follows.followerId,
+        })
+        .from(follows)
+        .leftJoin(notificationSettings, eq(notificationSettings.userId, follows.followerId))
+        .where(
+          and(
+            or(
+              eq(follows.followeeWallet, trade.wallet),
+              trader?.wallet ? eq(follows.followeeWallet, trader.wallet) : undefined,
+            ),
+            ne(follows.followerId, trade.userId),
+            sql`coalesce(${notificationSettings.traderActivity}, ${DEFAULT_ALERT_SETTINGS.traderActivity})`,
+          ),
+        );
+      if (!subscribers.length) return { trade: updated!, recipients: [] };
+      const history = await tx
+        .select()
+        .from(trades)
+        .where(and(eq(trades.userId, trade.userId), eq(trades.mint, trade.mint)));
+      const episode = positionEpisodes(history).find(({ fills }) =>
+        fills.some(({ id }) => id === inserted.id),
+      );
+      const rows = await insertNotifications(
+        tx,
+        subscribers.map(({ recipientId }) => ({
+          recipientId,
+          actorId: trade.userId,
+          mint: trade.mint,
+          eventKey: `trader-activity:${inserted.id}`,
+          createdAt: inserted.executedAt,
+          details: {
+            kind: "trader_trade",
+            target: {
+              wallet: trade.wallet,
+              positionId: episode?.id ?? null,
+              side: trade.side,
+              sizeUsd: Number(inserted.quoteAmountUsd),
+            },
+          },
+        })),
+      );
+      return { trade: updated!, recipients: rows };
     });
+    if (!result) return null;
+    await Promise.all(result.recipients.map(({ recipientId }) => this.deliver?.(recipientId)));
+    return result.trade;
   }
 }

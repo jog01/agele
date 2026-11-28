@@ -17,6 +17,8 @@ import {
   LeaderboardEntrySchema,
   LeaderboardQuery,
   LeaderboardWindow,
+  PositionsLeaderboardQuery,
+  PositionsLeaderboardSchema,
   SocialPostBody,
   ThesisThreadSchema,
   ThesisViewSchema,
@@ -42,6 +44,27 @@ const getLeaderboard = createRoute({
       description:
         "Top traders by realized + unrealized PnL. Seeded entries have source=demo. X-Data-Source is demo for an entirely seeded page, indexed otherwise.",
     },
+    401: errorResponse("Invalid bearer token"),
+    503: errorResponse("Authentication is not configured"),
+  },
+});
+
+const getPositionsLeaderboard = createRoute({
+  method: "get",
+  path: "/leaderboard/positions",
+  tags: ["social"],
+  description:
+    "Closed positions (first buy until holdings return to zero) ranked by realized USD PnL. Window keeps positions closed in it; invested buckets total bought USD (lower bound inclusive); hold time runs from first buy to close. Filters apply before ranking and rank counts matching positions. Optional auth adds isFollowing. Rankings are cached for up to 30 seconds. X-Data-Source is demo for an entirely seeded page, indexed otherwise.",
+  request: { query: PositionsLeaderboardQuery },
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  responses: {
+    200: {
+      content: { "application/json": { schema: PositionsLeaderboardSchema } },
+      description:
+        "Ranked closed positions with trader, token, latest thesis, average entry market cap and PnL",
+    },
+    400: errorResponse("Invalid window, bucket, hold-time range or cursor"),
     401: errorResponse("Invalid bearer token"),
     503: errorResponse("Authentication is not configured"),
   },
@@ -281,6 +304,17 @@ export const socialController = new OpenAPIHono<AppEnv>()
       entries.length && entries.every((entry) => entry.source === "demo") ? "demo" : "indexed",
     );
     return c.json({ window, entries }, 200);
+  })
+  .openapi(getPositionsLeaderboard, async (c) => {
+    const query = c.req.valid("query");
+    const container = c.get("container");
+    const viewer = c.get("auth") ? await container.users.ensureUser(c.get("auth")) : undefined;
+    const { entries, nextCursor } = await container.positionLeaderboard.leaderboard(query, viewer?.id);
+    c.header(
+      "X-Data-Source",
+      entries.length && entries.every((entry) => entry.source === "demo") ? "demo" : "indexed",
+    );
+    return c.json({ window: query.window, entries, nextCursor }, 200);
   })
   .openapi(getFeed, async (c) => {
     const container = c.get("container");

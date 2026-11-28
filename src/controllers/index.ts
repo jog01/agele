@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { AppEnv } from "../types";
 import { meController } from "./me.controller";
+import { notificationsController } from "./notifications.controller";
 import { portfolioController } from "./portfolio.controller";
 import { socialController } from "./social.controller";
 import { swapsController } from "./swaps.controller";
@@ -15,6 +16,7 @@ export const v1 = new OpenAPIHono<AppEnv>()
   .route("/", tokenActivityController)
   .route("/", tradersController)
   .route("/", meController)
+  .route("/", notificationsController)
   .route("/", swapsController)
   .route("/", portfolioController)
   .route("/", socialController);
