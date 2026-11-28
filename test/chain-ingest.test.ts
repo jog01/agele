@@ -343,6 +343,7 @@ describe("chain ingestion and indexed market data", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       mint: token.mint,
+      scope: "all",
       totalHolders: 0,
       top10Pct: 0,
       holders: [],

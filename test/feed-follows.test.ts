@@ -440,7 +440,7 @@ describe("feed", () => {
       if (!result.nextCursor) break;
       result = await page(app, `?limit=7&cursor=${result.nextCursor}`);
     }
-    expect(ids).toHaveLength(96);
+    expect(ids).toHaveLength(100);
     expect(new Set(ids).size).toBe(ids.length);
     expect(await page(app, `?cursor=${encodeCursor({ createdAt: 0, id: viewerId })}`)).toEqual({
       items: [],

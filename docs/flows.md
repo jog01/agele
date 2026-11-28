@@ -126,6 +126,50 @@ total supply. The provider merges accounts by owner, labels known pool
 authorities (currently Raydium AMM v4), and ranks the owners. Indexed holders
 instead reflect positive net positions from ingested trades.
 
+## Token holders with theses
+
+`GET /v1/tokens/{mint}/holders` serves the token page Holders tab.
+
+- `scope=all` (default): the largest owner wallets from market data, as above.
+  A wallet that belongs to an Agele trader (primary or linked) gets `trader`,
+  `position` and `latestThesis`; other rows have them as `null`.
+- `scope=traders`: Agele traders with an open indexed position in the mint,
+  largest amount first (first 200). Value and PnL use the same position quote
+  as portfolio, falling back to average cost; `X-Data-Source: indexed`.
+- `thesisOnly`, `followingOnly` and `minValueUsd` filter before `limit`
+  (1-50). `followingOnly` needs a bearer token and returns 401 without one;
+  `isFollowed` is `false` for anonymous viewers.
+- `position` is the open position episode: opening fill ID for replay,
+  first buy time, invested USD, buy-weighted entry market cap, realized,
+  unrealized and total PnL. `trader.avgHoldSeconds` averages closed positions.
+- `latestThesis` is the trader's newest thesis version on the mint, with like,
+  reply and view counts.
+
+Demo mode only swaps the source: seeded traders hold seeded mints, most with a
+thesis, and four also hold a second mint without one, so Thesis only and
+Following only have rows to keep and drop.
+
+```mermaid
+sequenceDiagram
+  participant W as Web
+  participant A as API
+  participant M as Market data
+  participant P as Postgres
+  W->>A: GET /tokens/{mint}/holders?scope&thesisOnly&followingOnly&minValueUsd&limit
+  opt bearer token
+    A->>P: viewer and followed wallets
+  end
+  A->>M: token and largest owners
+  alt scope=all
+    A->>P: users matching owner wallets, positions, newest thesis
+  else scope=traders
+    A->>P: users with open positions (thesis and follow filters in SQL)
+  end
+  A->>P: fills for those users
+  A->>A: position episodes, PnL, filters, then limit
+  A-->>W: holders with trader, position, latestThesis, isFollowed
+```
+
 ## Follow and following feed
 
 ```mermaid

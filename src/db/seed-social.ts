@@ -243,6 +243,29 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
           );
       }
     }
+    const extra = metadata[index - 4];
+    if (extra && index < 8) {
+      // A second holding without a thesis, so holder filters have rows to drop.
+      const amount = 2 * Math.max(2, Math.round((300 + index * 90) / extra.priceUsd));
+      const usd = decimal(((extra.priceUsd * amount * 97) / 100).toFixed(2));
+      await repository.record({
+        userId: profile.id,
+        wallet: profile.walletAddress,
+        mint: extra.mint,
+        symbol: extra.symbol,
+        name: extra.name,
+        imageUrl: extra.imageUrl,
+        decimals: extra.decimals,
+        amount: decimal(String(amount)),
+        usd,
+        marketCapUsd: (extra.marketCapUsd * 97) / 100,
+        quoteAmount: usd,
+        quoteMint: USDC_MINT,
+        side: "buy",
+        signature: `demo:${profile.handle}:holding`,
+        timestamp: anchor - 3 * day - index * 60,
+      });
+    }
     const joinedAt = new Date((anchor - 35 * day) * 1000);
     if (first!.createdAt > joinedAt)
       await db.update(users).set({ createdAt: joinedAt }).where(eq(users.id, profile.id));
@@ -252,13 +275,18 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
       .where(eq(trades.userId, profile.id))
       .orderBy(asc(trades.executedAt));
     const valueAt = async (time: number) => {
-      let held = 0;
+      const held = new Map<string, number>();
       for (const fill of fills) {
         if (fill.executedAt.getTime() > time * 1000) break;
-        held += Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1);
+        const amount = Number(fill.tokenAmount) * (fill.side === "buy" ? 1 : -1);
+        held.set(fill.mint, (held.get(fill.mint) ?? 0) + amount);
       }
       const historical = new MockMarketDataProvider(() => time * 1000);
-      return (Math.max(0, held) * (await historical.getToken(mint))!.priceUsd).toFixed(2);
+      let value = 0;
+      for (const [heldMint, amount] of held) {
+        value += Math.max(0, amount) * (await historical.getToken(heldMint))!.priceUsd;
+      }
+      return value.toFixed(2);
     };
     const nowSeconds = Math.floor(now / 1000);
     const midnight = Math.floor(nowSeconds / day) * day;

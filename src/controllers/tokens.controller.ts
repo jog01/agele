@@ -1,18 +1,18 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono, type RouteConfig, z } from "@hono/zod-openapi";
 import { AppError } from "../lib/errors";
+import { optionalAuth } from "../middlewares/auth";
 import { errorResponse, MintParam } from "../schemas/common";
 import {
   CandleSchema,
   CandlesQuery,
-  HoldersQuery,
   ListQuery,
   PulseQuery,
   PulseSchema,
-  TokenHoldersSchema,
   TokenSchema,
   TokenSearchQuery,
   TradeSchema,
 } from "../schemas/token";
+import { TokenHolderListSchema, TokenHoldersQuery } from "../schemas/token-activity";
 import type { AppEnv } from "../types";
 
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -110,23 +110,35 @@ const getTrades = createRoute({
   },
 });
 
+const optionalSecurity: RouteConfig["security"] = [{}, { bearerAuth: [] }];
+
 const getHolders = createRoute({
   method: "get",
   path: "/tokens/{mint}/holders",
   tags: ["tokens"],
-  request: { params: MintParam, query: HoldersQuery },
+  description:
+    "scope=all: largest owner wallets from market data, enriched when a wallet belongs to an Agele trader. scope=traders: Agele traders with an open indexed position, by amount (first 200). thesisOnly, followingOnly and minValueUsd run before limit. Bearer token optional; required for followingOnly. X-Data-Source: indexed for scope=traders.",
+  security: optionalSecurity,
+  middleware: [optionalAuth] as const,
+  request: { params: MintParam, query: TokenHoldersQuery },
   responses: {
-    200: json(TokenHoldersSchema, "Largest token accounts merged by owner wallet"),
+    200: json(TokenHolderListSchema, "Holders with trader, open position and latest thesis"),
+    401: errorResponse("followingOnly without a viewer, or invalid bearer token"),
     404: errorResponse("Unknown token"),
     502: errorResponse("Market data upstream unavailable"),
+    503: errorResponse("Authentication is not configured"),
   },
 });
 
 export const tokensController = new OpenAPIHono<AppEnv>()
   .openapi(getHolders, async (c) => {
-    const { mint } = c.req.valid("param");
-    const { limit } = c.req.valid("query");
-    return c.json(await c.get("container").tokens.getHolders(mint, limit), 200);
+    const container = c.get("container");
+    const query = c.req.valid("query");
+    const auth = c.get("auth");
+    const viewer = auth ? await container.users.ensureUser(auth) : undefined;
+    const result = await container.tokenHolders.list(c.req.valid("param").mint, query, viewer?.id);
+    if (query.scope === "traders") c.header("X-Data-Source", "indexed");
+    return c.json(result, 200);
   })
   .openapi(listTrending, async (c) => {
     const { limit } = c.req.valid("query");
