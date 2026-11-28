@@ -57,7 +57,10 @@ it("prices seeded social positions locally when keyless Jupiter returns 429", as
     ]);
     expect([feed.status, leaderboard.status]).toEqual([200, 200]);
     const { items } = FeedSchema.parse(await feed.json());
-    const trade = items.find((item) => item.kind === "trade" && item.priceSinceFirstBuyPct !== null);
+    const trade = items.find(
+      (item): item is Extract<TraderFeedItem, { kind: "trade" }> =>
+        item.kind === "trade" && item.priceSinceFirstBuyPct !== null,
+    );
     expect(trade).toBeDefined();
     const { entries } = (await leaderboard.json()) as { entries: LeaderboardEntryDto[] };
     expect(entries.some((entry) => entry.source === "demo" && entry.pnlUsd !== 0)).toBe(true);
@@ -243,8 +246,10 @@ function setup(tokens?: TokenService, id = viewerId) {
 async function page(app: ReturnType<typeof testApp>, query = "", authenticated = false) {
   const res = await app.request(`/v1/feed${query}`, { headers: authenticated ? headers : undefined });
   expect(res.status).toBe(200);
-  return (await res.json()) as FeedPage;
+  return (await res.json()) as Omit<FeedPage, "items"> & { items: TraderFeedItem[] };
 }
+
+type TraderFeedItem = Exclude<FeedPage["items"][number], { kind: "price-spike" | "new-listing" }>;
 
 describe("feed", () => {
   it("keeps new-trader engagement reachable when a late-indexed fill becomes the first trade", async () => {
@@ -312,7 +317,9 @@ describe("feed", () => {
     const db = getDb();
     const id = crypto.randomUUID();
     const { app } = setup(undefined, id);
-    const types = FeedEventType.options.filter((type) => type !== "thesis");
+    const types = FeedEventType.options.filter(
+      (type) => !["thesis", "price-spike", "new-listing"].includes(type),
+    );
     const cards = await Promise.all(
       types.map(async (type) => {
         const [card] = (await page(app, `?types=${type}&limit=1`)).items;
@@ -470,7 +477,10 @@ describe("feed", () => {
 
   it("emits all requested event variants and paginates a filtered result", async () => {
     const { app } = setup();
-    const types = FeedEventType.options.join(",");
+    const traderTypes = FeedEventType.options.filter(
+      (type) => !["price-spike", "new-listing"].includes(type),
+    );
+    const types = traderTypes.join(",");
     const first = FeedSchema.parse(await page(app, `?types=${types}&limit=1`));
     const events = [...first.items];
     let cursor = first.nextCursor;
@@ -479,7 +489,7 @@ describe("feed", () => {
       events.push(...next.items);
       cursor = next.nextCursor;
     }
-    expect(new Set(events.map((item) => item.eventType))).toEqual(new Set(FeedEventType.options));
+    expect(new Set(events.map((item) => item.eventType))).toEqual(new Set(traderTypes));
     expect(new Set(events.map((item) => item.id)).size).toBe(events.length);
     const closed = events.find((item) => item.eventType === "closed");
     expect(closed).toMatchObject({

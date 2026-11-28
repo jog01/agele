@@ -28,6 +28,9 @@ export const FeedEventType = z.enum([
   "milestone",
   "multi-user",
   "new-trader",
+  "increased",
+  "price-spike",
+  "new-listing",
 ]);
 const author = z.object({
   handle: z.string(),
@@ -41,6 +44,16 @@ const event = author.extend({
   imageUrl: z.string().nullable(),
   position: Position,
   createdAt: z.number().int().openapi({ description: "Unix seconds" }),
+});
+const FeedMember = z.object({ wallet: z.string(), handle: z.string(), avatarUrl: z.string().nullable() });
+const systemEvent = z.object({
+  id: z.uuid(),
+  mint: z.string(),
+  symbol: z.string(),
+  imageUrl: z.string().nullable(),
+  createdAt: z.number().int().openapi({ description: "Unix seconds" }),
+  source: Source,
+  marketCapUsd: z.number().nullable(),
 });
 const engagement = z.object({
   likes: z.number().int().nonnegative(),
@@ -154,7 +167,9 @@ export const FeedItemSchema = z
       wallet: z.string(),
       side: z.enum(["buy", "sell"]),
       amountUsd: z.number(),
-      eventType: z.enum(["bought", "sold", "closed"]),
+      eventType: z.enum(["bought", "increased", "sold", "closed"]).openapi({
+        description: "increased: a buy into a position that is already open",
+      }),
       tokenAmount: z.number(),
       positionId: z.uuid().nullable(),
       realizedPnlUsd: z.number().nullable(),
@@ -168,6 +183,10 @@ export const FeedItemSchema = z
       side: z.enum(["buy", "sell"]),
       amountUsd: z.number(),
       traderCount: z.number().int(),
+      members: z
+        .array(FeedMember)
+        .max(5)
+        .openapi({ description: "Up to five traders in the group, latest first" }),
       marketCapUsd: z.number().nullable(),
     }),
     activity.extend({
@@ -176,13 +195,29 @@ export const FeedItemSchema = z
       wallet: z.string(),
       amountUsd: z.number(),
       realizedPnlUsd: z.number(),
+      positionId: z.uuid().nullable(),
       marketCapUsd: z.number().nullable(),
     }),
     activity.extend({
       kind: z.literal("new-trader"),
       eventType: z.literal("new-trader"),
       wallet: z.string(),
+      bio: z.string().nullable(),
       marketCapUsd: z.number().nullable(),
+    }),
+    systemEvent.extend({
+      kind: z.literal("price-spike"),
+      eventType: z.literal("price-spike"),
+      priceChangePct: z.number().openapi({ description: "Close of the window over its open, in percent" }),
+      windowSeconds: z.number().int(),
+      priceUsd: z.number(),
+      volumeUsd: z.number(),
+    }),
+    systemEvent.extend({
+      kind: z.literal("new-listing"),
+      eventType: z.literal("new-listing"),
+      venue: z.string(),
+      creator: z.string(),
     }),
   ])
   .openapi("FeedItem");
@@ -196,7 +231,7 @@ export const FeedQuery = z.object({
     .refine((value) => value.split(",").every((type) => FeedEventType.safeParse(type).success))
     .openapi({
       description:
-        "Comma-separated eventType values: bought,sold,closed,thesis,milestone,multi-user,new-trader",
+        "Comma-separated eventType values: bought,increased,sold,closed,thesis,milestone,multi-user,new-trader,price-spike,new-listing. Default is trades and theses; system rows are opt-in",
     })
     .optional(),
   minSizeUsd: z.coerce.number().nonnegative().optional(),

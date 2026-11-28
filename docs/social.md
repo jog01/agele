@@ -98,15 +98,44 @@ sequenceDiagram
   absence of the webhook/Redis projection, ranking reads derive results from
   PostgreSQL trades and positions using the same window calculations.
 - `GET /v1/feed` defaults to trades and theses. `eventType` distinguishes
-  bought, sold, closed, thesis, milestone, multi-user, and new-trader activity.
-  Use the comma-separated `types` filter to select variants, including the
-  opt-in derived cards: realized profit of at least $1,000 on a sell, two or
-  more distinct traders on the same token and side in a completed five-minute
-  UTC bucket, or a trader's first indexed fill. Reuse the same filters with
-  each cursor. Size applies to signed-side USD volume, portfolio size to the
-  trader's currently priced holdings (the representative trader on a group
-  card), and cap and change since a position's first buy use current market
-  data. Missing prices are excluded when a matching price filter is requested.
+  bought, increased (a buy into a position that is already open), sold,
+  closed, thesis, milestone, multi-user, new-trader, price-spike, and
+  new-listing activity. Use the comma-separated `types` filter to select
+  variants, including the opt-in derived cards: realized profit of at least
+  $1,000 on a sell (with its `positionId`), two or more distinct traders on
+  the same token and side in a completed five-minute UTC bucket (with up to
+  five `members`, latest first), or a trader's first indexed fill (with the
+  trader's `bio`). Reuse the same filters with each cursor. Size applies to
+  signed-side USD volume, portfolio size to the trader's currently priced
+  holdings (the representative trader on a group card), and cap and change
+  since a position's first buy use current market data. Missing prices are
+  excluded when a matching price filter is requested.
+- System rows have no trader and no thread. They are read from the chain
+  ingest tables of the active chain source (the demo simulator in demo mode,
+  Yellowstone once its credentials are set), so `source` is `demo` or
+  `indexed` accordingly. A new-listing row is a token launch. A price-spike
+  row is a completed 15-minute UTC window whose last close is at least 25%
+  above its first open on at least $1,000 of volume, dated at the window's
+  end; each page scans the 24 hours before its cursor. Their market cap is
+  the token's current indexed price times its supply. They appear only in the
+  global scope and are left out whenever a trader filter is set (`wallet`,
+  `minSizeUsd`, `minPortfolioUsd`, `minPriceSinceFirstBuyPct`).
+
+```mermaid
+flowchart TD
+    Q[GET /v1/feed with types and filters] --> V{Valid cursor and cap range?}
+    V -- no --> E[400]
+    V -- yes --> S{Trader types requested?}
+    V -- yes --> Y{System types requested, global scope, no trader filter?}
+    S -- yes --> T[Trades, theses, milestones, new traders, multi-user groups<br/>PostgreSQL social store]
+    Y -- yes --> C[New listings and 15-minute price spikes<br/>chain_tokens and chain_candles_1m]
+    T --> M[Merge by createdAt and id, newest first<br/>up to the older boundary of the two batches]
+    C --> M
+    M --> F[Episodes: bought, increased, closed, positionId<br/>market cap, portfolio and first-buy filters]
+    F --> P{Page full?}
+    P -- no, more rows --> Q2[Next batch from the boundary cursor] --> S
+    P -- yes or exhausted --> R[items and nextCursor]
+```
 - `GET /v1/traders/{wallet}/positions/{mint}` returns chronological fills,
   average entry, and realized/unrealized PnL for the most recent position or
   a specified `positionId`. `totalInvestedUsd` sums buys and `pnlPct` divides

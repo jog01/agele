@@ -15,6 +15,7 @@ import {
 } from "../models";
 import type { CommentDto, FeedDiscussionTarget, FeedItemDto } from "../schemas/social";
 import type { TokenDto } from "../schemas/token";
+import type { EventRef } from "../services/chain-ingest/events";
 import { encodeCursor, type FeedCursor } from "../services/social/cursor";
 
 type PostInput = Pick<
@@ -33,6 +34,8 @@ type FeedRow = Omit<CommentDto, "kind"> & {
   userId: string;
   likeCount: number;
   viewerLiked: boolean;
+  bio: string | null;
+  members: { wallet: string; handle: string; avatarUrl: string | null }[] | null;
 };
 
 const wallet = sql`coalesce(u.wallet_address, (
@@ -63,8 +66,74 @@ function eventId(key: ReturnType<typeof sql>) {
   return sql`overlay(overlay(${hash} placing '5' from 13) placing '8' from 17)::uuid`;
 }
 
+const spikeWindow = 15 * 60;
+const spikeMinPct = 25;
+const spikeMinVolumeUsd = 1_000;
+const spikeLookback = 24 * 3600;
+
+export type SystemFeedRow = {
+  id: string;
+  kind: "price-spike" | "new-listing";
+  mint: string;
+  symbol: string;
+  imageUrl: string | null;
+  createdAt: number;
+  marketCapUsd: number | null;
+  priceChangePct: number;
+  priceUsd: number;
+  volumeUsd: number;
+  venue: string;
+  creator: string;
+};
+
 export class PgSocialRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly chainSource: EventRef["source"] = "demo",
+  ) {}
+
+  async systemFeed(input: { cursor?: FeedCursor; limit: number; mint?: string; types: string[] }) {
+    const { cursor, limit, mint, types } = input;
+    const source = sql`${this.chainSource}::text`;
+    const window = sql.raw(String(spikeWindow));
+    const scopedMint = mint ? sql`and c.mint = ${mint}` : sql.empty();
+    const bucket = sql`(c.time / ${window}) * ${window}`;
+    const end = cursor ? sql`${cursor.createdAt}::bigint` : sql`extract(epoch from now())::bigint`;
+    const spikeId = eventId(sql`'price-spike:' || ${source} || ':' || s.mint || ':' || s.bucket`);
+    const listingId = eventId(sql`'new-listing:' || ${source} || ':' || c.mint`);
+    const cap = sql`case when c.price_usd > 0 then c.price_usd * c.total_supply_raw::float8 / 10 ^ c.decimals end`;
+    const after = (time: ReturnType<typeof sql>, id: ReturnType<typeof sql>) =>
+      cursor ? sql`and (${time}, ${id}) < (${cursor.createdAt}::bigint, ${cursor.id}::uuid)` : sql.empty();
+    const enabled = (type: string) => (types.includes(type) ? sql.empty() : sql`and false`);
+    const rows = await this.db.execute<SystemFeedRow>(sql`
+      with spikes as (
+        select c.mint, ${bucket} as bucket,
+          (array_agg(c.open order by c.time))[1] as open,
+          (array_agg(c.close order by c.time desc))[1] as close, sum(c.volume) as volume
+        from chain_candles_1m c
+        where c.source = ${source} ${scopedMint} ${enabled("price-spike")}
+          and c.time >= ${end} - ${spikeLookback + spikeWindow}::bigint and c.time < ${end}
+        group by 1, 2
+        having (array_agg(c.close order by c.time desc))[1] >= (array_agg(c.open order by c.time))[1] * ${1 + spikeMinPct / 100}::float8
+          and (array_agg(c.open order by c.time))[1] > 0 and sum(c.volume) >= ${spikeMinVolumeUsd}::float8
+      )
+      (select ${spikeId} as id, 'price-spike' as kind, s.mint, c.symbol, c.image_url as "imageUrl",
+        (s.bucket + ${window})::float8 as "createdAt", ${cap} as "marketCapUsd",
+        ((s.close / s.open - 1) * 100)::float8 as "priceChangePct", s.close::float8 as "priceUsd",
+        s.volume::float8 as "volumeUsd", c.venue, c.creator
+       from spikes s join chain_tokens c on c.source = ${source} and c.mint = s.mint
+       where s.bucket + ${window} <= extract(epoch from now()) ${after(sql`s.bucket + ${window}`, spikeId)}
+       order by 6 desc, 1 desc limit ${limit + 1})
+      union all
+      (select ${listingId}, 'new-listing', c.mint, c.symbol, c.image_url, c.launched_at::float8, ${cap},
+        null, c.price_usd, null, c.venue, c.creator
+       from chain_tokens c
+       where c.source = ${source} ${scopedMint} ${enabled("new-listing")} ${after(sql`c.launched_at`, listingId)}
+       order by 6 desc, 1 desc limit ${limit + 1})
+      order by "createdAt" desc, id desc limit ${limit + 1}
+    `);
+    return { items: rows.slice(0, limit), nextCursor: pageCursor(rows, limit), source: this.chainSource };
+  }
 
   async feed(input: {
     wallets?: string[];
@@ -120,7 +189,7 @@ export class PgSocialRepository {
           'trade:' || t.id as "discussionKey"
          from trades t join users u on u.id = t.user_id
          where ${wallet} is not null ${followed} ${scopedMint(sql`t.mint`)} ${bigEnough(sql`t.quote_amount_usd`)} ${before(tradeTime, sql`t.id`, cursor)}
-           ${enabled(!types || types.some((type) => ["bought", "sold", "closed"].includes(type)))}
+           ${enabled(!types || types.some((type) => ["bought", "increased", "sold", "closed"].includes(type)))}
          order by at desc, t.id desc limit ${limit + 1})
         union all
         (select p.id, p.mint, p.user_id, 'thesis', p.body,
@@ -156,8 +225,19 @@ export class PgSocialRepository {
       )
       select page.*, ${seconds} as "createdAt", ${wallet} as wallet, ${handle} as handle,
         case when coalesce(page.demo, u.demo) then 'demo' else 'indexed' end as source,
-        u.avatar_url as "avatarUrl", token.symbol, token.image_url as "imageUrl",
+        u.avatar_url as "avatarUrl", u.bio, token.symbol, token.image_url as "imageUrl",
         th.position_id as "positionId",
+        case when page.kind = 'multi-user' then (
+          select coalesce(jsonb_agg(jsonb_build_object('wallet', m.wallet, 'handle', m.handle,
+            'avatarUrl', m.avatar) order by m.at desc, m.wallet), '[]'::jsonb)
+          from (
+            select ${wallet} as wallet, ${handle} as handle, u.avatar_url as avatar, max(t.executed_at) as at
+            from trades t join users u on u.id = t.user_id
+            where t.mint = page.mint and t.side = page.side and ${groupAt} = page.at - interval '5 minutes'
+              and ${wallet} is not null ${followed}
+            group by u.id order by at desc, 1 limit 5
+          ) m
+        ) end as members,
         th.view_count::float8 as "viewCount",
         case when page.kind = 'thesis' then (select count(*)::int from social_reactions r where r.post_id = page.id)
           else (select count(*)::int from feed_reactions r where r.discussion_key = page."discussionKey")
@@ -234,6 +314,7 @@ export class PgSocialRepository {
             side: row.side,
             amountUsd: row.amountUsd,
             traderCount: row.traderCount,
+            members: row.members ?? [],
           };
         case "milestone":
           return {
@@ -243,9 +324,10 @@ export class PgSocialRepository {
             eventType: kind,
             amountUsd: row.amountUsd,
             realizedPnlUsd: row.realizedPnlUsd!,
+            positionId: null,
           };
         case "new-trader":
-          return { ...base, discussionKey: row.discussionKey!, kind, eventType: kind };
+          return { ...base, discussionKey: row.discussionKey!, kind, eventType: kind, bio: row.bio ?? null };
         default:
           throw new Error(`Unknown feed item kind: ${kind}`);
       }
