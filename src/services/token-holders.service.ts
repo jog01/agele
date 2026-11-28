@@ -44,14 +44,15 @@ export class TokenHoldersService {
         ? await this.repository.holderUsers(mint, {
             wallets: snapshot.holders.map((holder) => holder.wallet),
           })
-        : await this.repository.holderUsers(mint, {
-            holding: true,
-            thesisOnly: options.thesisOnly,
-            followed: options.followingOnly ? (followed ?? []) : undefined,
-            limit: TRADER_HOLDER_CAP,
-          });
-    const enrich = await this.enricher(mint, users);
-    const supply = validPrice(token.priceUsd) ? token.marketCapUsd / token.priceUsd : 0;
+        : await this.repository.holderUsers(mint, { holding: true, limit: TRADER_HOLDER_CAP });
+    const quote = cachePositionQuotes(this.positionQuote);
+    const enrich = await this.enricher(mint, users, quote);
+    const reference = snapshot.holders.find((holder) => holder.pctSupply > 0);
+    const supply = reference
+      ? (100 * reference.amount) / reference.pctSupply
+      : validPrice(token.priceUsd)
+        ? token.marketCapUsd / token.priceUsd
+        : 0;
 
     const rows: Holder[] =
       options.scope === "all"
@@ -68,7 +69,7 @@ export class TokenHoldersService {
             users.map(async (user, index) => {
               const social = enrich(user);
               const amount = Number(user.quantity);
-              const price = validPrice((await this.quote(mint, user.seeded))?.priceUsd) ?? social.avgCost;
+              const price = validPrice((await quote(mint, user.seeded))?.priceUsd) ?? social.avgCost;
               return {
                 rank: index + 1,
                 wallet: user.wallet ?? user.addresses[0] ?? "",
@@ -107,15 +108,13 @@ export class TokenHoldersService {
     };
   }
 
-  private quote = cachePositionQuotes((mint, seeded) => this.positionQuote(mint, seeded));
-
-  private async enricher(mint: string, users: TokenHolderUserRow[]) {
+  private async enricher(mint: string, users: TokenHolderUserRow[], quote: PositionQuote) {
     const fills = await this.repository.tradesFor(users.map((user) => user.userId));
     const byUser = new Map<string, Trade[]>();
     for (const fill of fills) byUser.set(fill.userId, [...(byUser.get(fill.userId) ?? []), fill]);
     const prices = new Map<boolean, number | null>();
     for (const seeded of new Set(users.map((user) => user.seeded))) {
-      prices.set(seeded, validPrice((await this.quote(mint, seeded))?.priceUsd));
+      prices.set(seeded, validPrice((await quote(mint, seeded))?.priceUsd));
     }
 
     return (user: TokenHolderUserRow | undefined) => {

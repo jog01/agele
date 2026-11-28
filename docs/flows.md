@@ -136,8 +136,9 @@ instead reflect positive net positions from ingested trades.
 - `scope=traders`: Agele traders with an open indexed position in the mint,
   largest amount first (first 200). Value and PnL use the same position quote
   as portfolio, falling back to average cost; `X-Data-Source: indexed`.
+  `pctSupply` uses the total supply implied by the market snapshot.
 - `thesisOnly`, `followingOnly` and `minValueUsd` filter before `limit`
-  (1-50). `followingOnly` needs a bearer token and returns 401 without one;
+  (1-50) and keep each row's unfiltered `rank`. `followingOnly` needs a bearer token and returns 401 without one;
   `isFollowed` is `false` for anonymous viewers.
 - `position` is the open position episode: opening fill ID for replay,
   first buy time, invested USD, buy-weighted entry market cap, realized,
@@ -163,7 +164,7 @@ sequenceDiagram
   alt scope=all
     A->>P: users matching owner wallets, positions, newest thesis
   else scope=traders
-    A->>P: users with open positions (thesis and follow filters in SQL)
+    A->>P: users with open positions
   end
   A->>P: fills for those users
   A->>A: position episodes, PnL, filters, then limit

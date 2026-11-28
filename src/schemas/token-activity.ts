@@ -54,7 +54,7 @@ export const TokenHoldersQuery = z.object({
 export const HolderTraderSchema = z
   .object({
     wallet: z.string().nullable(),
-    handle: z.string(),
+    handle: z.string().nullable(),
     displayName: z.string().nullable(),
     avatarUrl: z.string().nullable(),
     avgHoldSeconds: z.number().int().nullable().describe("Average hold across closed positions"),

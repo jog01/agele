@@ -32,7 +32,7 @@ const list = async (query: string, headers: Record<string, string> = {}) => {
   expect(response.status).toBe(200);
   return { response, body: TokenHolderListSchema.parse(await response.json()) };
 };
-const handlesOf = (body: { holders: { trader: { handle: string } | null }[] }) =>
+const handlesOf = (body: { holders: { trader: { handle: string | null } | null }[] }) =>
   body.holders.map((holder) => holder.trader?.handle);
 
 beforeAll(async () => {
@@ -89,6 +89,9 @@ describe("GET /v1/tokens/{mint}/holders scope=traders", () => {
     expect(body.holders.length).toBeGreaterThanOrEqual(2);
     expect(body.holders.every((holder) => holder.latestThesis)).toBe(true);
     expect(handlesOf(body)).not.toContain(handles.get(seeded(4)));
+    const { body: unfiltered } = await list("?scope=traders");
+    const ranks = new Map(unfiltered.holders.map((holder) => [holder.trader?.handle, holder.rank]));
+    for (const holder of body.holders) expect(holder.rank).toBe(ranks.get(holder.trader?.handle)!);
     const { body: limited } = await list("?scope=traders&thesisOnly=true&limit=1");
     expect(limited.holders).toHaveLength(1);
     expect(limited.holders[0]!.latestThesis).not.toBeNull();

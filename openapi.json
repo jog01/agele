@@ -423,7 +423,10 @@
             ]
           },
           "handle": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "displayName": {
             "type": [

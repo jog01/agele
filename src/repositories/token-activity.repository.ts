@@ -11,7 +11,7 @@ export interface TokenTraderCursor {
 export type TokenHolderUserRow = {
   userId: string;
   wallet: string | null;
-  handle: string;
+  handle: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   seeded: boolean;
@@ -27,9 +27,7 @@ export type TokenHolderUserRow = {
   viewCount: number | null;
 };
 
-export type TokenHolderUserFilter =
-  | { wallets: string[] }
-  | { holding: true; thesisOnly: boolean; followed?: string[]; limit: number };
+export type TokenHolderUserFilter = { wallets: string[] } | { holding: true; limit: number };
 
 const userAddresses = (
   addresses: string[],
@@ -97,17 +95,7 @@ export class PgTokenActivityRepository {
   }
 
   async holderUsers(mint: string, filter: TokenHolderUserFilter) {
-    const where =
-      "wallets" in filter
-        ? userAddresses(filter.wallets)
-        : sql.join(
-            [
-              sql`p.quantity > 0`,
-              filter.thesisOnly ? sql`t.thesis_id is not null` : undefined,
-              filter.followed ? userAddresses(filter.followed) : undefined,
-            ].filter((part) => part !== undefined),
-            sql` and `,
-          );
+    const where = "wallets" in filter ? userAddresses(filter.wallets) : sql`p.quantity > 0`;
     const limit = "wallets" in filter ? filter.wallets.length : filter.limit;
     if (!limit) return [];
     const rows = await this.db.execute<TokenHolderUserRow>(sql`
