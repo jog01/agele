@@ -270,6 +270,29 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
           );
       }
     }
+    const extra = metadata[index - 4];
+    if (extra && index < 8) {
+      // A second holding without a thesis, so holder filters have rows to drop.
+      const amount = 2 * Math.max(2, Math.round((300 + index * 90) / extra.priceUsd));
+      const usd = decimal(((extra.priceUsd * amount * 97) / 100).toFixed(2));
+      await repository.record({
+        userId: profile.id,
+        wallet: profile.walletAddress,
+        mint: extra.mint,
+        symbol: extra.symbol,
+        name: extra.name,
+        imageUrl: extra.imageUrl,
+        decimals: extra.decimals,
+        amount: decimal(String(amount)),
+        usd,
+        marketCapUsd: (extra.marketCapUsd * 97) / 100,
+        quoteAmount: usd,
+        quoteMint: USDC_MINT,
+        side: "buy",
+        signature: `demo:${profile.handle}:holding`,
+        timestamp: anchor - 4 * day - index * 3600,
+      });
+    }
     const sized = metadata[(index + 3) % mints.length]!;
     const [investedUsd, openedAge, closedAge, exitPercent] = SIZED_POSITIONS[index % SIZED_POSITIONS.length]!;
     const sizedAmount = (investedUsd * (index < SIZED_POSITIONS.length ? 1 : 1.7)) / sized.priceUsd;

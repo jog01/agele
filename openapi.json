@@ -343,6 +343,13 @@
           "mint": {
             "type": "string"
           },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "traders"
+            ]
+          },
           "totalHolders": {
             "type": "integer"
           },
@@ -355,7 +362,8 @@
               "type": "object",
               "properties": {
                 "rank": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "Rank within the unfiltered list for this scope"
                 },
                 "wallet": {
                   "type": "string"
@@ -374,6 +382,19 @@
                 },
                 "label": {
                   "type": "string"
+                },
+                "trader": {
+                  "$ref": "#/components/schemas/HolderTrader"
+                },
+                "isFollowed": {
+                  "type": "boolean",
+                  "description": "False for anonymous viewers"
+                },
+                "position": {
+                  "$ref": "#/components/schemas/HolderPosition"
+                },
+                "latestThesis": {
+                  "$ref": "#/components/schemas/HolderThesis"
                 }
               },
               "required": [
@@ -381,7 +402,11 @@
                 "wallet",
                 "amount",
                 "pctSupply",
-                "valueUsd"
+                "valueUsd",
+                "trader",
+                "isFollowed",
+                "position",
+                "latestThesis"
               ]
             }
           },
@@ -392,10 +417,156 @@
         },
         "required": [
           "mint",
+          "scope",
           "totalHolders",
           "top10Pct",
           "holders",
           "updatedAt"
+        ]
+      },
+      "HolderTrader": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "wallet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avgHoldSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Average hold across closed positions"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "indexed"
+            ]
+          }
+        },
+        "required": [
+          "wallet",
+          "handle",
+          "displayName",
+          "avatarUrl",
+          "avgHoldSeconds",
+          "source"
+        ]
+      },
+      "HolderPosition": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "positionId": {
+            "type": "string",
+            "description": "Opening fill ID of the open position, for replay"
+          },
+          "firstBoughtAt": {
+            "type": "integer",
+            "description": "Unix seconds"
+          },
+          "investedUsd": {
+            "type": "number"
+          },
+          "avgEntryMarketCapUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "realizedPnlUsd": {
+            "type": "number"
+          },
+          "unrealizedPnlUsd": {
+            "type": "number"
+          },
+          "pnlUsd": {
+            "type": "number"
+          },
+          "pnlPct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "positionId",
+          "firstBoughtAt",
+          "investedUsd",
+          "avgEntryMarketCapUsd",
+          "realizedPnlUsd",
+          "unrealizedPnlUsd",
+          "pnlUsd",
+          "pnlPct"
+        ]
+      },
+      "HolderThesis": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "thesisId": {
+            "type": "string"
+          },
+          "postId": {
+            "type": "string",
+            "description": "Newest thesis version"
+          },
+          "positionId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix seconds"
+          },
+          "likeCount": {
+            "type": "integer"
+          },
+          "replyCount": {
+            "type": "integer"
+          },
+          "viewCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "thesisId",
+          "postId",
+          "positionId",
+          "body",
+          "createdAt",
+          "likeCount",
+          "replyCount",
+          "viewCount"
         ]
       },
       "Token": {
@@ -3213,6 +3384,13 @@
         "tags": [
           "tokens"
         ],
+        "description": "scope=all: largest owner wallets from market data, enriched when a wallet belongs to an Agele trader. scope=traders: Agele traders with an open indexed position, by amount (first 200). thesisOnly, followingOnly and minValueUsd run before limit. Bearer token optional; required for followingOnly. X-Data-Source: indexed for scope=traders.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3229,21 +3407,83 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 20,
+              "maximum": 50,
               "default": 20
             },
             "required": false,
             "name": "limit",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "traders"
+              ],
+              "default": "all",
+              "description": "all: largest owner wallets; traders: Agele traders holding the token"
+            },
+            "required": false,
+            "description": "all: largest owner wallets; traders: Agele traders holding the token",
+            "name": "scope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": false,
+              "description": "Only holders with a thesis on this token"
+            },
+            "required": false,
+            "description": "Only holders with a thesis on this token",
+            "name": "thesisOnly",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": false,
+              "description": "Only holders the viewer follows; requires a bearer token"
+            },
+            "required": false,
+            "description": "Only holders the viewer follows; requires a bearer token",
+            "name": "followingOnly",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0,
+              "description": "Inclusive minimum holding value"
+            },
+            "required": false,
+            "description": "Inclusive minimum holding value",
+            "name": "minValueUsd",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Largest token accounts merged by owner wallet",
+            "description": "Holders with trader, open position and latest thesis",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenHolders"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "followingOnly without a viewer, or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -3260,6 +3500,16 @@
           },
           "502": {
             "description": "Market data upstream unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
             "content": {
               "application/json": {
                 "schema": {

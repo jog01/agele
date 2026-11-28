@@ -36,6 +36,7 @@ import { HttpSponsorRpc } from "./services/sponsor/sponsor-rpc";
 import { ValidatedFeeSponsor } from "./services/sponsor/validated-fee-sponsor";
 import { TokenService } from "./services/token.service";
 import { TokenActivityService } from "./services/token-activity.service";
+import { TokenHoldersService } from "./services/token-holders.service";
 import { TradeIndexer } from "./services/trade-indexer";
 import { TraderService } from "./services/trader.service";
 import { JupiterSwapClient } from "./services/trading/jupiter-swap.client";
@@ -58,6 +59,7 @@ export interface Container {
   auth: AuthVerifier;
   tokens: TokenService;
   tokenActivity: TokenActivityService;
+  tokenHolders: TokenHoldersService;
   traders: TraderService;
   users: UserService;
   privyUsers: PrivyUserDirectory;
@@ -176,6 +178,9 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     tokenActivity:
       overrides.tokenActivity ??
       new TokenActivityService(new PgTokenActivityRepository(getDb()), market, positionQuote),
+    tokenHolders:
+      overrides.tokenHolders ??
+      new TokenHoldersService(new PgTokenActivityRepository(getDb()), market, follows, positionQuote),
     follows,
     social:
       overrides.social ??

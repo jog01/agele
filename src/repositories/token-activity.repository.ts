@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { positions, tokens, trades, users } from "../models";
 
@@ -7,6 +7,34 @@ export interface TokenTraderCursor {
   volumeUsd: string;
   userId: string;
 }
+
+export type TokenHolderUserRow = {
+  userId: string;
+  wallet: string | null;
+  handle: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  seeded: boolean;
+  addresses: string[];
+  quantity: string | null;
+  thesisId: string | null;
+  postId: string | null;
+  thesisPositionId: string | null;
+  body: string | null;
+  thesisCreatedAt: number | null;
+  likeCount: number | null;
+  replyCount: number | null;
+  viewCount: number | null;
+};
+
+export type TokenHolderUserFilter = { wallets: string[] } | { holding: true; limit: number };
+
+const userAddresses = (
+  addresses: string[],
+) => sql`(u.wallet_address = any(${sql.param(addresses)}::text[]) or exists(
+  select 1 from wallets w where w.user_id = u.id and w.chain_type = 'solana'
+  and w.address = any(${sql.param(addresses)}::text[])
+))`;
 
 export class PgTokenActivityRepository {
   constructor(private readonly db: Db) {}
@@ -64,5 +92,46 @@ export class PgTokenActivityRepository {
       )
       .orderBy(desc(totals.volumeUsd), asc(totals.userId))
       .limit(limit);
+  }
+
+  async holderUsers(mint: string, filter: TokenHolderUserFilter) {
+    const where = "wallets" in filter ? userAddresses(filter.wallets) : sql`p.quantity > 0`;
+    const limit = "wallets" in filter ? filter.wallets.length : filter.limit;
+    if (!limit) return [];
+    const rows = await this.db.execute<TokenHolderUserRow>(sql`
+      select u.id as "userId", coalesce(u.wallet_address, (
+          select w.address from wallets w where w.user_id = u.id and w.chain_type = 'solana'
+          order by w.is_primary desc, w.address limit 1
+        )) as wallet,
+        u.handle, u.display_name as "displayName", u.avatar_url as "avatarUrl", u.demo as seeded,
+        array_remove(array_prepend(u.wallet_address, coalesce((
+          select array_agg(w.address) from wallets w where w.user_id = u.id and w.chain_type = 'solana'
+        ), '{}'::text[])), null) as addresses,
+        p.quantity::text as quantity,
+        t.thesis_id as "thesisId", t.post_id as "postId", t.position_id as "thesisPositionId",
+        t.body, t.created_at as "thesisCreatedAt", t.like_count as "likeCount",
+        t.reply_count as "replyCount", t.view_count as "viewCount"
+      from users u
+      left join positions p on p.user_id = u.id and p.mint = ${mint}
+      left join lateral (
+        select th.id::text as thesis_id, c.id::text as post_id, th.position_id::text as position_id, c.body,
+          floor(extract(epoch from c.created_at))::float8 as created_at,
+          (select count(*)::int from social_reactions r where r.post_id = c.id) as like_count,
+          (select count(*)::int from comments reply where reply.thesis_id = th.id and reply.kind = 'comment') as reply_count,
+          th.view_count::float8 as view_count
+        from theses th join comments c on c.thesis_id = th.id and c.kind = 'thesis'
+        where th.user_id = u.id and th.mint = ${mint}
+        order by c.created_at desc, c.id desc limit 1
+      ) t on true
+      where ${where}
+      order by p.quantity desc nulls last, u.id
+      limit ${limit}
+    `);
+    return [...rows];
+  }
+
+  tradesFor(userIds: string[]) {
+    if (!userIds.length) return Promise.resolve([]);
+    return this.db.select().from(trades).where(inArray(trades.userId, userIds));
   }
 }

@@ -213,7 +213,7 @@ describe("token holders", () => {
     expect(body.holders).toHaveLength(20);
     expect(body.updatedAt).toBe(FIXED_NOW / 1000);
     expect(body.top10Pct).toBeGreaterThan(body.holders[0]!.pctSupply);
-    for (const limit of ["0", "21", "1.5", "x"]) {
+    for (const limit of ["0", "51", "1.5", "x"]) {
       expect((await app.request(`/v1/tokens/${SOL}/holders?limit=${limit}`)).status).toBe(400);
     }
     const limited = await app.request(`/v1/tokens/${SOL}/holders?limit=1`);
