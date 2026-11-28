@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getBase58Decoder } from "@solana/kit";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, like, sql } from "drizzle-orm";
 import { decimal, divide, formatDecimal } from "../lib/decimal";
 import {
   comments,
@@ -545,4 +545,108 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
         ]
       : []),
   ]);
+}
+
+const ROLL_SLOT = 6 * 3600;
+const ROLL_DAYS = 7;
+const hashUnit = (text: string) => createHash("sha256").update(text).digest().readUInt32BE(0) / 2 ** 32;
+const hashUuid = (text: string) => {
+  const hex = createHash("sha256").update(text).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
+/**
+ * Keeps the seeded traders closing positions on a long-running demo store: every 6-hour slot of the
+ * last week, a third of the traders open and close one position on their rolling token, sized across
+ * the invested buckets, held 5 minutes to 12 hours, half with a thesis. Fills go through
+ * `PgTradeRepository.record` like indexed trades and are keyed by slot, so reruns only add new slots.
+ */
+export async function seedDemoActivity(db: Db, now = Date.now()) {
+  const nowSeconds = Math.floor(now / 1000);
+  const first = Math.floor((nowSeconds - ROLL_DAYS * day) / ROLL_SLOT);
+  const last = Math.floor(nowSeconds / ROLL_SLOT);
+  const recorded = await db
+    .select({ signature: trades.signature })
+    .from(trades)
+    .where(
+      and(
+        like(trades.signature, "demo:%:roll:%"),
+        gte(trades.executedAt, new Date((first * ROLL_SLOT - day) * 1000)),
+      ),
+    );
+  const existing = new Set(recorded.map(({ signature }) => signature));
+  const mints = MockMarketDataProvider.mints;
+  const repository = new PgTradeRepository(db);
+  let added = 0;
+  for (let slot = first; slot <= last; slot++) {
+    for (const [index, [handle]] of traders.entries()) {
+      if ((slot + index) % 3) continue;
+      const signature = (leg: number) => `demo:${handle}:roll:${slot}:${leg}`;
+      if (existing.has(signature(1))) continue;
+      const roll = (n: number) => hashUnit(`${signature(0)}:${n}`);
+      const closedAt = slot * ROLL_SLOT + Math.floor(roll(0) * ROLL_SLOT);
+      if (closedAt > nowSeconds) continue;
+      const openedAt = closedAt - Math.floor(300 + roll(1) * (12 * 3600 - 300));
+      const investedUsd = 10 ** (1 + roll(2) * 4.6);
+      const exitPercent = 60 + roll(3) * 110;
+      const mint = mints[(index + 6) % mints.length]!;
+      const token = (await new MockMarketDataProvider(() => openedAt * 1000).getToken(mint))!;
+      const amount = decimal((investedUsd / token.priceUsd).toFixed(token.decimals));
+      const userId = seedId(0, index);
+      const wallet = demoWallet(handle);
+      for (const [leg, [timestamp, side, percent]] of (
+        [
+          [openedAt, "buy", 100],
+          [closedAt, "sell", exitPercent],
+        ] as const
+      ).entries()) {
+        const usd = decimal(((investedUsd * percent) / 100).toFixed(2));
+        const stored = await repository.record({
+          userId,
+          wallet,
+          mint,
+          symbol: token.symbol,
+          name: token.name,
+          imageUrl: token.imageUrl,
+          decimals: token.decimals,
+          amount,
+          usd,
+          marketCapUsd: (token.marketCapUsd * percent) / 100,
+          quoteAmount: usd,
+          quoteMint: USDC_MINT,
+          side,
+          signature: signature(leg),
+          timestamp,
+        });
+        if (stored) added++;
+        if (!stored || side !== "buy" || roll(4) >= 0.5) continue;
+        const thesisId = hashUuid(`${signature(0)}:thesis`);
+        await db
+          .insert(theses)
+          .values({
+            id: thesisId,
+            userId,
+            mint,
+            wallet,
+            positionId: stored.id,
+            viewCount: Math.floor(roll(5) * 90),
+          })
+          .onConflictDoNothing();
+        await db
+          .insert(comments)
+          .values({
+            id: hashUuid(`${signature(0)}:thesis:body`),
+            thesisId,
+            userId,
+            mint,
+            kind: "thesis",
+            position: "long",
+            body: `${token.symbol} ${sizedTheses[Math.floor(roll(6) * sizedTheses.length)]}`,
+            createdAt: new Date((openedAt + 60) * 1000),
+          })
+          .onConflictDoNothing();
+      }
+    }
+  }
+  return added;
 }

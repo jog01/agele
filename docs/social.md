@@ -6,7 +6,12 @@ step before listening. Run `bun run db:migrate` first. The seed adds 12 fictiona
 traders, follows, versioned theses, replies and reactions, and records dated
 buys and sells via `PgTradeRepository.record`, including both open and closed
 positions. Its timestamps are anchored to the first seed, not shifted on every
-read or restart. Use a separate unseeded database with the Yellowstone chain
+read or restart. So rolling windows stay live on a store that runs for days, the API
+also runs `seedDemoActivity` at startup and every 15 minutes: in each 6-hour
+slot of the last week, a third of the traders open and close one position (5
+minutes to 12 hours, sized across the invested buckets, half with a thesis)
+through the same `PgTradeRepository.record` path, keyed by slot so reruns only
+add new slots. Use a separate unseeded database with the Yellowstone chain
 source or `MARKET_DATA_PROVIDER=live`. In either mode the API, worker, and feed
 refuse startup if PostgreSQL contains demo users or seeded social trade
 signatures. No rows are erased, and the simulator's source-scoped tables are not

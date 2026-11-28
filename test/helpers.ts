@@ -11,14 +11,14 @@ import { TokenService } from "../src/services/token.service";
 export const FIXED_NOW = Date.UTC(2026, 0, 1, 12, 0, 0);
 export const SOL = "So11111111111111111111111111111111111111112";
 
-export function socialDemoFixture() {
+export function socialDemoFixture(now?: number) {
   const db = getDb();
   let ids: string[] = [];
   return {
     async setUp() {
       const condition = eq(users.demo, true);
       const before = await db.select({ id: users.id }).from(users).where(condition);
-      await seedSocialDemo(db);
+      await seedSocialDemo(db, now);
       const after = await db.select({ id: users.id }).from(users).where(condition);
       ids = after.filter(({ id }) => !before.some((user) => user.id === id)).map(({ id }) => id);
     },
