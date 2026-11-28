@@ -97,6 +97,16 @@ describe("demo chain simulator", () => {
     );
   });
 
+  it("gives every deterministic historical mint a distinct name and ticker", async () => {
+    const launches = (await generate(73))
+      .filter((event) => event.kind === "TokenLaunched")
+      .filter((event) => event.blockTime !== now() / 1000);
+    const labels = await Promise.all(launches.map((event) => resolveMetadata(event.metadataUri)));
+    expect(labels.every((label) => label !== null)).toBe(true);
+    expect(new Set(labels.map((label) => label?.name.toLowerCase())).size).toBe(launches.length);
+    expect(new Set(labels.map((label) => label?.symbol.toLowerCase())).size).toBe(launches.length);
+  });
+
   it("continues a persisted live mint from its last reserves, market and transaction index", async () => {
     const mint = "4vbX11omHkUZLmpw2GyAYAp4AGZPB47VPh39VgphgQRU";
     const time = now() / 1000;
@@ -105,6 +115,7 @@ describe("demo chain simulator", () => {
     used.migrate();
     const prior = used.buy(40_000_000_000n)!;
     const loadState = async () => ({
+      labels: [],
       tip: { time, nextTransactionIndex: 20 },
       markets: [
         {
@@ -184,6 +195,18 @@ describe("demo chain simulator", () => {
     expect(quote).toBeLessThan(190);
     expect(quote).toBe(new DemoSolUsdPrice().getSolUsd(now() / 1000));
     expect(quote).not.toBe(walk.getSolUsd(now() / 1000 + 120));
+  });
+
+  it("bounds SOL candle history and refreshes the forming candle when the minute changes", () => {
+    const prices = new DemoSolUsdPrice();
+    const day = Math.floor(now() / 1000 / 86_400) * 86_400;
+    const history = prices.getCandles("1d", 1000, day + 60);
+    expect(history).toHaveLength(30);
+    expect(history[0]?.time).toBe(day - 29 * 86_400);
+    expect(prices.getCandles("1d", 2, day + 61)).toEqual(history.slice(-2));
+    const refreshed = prices.getCandles("1d", 1, day + 120)[0];
+    expect(refreshed?.close).toBeCloseTo(prices.getSolUsd(day + 120), 10);
+    expect(refreshed?.close).not.toBe(history.at(-1)?.close);
   });
 
   it("accepts IPFS and data metadata, rejects unsafe schemes and discards invalid or oversized data", async () => {
