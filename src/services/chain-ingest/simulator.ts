@@ -1,7 +1,9 @@
 import { setTimeout } from "node:timers/promises";
 import { getBase58Decoder } from "@solana/kit";
 import { hash, mulberry32 } from "../../lib/prng";
+import type { CandleDto, IntervalValue } from "../../schemas/token";
 import { SOL_MINT } from "../helius-parser";
+import { INTERVAL_SECONDS } from "../market-data/provider";
 import type { ChainFacts, SolUsdPrice } from "./chain-facts";
 import { DEMO_ACTIVE_MARKETS, type DemoState } from "./demo-state";
 import type { ChainEvent, ChainEventSink, ChainEventSource, Market } from "./events";
@@ -93,13 +95,49 @@ function min(a: bigint, b: bigint) {
 
 /** A time-addressable, mean-reverting walk is consistent across API and feed processes. */
 export class DemoSolUsdPrice implements SolUsdPrice {
+  private static readonly decay = 0.94;
+  private static readonly window = 48;
+
+  private change(minute: number) {
+    return (mulberry32(hash(`demo-sol:${minute}`))() - 0.5) * 2;
+  }
+
   getSolUsd(time: number) {
     const minute = Math.floor(time / 60);
     let delta = 0;
-    for (let offset = 47; offset >= 0; offset--) {
-      delta = 0.94 * delta + (mulberry32(hash(`demo-sol:${minute - offset}`))() - 0.5) * 2;
+    for (let offset = DemoSolUsdPrice.window - 1; offset >= 0; offset--) {
+      delta = DemoSolUsdPrice.decay * delta + this.change(minute - offset);
     }
     return 180 + delta;
+  }
+
+  getCandles(interval: IntervalValue, limit: number, now: number) {
+    const step = INTERVAL_SECONDS[interval];
+    const end = Math.floor(now / step) * step;
+    const start = end - (limit - 1) * step;
+    const { decay, window } = DemoSolUsdPrice;
+    const expiredWeight = decay ** window;
+    const firstMinute = start / 60;
+    const changes = Array.from({ length: window }, (_, i) => this.change(firstMinute - window + i));
+    let delta = changes.reduce((previous, change) => decay * previous + change, 0);
+    let oldest = 0;
+    const candles: CandleDto[] = [];
+    for (let time = start; time <= end; time += step) {
+      const candle = { time, open: 0, high: 0, low: Infinity, close: 0, volume: 0 };
+      for (let second = time; second < time + step && second <= now; second += 60) {
+        const change = this.change(second / 60);
+        delta = decay * delta + change - expiredWeight * changes[oldest]!;
+        changes[oldest] = change;
+        oldest = (oldest + 1) % window;
+        const price = 180 + delta;
+        if (second === time) candle.open = price;
+        candle.high = Math.max(candle.high, price);
+        candle.low = Math.min(candle.low, price);
+        candle.close = price;
+      }
+      candles.push(candle);
+    }
+    return candles;
   }
 }
 

@@ -26,6 +26,25 @@ interface Options {
 }
 
 const SOLANA_QUOTE_MAX_AGE_SECONDS = 5 * 60;
+const SOL_SYMBOL = "SOL";
+const SOL_NAME = "Solana";
+
+function solToken(priceUsd: number): TokenDto {
+  return {
+    mint: SOL_MINT,
+    symbol: SOL_SYMBOL,
+    name: SOL_NAME,
+    decimals: 9,
+    imageUrl:
+      "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+    priceUsd,
+    priceChange24hPct: 0,
+    marketCapUsd: 0,
+    liquidityUsd: 0,
+    volume24hUsd: 0,
+    holders: 0,
+  };
+}
 
 function hasIndexedMarketData(token: TokenRow | undefined): token is TokenRow {
   return !!token && (token.source === "demo" || token.lastTradeKey !== null || token.priceUsd > 0);
@@ -62,22 +81,13 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     return this.getFallbackToken(mint);
   }
 
-  private async getFallbackToken(mint: string): Promise<TokenDto | null> {
-    if (mint !== SOL_MINT || this.options.source !== "demo") return this.options.upstream.getToken(mint);
-    return {
-      mint,
-      symbol: "SOL",
-      name: "Solana",
-      decimals: 9,
-      imageUrl:
-        "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
-      priceUsd: await this.options.solUsd.getSolUsd(this.seconds()),
-      priceChange24hPct: 0,
-      marketCapUsd: 0,
-      liquidityUsd: 0,
-      volume24hUsd: 0,
-      holders: 0,
-    };
+  private async getFallbackToken(mint: string, external?: TokenDto | null): Promise<TokenDto | null> {
+    if (mint !== SOL_MINT) return this.options.upstream.getToken(mint);
+    if (this.options.source !== "demo") {
+      const upstream = external === undefined ? await this.options.upstream.getToken(mint) : external;
+      if (upstream) return upstream;
+    }
+    return solToken(await this.options.solUsd.getSolUsd(this.seconds()));
   }
 
   async getToken(mint: string) {
@@ -166,11 +176,14 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
       )
       .orderBy(desc(sql`${chainTokens.mint} = ${query}`), desc(chainTokens.launchedAt), chainTokens.mint)
       .limit(30);
-    const demoSol = query === SOL_MINT && this.options.source === "demo";
+    const matchesSol =
+      query === SOL_MINT ||
+      SOL_SYMBOL.toLowerCase().startsWith(prefix) ||
+      SOL_NAME.toLowerCase().startsWith(prefix);
     let tokensUnavailable = false;
     const upstream =
       (await this.options.upstream.searchTokens?.(query).catch((err: unknown) => {
-        if (!rows.length && !demoSol) throw err;
+        if (!rows.length && !matchesSol) throw err;
         tokensUnavailable = true;
         return [];
       })) ?? [];
@@ -187,9 +200,15 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     for (const token of [...indexed, ...upstream]) {
       if (!tokens.has(token.mint)) tokens.set(token.mint, token);
     }
-    if (this.options.source === "demo" && (demoSol || tokens.has(SOL_MINT))) {
-      const sol = await this.getToken(SOL_MINT);
-      if (sol) tokens.set(SOL_MINT, sol);
+    if ((matchesSol || tokens.has(SOL_MINT)) && !rows.some((row) => row.mint === SOL_MINT)) {
+      const external = tokens.get(SOL_MINT);
+      let sol = external ?? solToken(0);
+      try {
+        sol = (await this.getFallbackToken(SOL_MINT, external ?? null)) ?? sol;
+      } catch {
+        tokensUnavailable = true;
+      }
+      tokens.set(SOL_MINT, { ...sol, symbol: SOL_SYMBOL, name: SOL_NAME });
     }
     const exact = tokens.get(query);
     tokens.delete(query);
@@ -230,7 +249,11 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
 
   async getCandles(mint: string, interval: IntervalValue, limit: number) {
     const token = await this.indexedToken(mint);
-    if (!hasIndexedMarketData(token)) return this.options.upstream.getCandles(mint, interval, limit);
+    if (!hasIndexedMarketData(token)) {
+      if (mint === SOL_MINT && this.options.solUsd.getCandles)
+        return this.options.solUsd.getCandles(interval, limit, this.seconds());
+      return this.options.upstream.getCandles(mint, interval, limit);
+    }
     const seconds = INTERVAL_SECONDS[interval];
     if (interval === "1m") {
       const result = await this.db.execute<CandleDto>(sql`
