@@ -9,6 +9,8 @@ export type PositionTrader = {
   displayName: string | null;
   avatarUrl: string | null;
   demo: boolean;
+  /** Every Solana address of the user, for follow state. */
+  wallets: string[];
 };
 export interface PositionThesis {
   positionId: string;
@@ -51,7 +53,13 @@ export class PgPositionLeaderboardRepository implements PositionLeaderboardRepos
           select w.address from wallets w where w.user_id = u.id and w.chain_type = 'solana'
           order by w.is_primary desc, w.address limit 1
         )) as wallet,
-        u.handle, u.display_name as "displayName", u.avatar_url as "avatarUrl", u.demo
+        u.handle, u.display_name as "displayName", u.avatar_url as "avatarUrl", u.demo,
+        array(
+          select a from (
+            select u.wallet_address as a where u.wallet_address is not null
+            union select w.address from wallets w where w.user_id = u.id and w.chain_type = 'solana'
+          ) addresses
+        ) as wallets
       from users u where u.id = any(${sql.param(ids)}::uuid[])
     `);
   }

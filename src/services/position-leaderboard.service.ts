@@ -182,7 +182,13 @@ export class PositionLeaderboardService {
           ? { id: thesis.id, body: thesis.body, createdAt: unix(thesis.createdAt.getTime()) }
           : null,
         ...(trader.demo ? { source: "demo" as const } : {}),
-        wallets: [trader.wallet, ...new Set(episode.fills.flatMap((fill) => fill.walletAddress ?? []))],
+        wallets: [
+          ...new Set([
+            trader.wallet,
+            ...trader.wallets,
+            ...episode.fills.flatMap((fill) => fill.walletAddress ?? []),
+          ]),
+        ],
       });
     }
     return {

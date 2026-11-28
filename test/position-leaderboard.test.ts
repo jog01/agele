@@ -199,6 +199,7 @@ describe("PositionLeaderboardService", () => {
           displayName: null,
           avatarUrl: null,
           demo: false,
+          wallets: [`${id}-wallet`, `${id}-linked`],
         })),
       getTheses: async (ids) =>
         ids.slice(0, 1).map((positionId) => ({
@@ -286,6 +287,8 @@ describe("PositionLeaderboardService", () => {
     await follows.follow("viewer", "alice-wallet");
     expect((await service.leaderboard(query, "viewer")).entries[0]!.isFollowing).toBe(true);
     expect((await service.leaderboard(query, "other")).entries[0]!.isFollowing).toBe(false);
+    await follows.follow("other", "alice-linked");
+    expect((await service.leaderboard(query, "other")).entries[0]!.isFollowing).toBe(true);
     expect(reads()).toBe(1);
     await service.leaderboard({ ...query, window: "24h" });
     expect(reads()).toBe(2);
