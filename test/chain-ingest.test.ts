@@ -344,6 +344,24 @@ describe("chain ingestion and indexed market data", () => {
     });
   });
 
+  it("preserves the upstream name when searching for the Wrapped SOL prefix", async () => {
+    const upstream = new LiveMarketDataProvider({
+      fetch: async (url) =>
+        new URL(url).pathname === "/tokens/v2/search"
+          ? Response.json([{ id: SOL, name: "Wrapped SOL", symbol: "SOL", decimals: 9 }])
+          : Response.json({ [SOL]: { usdPrice: 201 } }),
+    });
+    const indexed = new IndexedMarketDataProvider(db, { source: "demo", upstream, solUsd });
+    const app = testApp({ tokens: new TokenService(indexed) });
+    for (const path of ["/v1/search", "/v1/tokens/search"]) {
+      const response = await app.request(`${path}?q=wRaPpEd`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        tokens: [expect.objectContaining({ mint: SOL, name: "Wrapped SOL", symbol: "SOL" })],
+      });
+    }
+  });
+
   it("uses upstream OHLCV for native SOL when the source does not provide local history", async () => {
     const upstream = new LiveMarketDataProvider({
       now: () => (time + 60) * 1000,

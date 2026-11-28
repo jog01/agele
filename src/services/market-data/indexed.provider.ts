@@ -200,7 +200,7 @@ export class IndexedMarketDataProvider implements MarketDataProvider {
     for (const token of [...indexed, ...upstream]) {
       if (!tokens.has(token.mint)) tokens.set(token.mint, token);
     }
-    if ((matchesSol || tokens.has(SOL_MINT)) && !rows.some((row) => row.mint === SOL_MINT)) {
+    if (matchesSol && !rows.some((row) => row.mint === SOL_MINT)) {
       const external = tokens.get(SOL_MINT);
       let sol = external ?? solToken(0);
       try {
