@@ -131,10 +131,27 @@ export class LeaderboardService {
   rebuild() {
     return this.serialize(async () => {
       const now = this.now();
-      await this.store.replace(await this.compute(now));
-      for (const window of LEADERBOARD_WINDOWS)
+      const snapshot = await this.compute(now);
+      const before = this.onRankChanged
+        ? await Promise.all(LEADERBOARD_WINDOWS.map((window) => this.store.rankOrder(window)))
+        : undefined;
+      await this.store.replace(snapshot);
+      const rebuildId = crypto.randomUUID();
+      for (const [index, window] of LEADERBOARD_WINDOWS.entries()) {
+        if (before) await this.notifyRankChanges(window, before[index]!, rebuildId);
         await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
+      }
     });
+  }
+
+  private async notifyRankChanges(window: LeaderboardWindowValue, before: string[], eventId: string) {
+    const previous = new Map(before.map((id, index) => [id, index + 1]));
+    const after = await this.store.rankOrder(window);
+    for (const [index, userId] of after.entries()) {
+      const rank = index + 1;
+      const previousRank = previous.get(userId) ?? null;
+      if (rank !== previousRank) await this.onRankChanged?.(userId, window, rank, previousRank, eventId);
+    }
   }
 
   async leaderboard(window: LeaderboardWindowValue, limit: number): Promise<LeaderboardEntryDto[]> {

@@ -24,4 +24,7 @@ export class MemoryLeaderboard implements LeaderboardStore {
     const index = rows.findIndex((row) => row.userId === userId);
     return index === -1 ? null : index + 1;
   }
+  async rankOrder(window: LeaderboardWindowValue) {
+    return (await this.top(window, this.snapshot[window].length)).map(({ userId }) => userId);
+  }
 }

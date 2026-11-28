@@ -263,4 +263,25 @@ describe("account notifications", () => {
     expect(ranked).toHaveLength(3);
     for (const item of ranked) expect(item.details).toMatchObject({ rank: 1, previousRank: null });
   });
+
+  it("emits a rank change during a scheduled rebuild that sees the fill before its listener", async () => {
+    const trade = await fill(new PgTradeRepository(db));
+    const changed: { userId: string; rank: number }[] = [];
+    const leaderboard = new LeaderboardService(
+      new PgLeaderboardRepository(db),
+      new MemoryLeaderboard(),
+      market,
+      events,
+      Date.now,
+      undefined,
+      async (userId, _window, rank) => {
+        changed.push({ userId, rank });
+      },
+    );
+    await leaderboard.rebuild();
+    await leaderboard.updateUser(author.id, trade!.id);
+    expect(changed.filter(({ userId }) => userId === author.id)).toEqual(
+      Array.from({ length: 3 }, () => ({ userId: author.id, rank: 1 })),
+    );
+  });
 });
