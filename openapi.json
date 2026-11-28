@@ -3,7 +3,7 @@
   "info": {
     "title": "fomo API",
     "version": "0.1.0",
-    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"pulse\"}. Events use {type:\"event\",topic,data}. Topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds."
+    "description": "WebSocket /ws: subscribe with {\"op\":\"subscribe\",\"topic\":\"pulse\"}. Events use {type:\"event\",topic,data}. Public topics: pulse (PulseEvent), token:<mint>:trades (Trade), token:<mint>:price (PriceTick), leaderboard:global. Private topic user:<your user UUID>:alerts (NotificationUpdate) requires {\"op\":\"authenticate\",\"token\":\"<Privy access token>\"} and an authenticated acknowledgement before subscribing. The socket closes when the token expires. Indexed events stream as they are recorded; prices for other subscribed mints are polled in bounded batches every five seconds. Timestamps are Unix seconds."
   },
   "components": {
     "securitySchemes": {
@@ -269,6 +269,42 @@
           "amountUsd",
           "priceUsd",
           "time"
+        ]
+      },
+      "NotificationUpdate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "inbox"
+                ]
+              },
+              "sound": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "sound"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "settings"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
         ]
       },
       "Health": {
@@ -1383,6 +1419,291 @@
           "walletAddress",
           "handle",
           "wallets"
+        ]
+      },
+      "NotificationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Stable notification or follow group ID"
+                },
+                "createdAt": {
+                  "type": "number",
+                  "description": "Unix seconds; time of the latest event in the group"
+                },
+                "actors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "wallet": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "handle": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "displayName": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "avatarUrl": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "wallet",
+                      "handle",
+                      "displayName",
+                      "avatarUrl"
+                    ]
+                  },
+                  "maxItems": 3
+                },
+                "count": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "Events represented by this item"
+                },
+                "token": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "mint": {
+                      "type": "string"
+                    },
+                    "symbol": {
+                      "type": "string"
+                    },
+                    "imageUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "mint",
+                    "symbol",
+                    "imageUrl"
+                  ]
+                },
+                "details": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "thesis_like"
+                          ]
+                        },
+                        "thesisId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "postId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "thesisId",
+                        "postId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "follow"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "clan_invite"
+                          ]
+                        },
+                        "clanId": {
+                          "type": "string"
+                        },
+                        "clanName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "clanId",
+                        "clanName"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "send"
+                          ]
+                        },
+                        "signature": {
+                          "type": "string"
+                        },
+                        "amount": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "signature",
+                        "amount"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "leaderboard"
+                          ]
+                        },
+                        "window": {
+                          "type": "string",
+                          "enum": [
+                            "24h",
+                            "7d",
+                            "30d"
+                          ]
+                        },
+                        "rank": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "previousRank": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "window",
+                        "rank",
+                        "previousRank"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "trader_activity"
+                          ]
+                        },
+                        "tradeId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "signature": {
+                          "type": "string"
+                        },
+                        "side": {
+                          "type": "string",
+                          "enum": [
+                            "buy",
+                            "sell"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "tradeId",
+                        "signature",
+                        "side"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "actors",
+                "count",
+                "token",
+                "details"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "indexed",
+              "demo"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "source"
+        ]
+      },
+      "AlertSettings": {
+        "type": "object",
+        "properties": {
+          "traderActivity": {
+            "type": "boolean"
+          },
+          "sound": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "traderActivity",
+          "sound"
         ]
       },
       "Portfolio": {
@@ -3742,6 +4063,191 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "description": "Private inbox for the bearer. Without a bearer, only demo mode serves the synthetic inbox.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {}
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications/settings": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid alert settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

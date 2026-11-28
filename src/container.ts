@@ -5,6 +5,7 @@ import { enqueueTrades, type TradeQueue } from "./jobs/trade-queue";
 import { getRedis } from "./lib/redis";
 import { type FollowRepository, PgFollowRepository } from "./repositories/follow.repository";
 import { PgLeaderboardRepository } from "./repositories/leaderboard.repository";
+import { PgNotificationRepository } from "./repositories/notification.repository";
 import { PgPortfolioRepository } from "./repositories/portfolio.repository";
 import { PgSocialRepository } from "./repositories/social.repository";
 import { PgSwapRepository } from "./repositories/swap.repository";
@@ -21,6 +22,7 @@ import {
   type MarketDataProvider,
 } from "./services/market-data";
 import { createPositionQuote, type PositionQuote } from "./services/market-data/position-quotes";
+import { NotificationService } from "./services/notification.service";
 import { PortfolioService } from "./services/portfolio.service";
 import { createPrivyUserDirectory, type PrivyUserDirectory } from "./services/privy-user-directory";
 import { type LeaderboardStore, RedisLeaderboard } from "./services/social/leaderboard-store";
@@ -61,6 +63,7 @@ export interface Container {
   feeSponsor: FeeSponsor;
   swapRateLimiter: SwapRateLimiter;
   follows: FollowRepository;
+  notifications: NotificationService;
 }
 
 export function createContainer(overrides: Partial<Container> = {}): Container {
@@ -91,6 +94,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     : new DisabledFeeSponsor();
   const balances = overrides.balances ?? new RpcWalletBalanceProvider();
   const events = overrides.events ?? new RedisEventPublisher();
+  const notifications =
+    overrides.notifications ?? new NotificationService(new PgNotificationRepository(getDb()), events);
   const leaderboardStore = overrides.leaderboardStore ?? new RedisLeaderboard();
   const leaderboard =
     overrides.leaderboard ??
@@ -102,11 +107,13 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
           events,
           Date.now,
           positionQuote,
+          notifications.rankChanged,
         )
       : undefined);
   const tradeIndexer =
-    overrides.tradeIndexer ?? new TradeIndexer(new PgTradeRepository(getDb()), walletMarket);
-  if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
+    overrides.tradeIndexer ??
+    new TradeIndexer(new PgTradeRepository(getDb(), notifications.inboxChanged), walletMarket);
+  if (leaderboard) tradeIndexer.onTrade((trade) => leaderboard.updateUser(trade.userId, trade.id));
   const databaseRanks = new LeaderboardService(
     new PgLeaderboardRepository(getDb()),
     leaderboardStore,
@@ -115,8 +122,8 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
     Date.now,
     positionQuote,
   );
-  const follows = overrides.follows ?? new PgFollowRepository(getDb());
-  const socialRepository = new PgSocialRepository(getDb());
+  const follows = overrides.follows ?? new PgFollowRepository(getDb(), notifications.inboxChanged);
+  const socialRepository = new PgSocialRepository(getDb(), notifications.inboxChanged);
   const portfolio =
     overrides.portfolio ??
     new PortfolioService(new PgPortfolioRepository(getDb()), walletMarket, balances, Date.now, positionQuote);
@@ -137,6 +144,7 @@ export function createContainer(overrides: Partial<Container> = {}): Container {
         },
       ),
     events,
+    notifications,
     tradeQueue: overrides.tradeQueue ?? { enqueue: enqueueTrades },
     leaderboardStore,
     leaderboard,

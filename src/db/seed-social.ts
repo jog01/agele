@@ -14,6 +14,7 @@ import {
   trades,
   users,
 } from "../models";
+import { insertNotifications } from "../repositories/notification.repository";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { USDC_MINT } from "../services/helius-parser";
 import { MockMarketDataProvider } from "../services/market-data/mock.provider";
@@ -377,4 +378,68 @@ export async function seedSocialDemo(db: Db, now = Date.now()) {
       ),
     )
     .onConflictDoNothing();
+
+  const recipient = profiles[0]!;
+  const [activity] = await db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.userId, profiles[1]!.id), eq(trades.signature, "demo:basispoints:5")));
+  const at = (age: number) => new Date((anchor - age) * 1000);
+  const shared = { recipientId: recipient.id, demo: true };
+  await insertNotifications(db, [
+    {
+      ...shared,
+      eventKey: "demo:thesis-like",
+      actorId: profiles[1]!.id,
+      mint: mints[0]!,
+      createdAt: at(90),
+      details: { kind: "thesis_like", thesisId: seedId(1, 0), postId: seedId(4, 0) },
+    },
+    ...[1, 3, 5].map((index) => ({
+      ...shared,
+      eventKey: `demo:follow:${index}`,
+      groupKey: "follow:demo",
+      actorId: profiles[index]!.id,
+      createdAt: at(300 + index),
+      details: { kind: "follow" as const },
+    })),
+    {
+      ...shared,
+      eventKey: "demo:clan-invite",
+      actorId: profiles[7]!.id,
+      createdAt: at(600),
+      details: { kind: "clan_invite", clanId: "demo:opening-bell", clanName: "Opening Bell" },
+    },
+    {
+      ...shared,
+      eventKey: "demo:send",
+      actorId: profiles[6]!.id,
+      mint: mints[0]!,
+      createdAt: at(3000),
+      details: { kind: "send", signature: "demo:closing-bell:send", amount: "0.25" },
+    },
+    {
+      ...shared,
+      eventKey: "demo:leaderboard",
+      createdAt: at(7200),
+      details: { kind: "leaderboard", window: "7d", rank: 3, previousRank: 6 },
+    },
+    ...(activity
+      ? [
+          {
+            ...shared,
+            eventKey: "demo:trader-activity",
+            actorId: activity.userId,
+            mint: activity.mint,
+            createdAt: activity.executedAt,
+            details: {
+              kind: "trader_activity" as const,
+              tradeId: activity.id,
+              signature: activity.signature,
+              side: activity.side,
+            },
+          },
+        ]
+      : []),
+  ]);
 }

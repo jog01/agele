@@ -1,7 +1,8 @@
-import { and, count, eq, lt } from "drizzle-orm";
+import { and, count, eq, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { AppError } from "../lib/errors";
 import { followActions, follows, trades, users } from "../models";
+import { insertNotifications, type NotificationDelivery } from "./notification.repository";
 
 const FOLLOW_CAP = 100;
 const FOLLOW_RATE = 10;
@@ -13,7 +14,10 @@ export interface FollowRepository {
 }
 
 export class PgFollowRepository implements FollowRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly deliver?: NotificationDelivery,
+  ) {}
 
   async listWallets(followerId: string) {
     const rows = await this.db
@@ -24,8 +28,8 @@ export class PgFollowRepository implements FollowRepository {
   }
 
   async follow(followerId: string, followeeWallet: string) {
-    await this.db.transaction(async (tx) => {
-      await tx.select({ id: users.id }).from(users).where(eq(users.id, followerId)).for("update");
+    const recipientId = await this.db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, followerId)).for("no key update");
       const [added] = await tx
         .insert(follows)
         .values({ followerId, followeeWallet })
@@ -60,7 +64,37 @@ export class PgFollowRepository implements FollowRepository {
       if (recent!.value >= FOLLOW_RATE)
         throw new AppError(429, "follow_rate_limit", "Too many follows; try again shortly");
       await tx.insert(followActions).values({ userId: followerId });
+      if (!this.deliver) return;
+      const [recipient] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          or(
+            eq(users.walletAddress, followeeWallet),
+            sql`exists(
+          select 1 from wallets w where w.user_id = ${users.id}
+          and w.address = ${followeeWallet} and w.chain_type = 'solana'
+        )`,
+          ),
+        )
+        .orderBy(sql`(${users.walletAddress} = ${followeeWallet}) desc nulls last`)
+        .limit(1);
+      if (!recipient || recipient.id === followerId) return;
+      const createdAt = new Date();
+      const groupKey = `follow:${createdAt.toISOString().slice(0, 10)}`;
+      const [notification] = await insertNotifications(tx, [
+        {
+          recipientId: recipient.id,
+          actorId: followerId,
+          createdAt,
+          groupKey,
+          eventKey: `${groupKey}:${followerId}`,
+          details: { kind: "follow" },
+        },
+      ]);
+      return notification?.recipientId;
     });
+    if (recipientId) await this.deliver?.(recipientId);
   }
 
   async unfollow(followerId: string, followeeWallet: string) {

@@ -16,6 +16,7 @@ import {
 import type { CommentDto, FeedDiscussionTarget, FeedItemDto } from "../schemas/social";
 import type { TokenDto } from "../schemas/token";
 import { encodeCursor, type FeedCursor } from "../services/social/cursor";
+import { insertNotifications, type NotificationDelivery } from "./notification.repository";
 
 type PostInput = Pick<
   typeof comments.$inferInsert,
@@ -64,7 +65,10 @@ function eventId(key: ReturnType<typeof sql>) {
 }
 
 export class PgSocialRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly deliver?: NotificationDelivery,
+  ) {}
 
   async feed(input: {
     wallets?: string[];
@@ -478,9 +482,35 @@ export class PgSocialRepository {
   }
 
   async setReaction(postId: string, userId: string, liked: boolean) {
-    if (liked) await this.db.insert(reactions).values({ postId, userId }).onConflictDoNothing();
-    else
+    if (!liked) {
       await this.db.delete(reactions).where(and(eq(reactions.postId, postId), eq(reactions.userId, userId)));
+      return;
+    }
+    const recipientId = await this.db.transaction(async (tx) => {
+      const [added] = await tx.insert(reactions).values({ postId, userId }).onConflictDoNothing().returning();
+      if (!added || !this.deliver) return;
+      const [post] = await tx
+        .select({
+          thesisId: comments.thesisId,
+          kind: comments.kind,
+          mint: comments.mint,
+          userId: comments.userId,
+        })
+        .from(comments)
+        .where(eq(comments.id, postId));
+      if (post?.kind !== "thesis" || !post.thesisId || post.userId === userId) return;
+      const [notification] = await insertNotifications(tx, [
+        {
+          recipientId: post.userId,
+          actorId: userId,
+          mint: post.mint,
+          eventKey: `thesis-like:${postId}:${userId}`,
+          details: { kind: "thesis_like", thesisId: post.thesisId, postId },
+        },
+      ]);
+      return notification?.recipientId;
+    });
+    if (recipientId) await this.deliver?.(recipientId);
   }
 
   async discussionMint(target: FeedDiscussionTarget) {

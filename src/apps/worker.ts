@@ -10,6 +10,7 @@ import { logger } from "../lib/logger";
 import { closeRedis, getRedis } from "../lib/redis";
 import { initTelemetry, shutdownTelemetry } from "../lib/telemetry";
 import { PgLeaderboardRepository } from "../repositories/leaderboard.repository";
+import { PgNotificationRepository } from "../repositories/notification.repository";
 import { PgTradeRepository } from "../repositories/trade.repository";
 import { LeaderboardService } from "../services/leaderboard.service";
 import {
@@ -17,12 +18,14 @@ import {
   createUpstreamMarketDataProvider,
 } from "../services/market-data";
 import { createPositionQuote } from "../services/market-data/position-quotes";
+import { NotificationService } from "../services/notification.service";
 import { RedisLeaderboard } from "../services/social/leaderboard-store";
 import { TradeIndexer } from "../services/trade-indexer";
 
 await guardLiveStartup();
 initTelemetry("fomo-worker");
 const events = new RedisEventPublisher();
+const notifications = new NotificationService(new PgNotificationRepository(getDb()), events);
 const market = createUpstreamMarketDataProvider();
 const leaderboard = env.HELIUS_WEBHOOK_SECRET
   ? new LeaderboardService(
@@ -32,10 +35,11 @@ const leaderboard = env.HELIUS_WEBHOOK_SECRET
       events,
       Date.now,
       createPositionQuote(market, createDemoPortfolioMarketDataProvider()),
+      notifications.rankChanged,
     )
   : undefined;
-const indexer = new TradeIndexer(new PgTradeRepository(getDb()), market);
-if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId));
+const indexer = new TradeIndexer(new PgTradeRepository(getDb(), notifications.inboxChanged), market);
+if (leaderboard) indexer.onTrade((trade) => leaderboard.updateUser(trade.userId, trade.id));
 const connection = getRedis();
 const scheduledRetention = { removeOnComplete: 100, removeOnFail: 500 };
 const workers = [

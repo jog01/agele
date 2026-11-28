@@ -1,9 +1,24 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { decimal, divide, formatDecimal } from "../lib/decimal";
 import { AppError } from "../lib/errors";
-import { pendingTradeFills, positions, type Trade, tokens, trades, users, wallets } from "../models";
+import {
+  follows,
+  notificationSettings,
+  pendingTradeFills,
+  positions,
+  type Trade,
+  tokens,
+  trades,
+  users,
+  wallets,
+} from "../models";
 import type { ParsedTrade } from "../services/helius-parser";
+import {
+  DEFAULT_ALERT_SETTINGS,
+  insertNotifications,
+  type NotificationDelivery,
+} from "./notification.repository";
 
 export interface IndexedTrade extends ParsedTrade {
   userId: string;
@@ -24,7 +39,10 @@ export interface TradeRepository {
 }
 
 export class PgTradeRepository implements TradeRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly deliver?: NotificationDelivery,
+  ) {}
 
   async linkedWallets(addresses: string[]) {
     if (!addresses.length) return [];
@@ -62,9 +80,13 @@ export class PgTradeRepository implements TradeRepository {
   }
 
   async record(trade: IndexedTrade): Promise<Trade | null> {
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       // Serialize a user's position updates, including the first insert.
-      await tx.select({ id: users.id }).from(users).where(eq(users.id, trade.userId)).for("update");
+      const [trader] = await tx
+        .select({ wallet: users.walletAddress })
+        .from(users)
+        .where(eq(users.id, trade.userId))
+        .for("no key update");
       const [pending] = await tx
         .select({ signature: pendingTradeFills.signature })
         .from(pendingTradeFills)
@@ -138,7 +160,48 @@ export class PgTradeRepository implements TradeRepository {
         .where(
           and(eq(pendingTradeFills.userId, trade.userId), eq(pendingTradeFills.signature, trade.signature)),
         );
-      return updated!;
+      if (!this.deliver) return { trade: updated!, recipients: [] };
+      const subscribers = await tx
+        .selectDistinct({
+          recipientId: follows.followerId,
+          sound: sql<boolean>`coalesce(${notificationSettings.sound}, ${DEFAULT_ALERT_SETTINGS.sound})`,
+        })
+        .from(follows)
+        .leftJoin(notificationSettings, eq(notificationSettings.userId, follows.followerId))
+        .where(
+          and(
+            or(
+              eq(follows.followeeWallet, trade.wallet),
+              trader?.wallet ? eq(follows.followeeWallet, trader.wallet) : undefined,
+            ),
+            ne(follows.followerId, trade.userId),
+            sql`coalesce(${notificationSettings.traderActivity}, ${DEFAULT_ALERT_SETTINGS.traderActivity})`,
+          ),
+        );
+      const rows = await insertNotifications(
+        tx,
+        subscribers.map(({ recipientId }) => ({
+          recipientId,
+          actorId: trade.userId,
+          mint: trade.mint,
+          eventKey: `trader-activity:${inserted.id}`,
+          createdAt: inserted.executedAt,
+          details: {
+            kind: "trader_activity",
+            tradeId: inserted.id,
+            signature: trade.signature,
+            side: trade.side,
+          },
+        })),
+      );
+      const sounds = new Map(subscribers.map(({ recipientId, sound }) => [recipientId, sound]));
+      return {
+        trade: updated!,
+        recipients: rows.map(({ recipientId }) => ({ recipientId, sound: sounds.get(recipientId) })),
+      };
     });
+    if (!result) return null;
+    await Promise.all(result.recipients.map(({ recipientId, sound }) => this.deliver?.(recipientId, sound)));
+    return result.trade;
   }
 }

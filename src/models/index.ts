@@ -1,4 +1,5 @@
 export * from "./chain";
+export * from "./notifications";
 export * from "./portfolio-snapshots";
 export * from "./positions";
 export * from "./social";

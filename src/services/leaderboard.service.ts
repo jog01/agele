@@ -3,6 +3,7 @@ import type { LeaderboardRepository } from "../repositories/leaderboard.reposito
 import type { LeaderboardEntryDto, LeaderboardWindowValue } from "../schemas/social";
 import type { MarketDataProvider } from "./market-data";
 import { cachePositionQuotes, type PositionQuote } from "./market-data/position-quotes";
+import type { NotificationService } from "./notification.service";
 import {
   LEADERBOARD_WINDOWS,
   type LeaderboardSnapshot,
@@ -21,6 +22,7 @@ export class LeaderboardService {
     private readonly hub: EventPublisher,
     private readonly now: () => number = Date.now,
     private readonly positionQuote: PositionQuote = (mint) => market.getToken(mint),
+    private readonly onRankChanged?: NotificationService["rankChanged"],
   ) {}
 
   private serialize(callback: () => Promise<void>) {
@@ -108,12 +110,19 @@ export class LeaderboardService {
     return { "24h": day, "7d": week, "30d": month };
   }
 
-  updateUser(userId: string) {
+  updateUser(userId: string, tradeId?: string) {
     return this.serialize(async () => {
       const now = this.now();
       const snapshot = await this.compute(now, userId);
       for (const window of LEADERBOARD_WINDOWS) {
+        const notify = tradeId !== undefined && this.onRankChanged !== undefined;
+        const previousRank = notify ? await this.store.rank(window, userId) : null;
         await this.store.update(window, userId, snapshot[window][0] ?? null);
+        if (notify) {
+          const rank = await this.store.rank(window, userId);
+          if (rank !== null && rank !== previousRank)
+            await this.onRankChanged?.(userId, window, rank, previousRank, tradeId);
+        }
         await this.hub.publish("leaderboard:global", { window, updatedAt: Math.floor(now / 1000) });
       }
     });
