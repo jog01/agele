@@ -51,6 +51,17 @@ export const TraderProfileSchema = z
   })
   .openapi("TraderProfile");
 
+export const TraderSearchResultSchema = TraderProfileSchema.pick({
+  wallet: true,
+  handle: true,
+  displayName: true,
+  avatarUrl: true,
+})
+  .extend({
+    source: z.enum(["demo", "indexed"]).describe("Whether the result is a seeded demo trader."),
+  })
+  .openapi("TraderSearchResult");
+
 export const TraderPositionSchema = z
   .object({
     id: z.uuid(),
