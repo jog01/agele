@@ -117,10 +117,13 @@ sequenceDiagram
   row is a completed 15-minute UTC window whose last close is at least 25%
   above its first open on at least $1,000 of volume, dated at the window's
   end; each page scans whole windows in the 24 hours before its cursor and
-  steps back while older candles exist. Their market cap is
+  then jumps to the newest older candle. Their market cap is
   the token's current indexed price times its supply. They appear only in the
   global scope and are left out whenever a trader filter is set (`wallet`,
   `minSizeUsd`, `minPortfolioUsd`, `minPriceSinceFirstBuyPct`).
+
+  A request reads at most 8 batches of at least 50 rows; when filters are sparse it returns a
+  shorter page with a `nextCursor`, so keep paging until `nextCursor` is null.
 
 ```mermaid
 flowchart TD

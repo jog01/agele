@@ -118,14 +118,15 @@ export class SocialService {
           (marketCapUsd === null || marketCapUsd > input.maxMarketCapUsd))
       );
     const items: FeedItemDto[] = [];
-    for (;;) {
+    const fetch = Math.max(input.limit, minFeedBatch);
+    for (let batches = 1; ; batches++) {
       const empty = { items: [], nextCursor: null };
       const [batch, system] = await Promise.all([
         withSocial
-          ? this.repository.feed({ ...input, wallets, cursor, limit: input.limit, viewerId, types })
+          ? this.repository.feed({ ...input, wallets, cursor, limit: fetch, viewerId, types })
           : empty,
         withSystem
-          ? this.repository.systemFeed({ cursor, limit: input.limit, mint: input.mint, types: systemTypes })
+          ? this.repository.systemFeed({ cursor, limit: fetch, mint: input.mint, types: systemTypes })
           : { ...empty, source: "demo" as const },
       ]);
       const boundary = [batch, system]
@@ -213,6 +214,7 @@ export class SocialService {
       }
       if (!boundary) return { items, nextCursor: null };
       cursor = { createdAt: boundary.createdAt, id: boundary.id };
+      if (batches === maxFeedBatches) return { items, nextCursor: encodeCursor(cursor) };
     }
   }
 
@@ -330,5 +332,8 @@ export class SocialService {
 function compareKeys(a: FeedCursor, b: FeedCursor) {
   return a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
+
+const maxFeedBatches = 8;
+const minFeedBatch = 50;
 
 type SystemType = "price-spike" | "new-listing";

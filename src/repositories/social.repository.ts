@@ -136,13 +136,17 @@ export class PgSocialRepository {
       order by "createdAt" desc, id desc limit ${limit + 1}
     `);
     const [older] = types.includes("price-spike")
-      ? await this.db.execute<{ found: boolean }>(sql`
-          select exists(select 1 from chain_candles_1m c
-            where c.source = ${source} ${scopedMint} and c.time < ${scanStart}::bigint) as found`)
+      ? await this.db.execute<{ latest: string | null }>(sql`
+          select max(c.time)::text as latest from chain_candles_1m c
+          where c.source = ${source} ${scopedMint} and c.time < ${scanStart}::bigint`)
       : [];
+    const olderEnd =
+      older?.latest == null
+        ? null
+        : Math.floor(Number(older.latest) / spikeWindow) * spikeWindow + spikeWindow;
     const keys = [
       rows.length > limit ? rows[limit - 1]! : null,
-      older?.found ? { createdAt: scanStart, id: "ffffffff-ffff-ffff-ffff-ffffffffffff" } : null,
+      olderEnd === null ? null : { createdAt: olderEnd, id: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
     ].filter((key): key is FeedCursor => key !== null);
     const next = keys.sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))[0];
     const items = rows
